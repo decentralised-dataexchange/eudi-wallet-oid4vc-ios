@@ -1,5 +1,3 @@
-# eudi-wallet-oidc-ios
-
 <h1 align="center">
     EWC - EUDI Wallet iOS Libraries 
 </h1>
