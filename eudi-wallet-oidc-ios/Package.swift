@@ -5,18 +5,23 @@ import PackageDescription
 
 let package = Package(
     name: "eudi-wallet-oidc-ios",
+    platforms: [
+        .iOS(.v13)
+    ],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "eudi-wallet-oidc-ios",
             targets: ["eudi-wallet-oidc-ios"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/keefertaylor/Base58Swift.git", branch: "master"),
+        .package(name: "KeychainSwift", url: "https://github.com/evgenyneu/keychain-swift.git", from: "21.0.0"),
+        .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", from: "1.8.1")
+    ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "eudi-wallet-oidc-ios",
-            dependencies: [],
+            dependencies: ["Base58Swift", "KeychainSwift", "CryptoSwift"],
             path: "Sources"),
         .testTarget(
             name: "eudi-wallet-oidc-iosTests",
