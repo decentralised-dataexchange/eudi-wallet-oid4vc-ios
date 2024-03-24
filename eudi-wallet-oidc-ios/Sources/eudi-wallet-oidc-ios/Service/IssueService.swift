@@ -10,7 +10,7 @@ import CryptoKit
 import KeychainSwift
 import CryptoSwift
 
-class IssueService {
+public class IssueService {
     
     static var shared = IssueService()
     private init() {}
@@ -23,21 +23,21 @@ class IssueService {
     public func resolveCredentialOffer(credentialOffer: String) async throws -> CredentialOffer? {
         let jsonDecoder = JSONDecoder()
         
-        // Step1: If 'credentialOffer' string already contains 'credential_offer', no need to call credential issuer api
         if credentialOffer.contains("credential_offer=") {
-            debugPrint("### Contains credential offer")
-            let credentialOfferJson = credentialOffer.components(separatedBy: "credential_offer=")[1]
+            debugPrint("###Contains credential offer")
+            let offer = credentialOffer.removingPercentEncoding ?? ""
+            let credentialOfferJson = offer.components(separatedBy: "credential_offer=")[1]
             let jsonData = Data(credentialOfferJson.utf8)
             
             do {
                 // Step2: Returning 'CredentialOffer' as model
-                let model = try jsonDecoder.decode(CredentialOffer.self, from: jsonData)
+                let model = try? jsonDecoder.decode(CredentialOffer.self, from: jsonData)
+                if model?.credentialIssuer == nil {
+                    let error = Error(message:"Invalid DID", code: nil)
+                    return CredentialOffer(error: error)
+                }
                 return model
-            } catch {
-                debugPrint("JSON Serialisation Error!")
-                return nil
             }
-            
         } else {
             guard let url = URL(string: credentialOffer) else {
                 debugPrint("No credential_offer / credential_offer_uri available!")
@@ -45,7 +45,7 @@ class IssueService {
             }
             // Step1: Creating url request and calling credential issuer api
             let credentialOfferUri = url.queryParameters?["credential_offer_uri"] as? String ?? ""
-            debugPrint("### Contains credential offer uri")
+            debugPrint("###Contains credential offer uri")
             var request = URLRequest(url: URL(string: credentialOfferUri)!)
             request.httpMethod = "GET"
 
@@ -53,11 +53,12 @@ class IssueService {
 
             do {
                 // Step2: Returning 'CredentialOffer' as model
-                let model = try jsonDecoder.decode(CredentialOffer.self, from: data)
+                let model = try? jsonDecoder.decode(CredentialOffer.self, from: data)
+                if model?.credentialIssuer == nil {
+                    let error = Error(message:"Invalid DID", code: nil)
+                    return CredentialOffer(error: error)
+                }
                 return model
-            } catch {
-                debugPrint("JSON Serialization Error: \(error)")
-                return nil
             }
         }
     }
@@ -226,6 +227,8 @@ class IssueService {
             
             let postString = UIApplicationUtils.shared.getPostString(params: params)
             request.httpBody = postString.data(using: .utf8)
+//            let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
+//            request.httpBody = requestBodyData
             
             var responseUrl = ""
             
@@ -269,10 +272,11 @@ class IssueService {
                                     isPreAuthorisedCodeFlow: Bool = false,
                                     preAuthCode: String,
                                     userPin: String?) async -> TokenResponse? {
-                
+        
+        let codeVal = code.removingPercentEncoding ?? ""
         // Service call for access token and details
         if userPin == nil || userPin == "" {
-            let tokenResponse = await getAccessToken(didKeyIdentifier: did, codeVerifier: codeVerifier, authCode: code, privateKey: privateKey, tokenEndpoint: authServerWellKnownConfig.tokenEndpoint ?? "")
+            let tokenResponse = await getAccessToken(didKeyIdentifier: did, codeVerifier: codeVerifier, authCode: codeVal, privateKey: privateKey, tokenEndpoint: authServerWellKnownConfig.tokenEndpoint ?? "")
             return tokenResponse
         } else {
             // Service call for access token and details
@@ -334,7 +338,7 @@ class IssueService {
         let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
         let signature = signatureData.rawRepresentation
         let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
-        let format = "jwt_vc"
+        let format = credentialOffer.credentials?[0].format ?? ""
         
         // Set up parameters for the request
         let params = [
@@ -365,8 +369,11 @@ class IssueService {
             let model = try jsonDecoder.decode(CredentialResponse.self, from: data)
             return model
         } catch {
-            debugPrint("JSON Serialization Error: \(error)")
-            return nil
+            debugPrint("Process credential request failed: \(error)")
+            let nsError = error as NSError
+            let errorCode = nsError.code
+            let error = Error(message:error.localizedDescription, code: errorCode)
+            return CredentialResponse(error: error)
         }
     }
     
@@ -399,8 +406,11 @@ class IssueService {
             let model = try jsonDecoder.decode(CredentialResponse.self, from: data)
             return model
         } catch {
-            debugPrint("JSON Serialization Error: \(error)")
-            return nil
+            debugPrint("Process deferred credential request failed: \(error)")
+            let nsError = error as NSError
+            let errorCode = nsError.code
+            let error = Error(message:error.localizedDescription, code: errorCode)
+            return CredentialResponse(error: error)
         }
     }
     
@@ -417,7 +427,7 @@ class IssueService {
         
         // Constructing parameters for the token request
         let params = ["grant_type": grantType, "pre-authorized_code":preAuthCode, "user_pin": otpVal] as [String: Any]
-        let postString = UIApplicationUtils.shared.getPostString(params: params)
+            let postString = UIApplicationUtils.shared.getPostString(params: params)
 
         // Creating the request
         var request = URLRequest(url: URL(string: tokenEndpoint)!)
@@ -431,8 +441,11 @@ class IssueService {
             let model = try jsonDecoder.decode(TokenResponse.self, from: data)
             return model
         } catch {
-            debugPrint("JSON Serialization Error: \(error)")
-            return nil
+            debugPrint("Get access token for preauth credential failed: \(error)")
+            let nsError = error as NSError
+            let errorCode = nsError.code
+            let error = Error(message:error.localizedDescription, code: errorCode)
+            return TokenResponse(error: error)
         }
     }
     
@@ -449,7 +462,7 @@ class IssueService {
         
         // Constructing parameters for the token request
         let params = ["grant_type": grantType, "code":authCode, "client_id": didKeyIdentifier, "code_verifier": codeVerifier] as [String: Any]
-        let postString = UIApplicationUtils.shared.getPostString(params: params)
+            let postString = UIApplicationUtils.shared.getPostString(params: params)
             
         // Creating the request
         var request = URLRequest(url: URL(string: tokenEndpoint)!)
@@ -464,8 +477,11 @@ class IssueService {
             let model = try jsonDecoder.decode(TokenResponse.self, from: data)
             return model
         } catch {
-            debugPrint("JSON Serialization Error: \(error)")
-            return nil
+            debugPrint("Get access token for preauth credential failed: \(error)")
+            let nsError = error as NSError
+            let errorCode = nsError.code
+            let error = Error(message:error.localizedDescription, code: errorCode)
+            return TokenResponse(error: error)
         }
     }
 }

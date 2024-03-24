@@ -8,7 +8,7 @@
 import Foundation
 import CryptoKit
 
-class DiscoveryService: DiscoveryServiceProtocol {
+public class DiscoveryService: DiscoveryServiceProtocol {
     
     static var shared = DiscoveryService()
     private init(){}

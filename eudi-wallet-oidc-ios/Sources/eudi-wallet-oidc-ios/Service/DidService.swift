@@ -9,8 +9,7 @@ import Foundation
 import CryptoKit
 import Base58Swift
 
-class DidService: DidServiceProtocol {
-    
+public class DidService {
     static var shared = DidService()
     private init(){}
     
@@ -55,8 +54,8 @@ class DidService: DidServiceProtocol {
     // MARK: - Exposed method to create a JSON Web Key (JWK) asynchronously.
     ///
     /// - Returns: A dictionary representing the JWK, or nil if an error occurs.
-    public func createJWK() async -> [String: Any]?{
-        let privateKey = P256.Signing.PrivateKey()
+    public func createJWK() async -> ([String: Any], P256.Signing.PrivateKey)?{
+        let privateKey =  P256.Signing.PrivateKey()
         // Step 1: Create P-256 public and private key pair
         let publicKey = privateKey.publicKey
         
@@ -70,6 +69,6 @@ class DidService: DidServiceProtocol {
             "x": x.urlSafeBase64EncodedString(),
             "y": y.urlSafeBase64EncodedString()
         ]
-        return jwk
+        return (jwk, privateKey)
     }
 }

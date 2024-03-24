@@ -8,7 +8,7 @@
 import Foundation
 import CryptoKit
 
-class VerificationService {
+public class VerificationService: VerificationServiceProtocol {
     
     static var shared = VerificationService()
     private init() {}

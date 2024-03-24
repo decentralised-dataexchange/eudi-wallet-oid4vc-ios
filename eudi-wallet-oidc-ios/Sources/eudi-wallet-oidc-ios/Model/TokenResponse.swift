@@ -8,13 +8,15 @@
 import Foundation
 
 // MARK: - TokenResponse (getAccessToken() Api call response model))
-struct TokenResponse: Codable {
-    let accessToken, tokenType: String
-    let expiresIn: Int
-    let idToken: String?
-    let cNonce: String
-    let cNonceExpiresIn: Int
-    let scope: String?
+public struct TokenResponse: Codable {
+    var accessToken: String?
+    var tokenType: String?
+    var expiresIn: Int?
+    var idToken: String?
+    var cNonce: String?
+    var cNonceExpiresIn: Int?
+    var scope: String?
+    var error: Error? // Optional error property
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
@@ -24,5 +26,11 @@ struct TokenResponse: Codable {
         case cNonce = "c_nonce"
         case cNonceExpiresIn = "c_nonce_expires_in"
         case scope = "scope"
+    }
+
+    // Initializer to handle the case when an error occurs
+    init(error: Error) {
+        self.error = error
+        // Other properties will be nil by default
     }
 }

@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct PresentationRequest: Codable {
+public struct PresentationRequest: Codable {
     var state, clientId, redirectUri, responseType, responseMode, scope, nonce, requestUri, presentationDefinition: String?
     
     enum CodingKeys: String, CodingKey {
