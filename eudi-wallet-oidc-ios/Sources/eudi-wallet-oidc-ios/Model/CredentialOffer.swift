@@ -8,14 +8,15 @@
 import Foundation
 
 // MARK: - CredentialOffer model
-struct CredentialOffer: Codable {
-    let credentialIssuer: String?
-    let credentials: [Credential]?
-    let grants: Grants?
+public struct CredentialOffer: Codable {
+    var credentialIssuer: String?
+    var credentials: [Credential]?
+    var grants: Grants?
+    var error: Error?
     
     enum CodingKeys: String, CodingKey {
         case credentialIssuer = "credential_issuer"
-        case credentials, grants
+        case credentials, grants, error
     }
 }
 

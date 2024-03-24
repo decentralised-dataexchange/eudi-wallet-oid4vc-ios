@@ -8,11 +8,14 @@
 import Foundation
 import CryptoKit
 
-// Sends a Verifiable Presentation (VP) token asynchronously.
 protocol VerificationServiceProtocol {
-    func sendVPToken( did: String,
-                      privateKey: P256.Signing.PrivateKey,
-                      nonce: String,
-                      presentationRequest: PresentationRequest?,
-                      credentialsList: [String]?) async -> Data?
+    // Sends a Verifiable Presentation (VP) token asynchronously.
+    func sendVPToken(
+        did: String,
+        privateKey: P256.Signing.PrivateKey,
+        presentationRequest: PresentationRequest?,
+        credentialsList: [String]?) async -> Data?
+    
+    // Method to process an authorization request and extract a PresentationRequest object
+    func processAuthorisationRequest(data: String?) -> PresentationRequest?
 }
