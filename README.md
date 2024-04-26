@@ -84,9 +84,7 @@ Refer the [Issue Verifiable Credential RFC](https://github.com/EWC-consortium/eu
 #### Verification
 Refer the [Present Verifiable Credentials RFC](https://github.com/EWC-consortium/eudi-wallet-rfcs/blob/main/ewc-rfc001-issue-verifiable-credential.md) for Verification flow.
 
-* The presentation request can be obtained fromQR code or Deeplink. Make use of `processAuthorisationRequest` for processing the presentationRequest
-* Filter the credentials save in wallet. Can make use of `filterCredential`.
-* If the Presentation Request asks for SD-JWT, process the credential using the `createSDJWTR` service
+* The presentation request can be obtained fromQR code or Deeplink. Make use of `processAuthorisationRequest` for processing the presentationRequest.
 * Use `sendVPToken` for verification.
 
 ## Licensing
