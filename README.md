@@ -1,5 +1,5 @@
 <h1 align="center">
-    EWC - EUDI Wallet iOS Libraries 
+    EUDI Wallet OpenID for Verifiable Credentials - iOS SDK
 </h1>
 
 <p align="center">
