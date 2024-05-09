@@ -15,7 +15,7 @@ class UIApplicationUtils {
         return convertStringToDictionary(text: text)
     }
     
-    func convertStringToDictionary(text: String) -> [String:AnyObject]? {
+    func convertStringToDictionary(text: String) -> [String:Any]? {
         if let data = text.data(using: .utf8) {
             do {
                 let json = try JSONSerialization.jsonObject(with: data, options: .mutableContainers) as? [String:AnyObject]

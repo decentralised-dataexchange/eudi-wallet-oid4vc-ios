@@ -1,6 +1,6 @@
 //
-//  File.swift
-//  
+//  CredentialOffer.swift
+//
 //
 //  Created by Mumthasir mohammed on 07/03/24.
 //

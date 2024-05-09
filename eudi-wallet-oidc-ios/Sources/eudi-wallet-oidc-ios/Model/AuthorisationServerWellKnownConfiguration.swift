@@ -10,27 +10,16 @@ import Foundation
 // MARK: - AuthorisationServerWellKnownConfiguration
 public struct AuthorisationServerWellKnownConfiguration: Codable {
     var redirectUris: [String]?
-    var issuer: String?
-    var authorizationEndpoint: String?
-    var tokenEndpoint: String?
-    var jwksURI: String?
-    var scopesSupported: [String]?
-    var responseTypesSupported: [String]?
-    var responseModesSupported: [String]?
-    var grantTypesSupported: [String]?
-    var subjectTypesSupported: [String]?
-    var idTokenSigningAlgValuesSupported: [String]?
-    var requestObjectSigningAlgValuesSupported: [String]?
-    var requestParameterSupported: Bool?
-    var requestURIParameterSupported: Bool?
+    var issuer, authorizationEndpoint, tokenEndpoint, jwksURI: String?
+    var scopesSupported, responseTypesSupported, responseModesSupported, grantTypesSupported: [String]?
+    var subjectTypesSupported, idTokenSigningAlgValuesSupported, requestObjectSigningAlgValuesSupported: [String]?
+    var requestParameterSupported, requestURIParameterSupported: Bool?
     var tokenEndpointAuthMethodsSupported: [String]?
     var requestAuthenticationMethodsSupported: RequestAuthenticationMethodsSupported?
     var vpFormatsSupported: VpFormatsSupported?
-    var subjectSyntaxTypesSupported: [String]?
-    var subjectSyntaxTypesDiscriminations: [String]?
-    var subjectTrustFrameworksSupported: [String]?
-    var idTokenTypesSupported: [String]?
-
+    var subjectSyntaxTypesSupported, subjectSyntaxTypesDiscriminations, subjectTrustFrameworksSupported, idTokenTypesSupported: [String]?
+    var error: Error?
+    
     enum CodingKeys: String, CodingKey {
         case redirectUris = "redirect_uris"
         case issuer

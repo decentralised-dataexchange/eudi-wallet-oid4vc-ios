@@ -24,3 +24,25 @@ extension URL {
         }
     }
 }
+
+extension String {
+    func decodeBase64() -> String? {
+        do {
+            var st = self
+                .replacingOccurrences(of: "_", with: "/")
+                .replacingOccurrences(of: "-", with: "+")
+            let remainder = self.count % 4
+            if remainder > 0 {
+                st = self.padding(toLength: self.count + 4 - remainder,
+                                  withPad: "=",
+                                  startingAt: 0)
+            }
+            let data = try Base64.decode(st)
+            return String.init(decoding: data, as: UTF8.self)
+        }catch{
+            debugPrint(error)
+            return nil
+        }
+    }
+}
+
