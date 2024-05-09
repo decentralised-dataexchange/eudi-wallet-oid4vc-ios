@@ -8,9 +8,9 @@
 import Foundation
 
 // MARK: - PresentationDefinitionModel
-struct PresentationDefinitionModel: Codable {
+public struct PresentationDefinitionModel: Codable {
     let id: String?
-    let format: PresentationDefinitionModelFormat?
+    let format: [String: JwtVp]?
     let inputDescriptors: [InputDescriptor]?
 
     enum CodingKeys: String, CodingKey {
