@@ -7,12 +7,12 @@
 
 import Foundation
 import CryptoKit
-import KeychainSwift
+//import KeychainSwift
 import CryptoSwift
 
 public class IssueService {
     
-    static var shared = IssueService()
+    public static var shared = IssueService()
     private init() {}
     
     // MARK: - Retrieves credential issuer asynchronously based on the provided credential_offer / credential_offer_uri.
@@ -20,18 +20,19 @@ public class IssueService {
     /// - Parameters:
     ///   - credentialOffer: The string representation of the credential offer.
     /// - Returns: A `CredentialOffer` object if the resolution is successful; otherwise, `nil`.
-    public func resolveCredentialOffer(credentialOffer: String) async throws -> CredentialOffer? {
+    public func resolveCredentialOffer(credentialOfferString: String) async throws -> CredentialOffer? {
+        let credentialOfferUrl = URL(string: credentialOfferString)
+        guard let credentialOfferUri = credentialOfferUrl?.queryParameters?["credential_offer_uri"] else { return nil }
         let jsonDecoder = JSONDecoder()
         
-        if credentialOffer.contains("credential_offer=") {
-            debugPrint("###Contains credential offer")
-            let offer = credentialOffer.removingPercentEncoding ?? ""
-            let credentialOfferJson = offer.components(separatedBy: "credential_offer=")[1]
-            let jsonData = Data(credentialOfferJson.utf8)
+        if credentialOfferUri != "" {
+            var request = URLRequest(url: URL(string: credentialOfferUri)!)
+            request.httpMethod = "GET"
+            
+            let (data, _) = try await URLSession.shared.data(for: request)
             
             do {
-                // Step2: Returning 'CredentialOffer' as model
-                let model = try? jsonDecoder.decode(CredentialOffer.self, from: jsonData)
+                let model = try? jsonDecoder.decode(CredentialOffer.self, from: data)
                 if model?.credentialIssuer == nil {
                     let error = Error(message:"Invalid DID", code: nil)
                     return CredentialOffer(error: error)
@@ -39,26 +40,20 @@ public class IssueService {
                 return model
             }
         } else {
-            guard let url = URL(string: credentialOffer) else {
-                debugPrint("No credential_offer / credential_offer_uri available!")
-                return nil
-            }
-            // Step1: Creating url request and calling credential issuer api
-            let credentialOfferUri = url.queryParameters?["credential_offer_uri"] as? String ?? ""
-            debugPrint("###Contains credential offer uri")
-            var request = URLRequest(url: URL(string: credentialOfferUri)!)
-            request.httpMethod = "GET"
-
-            let (data, _) = try await URLSession.shared.data(for: request)
-
-            do {
-                // Step2: Returning 'CredentialOffer' as model
-                let model = try? jsonDecoder.decode(CredentialOffer.self, from: data)
-                if model?.credentialIssuer == nil {
-                    let error = Error(message:"Invalid DID", code: nil)
-                    return CredentialOffer(error: error)
+            guard let credentialOffer = credentialOfferUrl?.queryParameters?["credential_offer"] else { return nil }
+            let jsonData = Data(credentialOffer.utf8)
+            
+            if credentialOffer != "" {
+                do {
+                    let model = try? jsonDecoder.decode(CredentialOffer.self, from: jsonData)
+                    if model?.credentialIssuer == nil {
+                        let error = Error(message:"Invalid DID", code: nil)
+                        return CredentialOffer(error: error)
+                    }
+                    return model
                 }
-                return model
+            } else {
+                return nil
             }
         }
     }
@@ -227,8 +222,6 @@ public class IssueService {
             
             let postString = UIApplicationUtils.shared.getPostString(params: params)
             request.httpBody = postString.data(using: .utf8)
-//            let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
-//            request.httpBody = requestBodyData
             
             var responseUrl = ""
             

@@ -17,12 +17,13 @@ public class DiscoveryService: DiscoveryServiceProtocol {
     ///
     /// - Parameters:
     ///   - credentialIssuerWellKnownURI: The URI for the credential issuer well-known configuration.
-    ///   - Returns - IssuerWellKnownConfiguration
+    ///   - completionHandler: A closure to be called when the retrieval process is completed.
     public func getIssuerConfig(credentialIssuerWellKnownURI: String?) async throws -> IssuerWellKnownConfiguration? {
         let jsonDecoder = JSONDecoder()
         
         guard let uri = credentialIssuerWellKnownURI else { return nil }
         let openIdIssuerUrl = uri + "/.well-known/openid-credential-issuer"
+        debugPrint("###OpenIdIssuer url:\(openIdIssuerUrl)")
         
         guard let url = URL.init(string: openIdIssuerUrl) else { return nil }
         var request = URLRequest(url: url)
@@ -34,8 +35,11 @@ public class DiscoveryService: DiscoveryServiceProtocol {
             let model = try jsonDecoder.decode(IssuerWellKnownConfiguration.self, from: data)
             return model
         } catch {
-            debugPrint("JSON Serialization Error: \(error)")
-            return nil
+            debugPrint("Get Issuer config failed: \(error)")
+            let nsError = error as NSError
+            let errorCode = nsError.code
+            let error = Error(message:error.localizedDescription, code: errorCode)
+            return try IssuerWellKnownConfiguration(from: error as! Decoder)
         }
     }
     
@@ -48,6 +52,7 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         
         guard let uri = authorisationServerWellKnownURI else { return nil }
         let authUrl = uri +  "/.well-known/openid-configuration"
+        debugPrint("###authServerUrl url:\(authUrl)")
         
         guard let url = URL.init(string: authUrl) else { return nil }
         var request = URLRequest(url: url)
@@ -59,8 +64,11 @@ public class DiscoveryService: DiscoveryServiceProtocol {
             let model = try jsonDecoder.decode(AuthorisationServerWellKnownConfiguration.self, from: data)
             return model
         } catch {
-            debugPrint("JSON Serialization Error: \(error)")
-            return nil
+            debugPrint("Get Auth config failed: \(error)")
+            let nsError = error as NSError
+            let errorCode = nsError.code
+            let error = Error(message:error.localizedDescription, code: errorCode)
+            return AuthorisationServerWellKnownConfiguration(error: error)
         }
     }
 }

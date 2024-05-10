@@ -29,8 +29,9 @@ public struct TokenResponse: Codable {
     }
 
     // Initializer to handle the case when an error occurs
-    init(error: Error) {
-        self.error = error
-        // Other properties will be nil by default
-    }
+//    init(error: error) {
+//        self.error = error
+//        // Other properties will be nil by default
+//    }
 }
+
