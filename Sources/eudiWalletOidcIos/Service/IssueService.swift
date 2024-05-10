@@ -7,12 +7,12 @@
 
 import Foundation
 import CryptoKit
-import KeychainSwift
+//import KeychainSwift
 import CryptoSwift
 
 public class IssueService {
     
-    static var shared = IssueService()
+    public static var shared = IssueService()
     private init() {}
     
     // MARK: - Retrieves credential issuer asynchronously based on the provided credential_offer / credential_offer_uri.

@@ -4,28 +4,26 @@
 import PackageDescription
 
 let package = Package(
-    name: "eudi-wallet-oidc-ios",
+    name: "eudiWalletOidcIos",
     platforms: [
         .iOS(.v13)
     ],
     products: [
         .library(
-            name: "eudi-wallet-oidc-ios",
-            targets: ["eudi-wallet-oidc-ios"]),
+            name: "eudiWalletOidcIos",
+            targets: ["eudiWalletOidcIos"]),
     ],
     dependencies: [
         .package(url: "https://github.com/keefertaylor/Base58Swift.git", branch: "master"),
-        .package(name: "KeychainSwift", url: "https://github.com/evgenyneu/keychain-swift.git", from: "21.0.0"),
         .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", from: "1.8.1"),
         .package(url: "https://github.com/decentralised-dataexchange/PresentationExchangeSdkiOS.git", .upToNextMajor(from: "2024.3.1"))
     ],
     targets: [
         .target(
-            name: "eudi-wallet-oidc-ios",
-            dependencies: ["Base58Swift", "KeychainSwift", "CryptoSwift", "PresentationExchangeSdkiOS"],
-            path: "Sources"),
+            name: "eudiWalletOidcIos",
+            dependencies: ["Base58Swift", "CryptoSwift", "PresentationExchangeSdkiOS"]),
         .testTarget(
             name: "eudi-wallet-oidc-iosTests",
-            dependencies: ["eudi-wallet-oidc-ios"]),
+            dependencies: ["eudiWalletOidcIos"]),
     ]
 )
