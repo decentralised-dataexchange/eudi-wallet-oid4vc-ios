@@ -11,7 +11,7 @@ import PresentationExchangeSdkiOS
 
 public class VerificationService: VerificationServiceProtocol {
     
-    static var shared = VerificationService()
+    public static var shared = VerificationService()
     private init() {}
     
     // MARK: - Sends a Verifiable Presentation (VP) token asynchronously.

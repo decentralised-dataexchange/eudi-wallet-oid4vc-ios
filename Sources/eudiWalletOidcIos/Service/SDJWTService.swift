@@ -10,7 +10,7 @@ import CryptoKit
 
 public class SDJWTService {
     
-    static var shared = SDJWTService()
+    public static var shared = SDJWTService()
     private init() {}
     
     /**

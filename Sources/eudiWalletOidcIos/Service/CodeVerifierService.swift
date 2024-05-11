@@ -10,7 +10,7 @@ import CryptoKit
 
 public class CodeVerifierService: CodeVerifierProtocol {
     
-    static var shared = CodeVerifierService()
+    public static var shared = CodeVerifierService()
     private init(){}
     
     // Generates a code challenge string for PKCE (Proof Key for Code Exchange) based on the provided code verifier.
