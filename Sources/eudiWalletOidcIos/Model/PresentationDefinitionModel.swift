@@ -45,7 +45,12 @@ struct InputDescriptor: Codable {
 
 // MARK: - Constraints
 struct Constraints: Codable {
+    let limitDisclosure: String?
     let fields: [Field]?
+    enum CodingKeys: String, CodingKey {
+        case fields
+        case limitDisclosure = "limit_disclosure"
+    }
 }
 
 // MARK: - Field

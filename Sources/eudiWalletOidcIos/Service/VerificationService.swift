@@ -235,8 +235,18 @@ public class VerificationService: VerificationServiceProtocol {
     public func filterCredentials(credentialList: [String?], presentationDefinition: PresentationDefinitionModel) -> [[String]] {
         var response: [[String]] = []
         
+        var tempCredentialList: [String?] = []
+        for item in credentialList {
+            if let limitDisclosure = presentationDefinition.inputDescriptors?.first?.constraints?.limitDisclosure,
+               item?.contains("~") == true {
+                tempCredentialList.append(item)
+            } else if presentationDefinition.inputDescriptors?.first?.constraints?.limitDisclosure == nil,
+                      item?.contains("~") == false {
+                tempCredentialList.append(item)
+            }
+        }
         var processedCredentials = [String]()
-        for cred in credentialList {
+        for cred in tempCredentialList {
             guard let cred = cred else { continue }
             let split = cred.split(separator: ".")
             
@@ -253,10 +263,11 @@ public class VerificationService: VerificationServiceProtocol {
             
             let json = try? JSONSerialization.jsonObject(with: Data(jsonString.utf8), options: []) as? [String: Any] ?? [:]
           
-            let vcString = if let vc = json?["vc"] as? [String: Any] {
-                vc.toString() ?? ""
+            var vcString = ""
+            if let vc = json?["vc"] as? [String: Any] {
+                vcString = vc.toString() ?? ""
             } else {
-                 jsonString
+                vcString = jsonString
             }
             
             processedCredentials.append(vcString)
@@ -282,10 +293,12 @@ public class VerificationService: VerificationServiceProtocol {
 
                 // Assuming `matchesString` contains a JSON array of matches
                 if let matchesData = matchesString.data(using: .utf8),
-                   let matchesArray = try? JSONSerialization.jsonObject(with: matchesData) as? [String: Any] {
-                    for index in 0..<matchesArray.count {
-                        if index < credentialList.count {
-                            filteredCredentialList.append(credentialList[index] ?? "")
+                   let matchesArray = try? JSONSerialization.jsonObject(with: matchesData) as? [String: Any],
+                   let matchedCredentials = matchesArray["MatchedCredentials"] as? [[String: Any]] {
+                    // Now you have access to the "MatchedCredentials" list
+                    for index in 0..<matchedCredentials.count {
+                        if index < tempCredentialList.count {
+                            filteredCredentialList.append(tempCredentialList[matchedCredentials[index]["index"] as? Int ?? 0] ?? "")
                         }
                     }
                 }

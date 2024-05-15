@@ -21,4 +21,16 @@ public struct PresentationRequest: Codable {
         case requestUri = "request_uri"
         case presentationDefinition = "presentation_definition"
     }
+    
+    public init(state: String?, clientId: String?, redirectUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: String?) {
+        self.state = state
+        self.clientId = clientId
+        self.redirectUri = redirectUri
+        self.responseType = responseType
+        self.responseMode = responseMode
+        self.scope = scope
+        self.nonce = nonce
+        self.requestUri = requestUri
+        self.presentationDefinition = presentationDefinition
+    }
 }
