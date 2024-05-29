@@ -8,7 +8,8 @@
 import Foundation
 
 public struct PresentationRequest: Codable {
-    var state, clientId, redirectUri, responseType, responseMode, scope, nonce, requestUri, presentationDefinition: String?
+    var state, clientId, redirectUri, responseType, responseMode, scope, nonce, requestUri: String?
+    var presentationDefinition: PresentationDefinitionModel?
     
     enum CodingKeys: String, CodingKey {
         case state = "state"
@@ -22,7 +23,7 @@ public struct PresentationRequest: Codable {
         case presentationDefinition = "presentation_definition"
     }
     
-    public init(state: String?, clientId: String?, redirectUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: String?) {
+    public init(state: String?, clientId: String?, redirectUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: PresentationDefinitionModel?) {
         self.state = state
         self.clientId = clientId
         self.redirectUri = redirectUri
