@@ -64,20 +64,27 @@ public class VerificationService: VerificationServiceProtocol {
             let requestUri = URL(string: code)?.queryParameters?["request_uri"] ?? ""
             let responseUri = URL(string: code)?.queryParameters?["response_uri"] ?? ""
             let responseMode = URL(string: code)?.queryParameters?["response_mode"] ?? ""
-            let presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
+            var presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
             
             if presentationDefinition != "" {
-                let presentationRequest = PresentationRequest(state: state,
-                                                              clientId: clientID,
-                                                              redirectUri: redirectUri,
-                                                              responseType: responseType,
-                                                              responseMode: responseMode,
-                                                              scope: scope,
-                                                              nonce: nonce,
-                                                              requestUri: requestUri,
-                                                              presentationDefinition: presentationDefinition)
-                
-                return presentationRequest
+                let presentationDefinitionModel: PresentationDefinitionModel?
+                presentationDefinition = presentationDefinition.replacingOccurrences(of: "+", with: "")
+                let jsonData = presentationDefinition.data(using: .utf8)!
+                do {
+                    presentationDefinitionModel = try JSONDecoder().decode(PresentationDefinitionModel.self, from: jsonData)
+                    let presentationRequest =  PresentationRequest(state: state,
+                                                                   clientId: clientID,
+                                                                   redirectUri: redirectUri,
+                                                                   responseType: responseType,
+                                                                   responseMode: responseMode,
+                                                                   scope: scope,
+                                                                   nonce: nonce,
+                                                                   requestUri: requestUri,
+                                                                   presentationDefinition: presentationDefinitionModel)
+                    return presentationRequest
+                } catch {
+                    debugPrint("Failed to decode JSON: \(error.localizedDescription)")
+                }
             } else if requestUri != "" {
                 var request = URLRequest(url: URL(string: requestUri)!)
                 request.httpMethod = "GET"
@@ -87,12 +94,28 @@ public class VerificationService: VerificationServiceProtocol {
                     let jsonDecoder = JSONDecoder()
                     let model = try? jsonDecoder.decode(PresentationRequest.self, from: data)
                     if model == nil {
-                        _ = Error(message:"Invalid DID", code: nil)
-                        return nil
+                        if let jwtString = String(data: data, encoding: .utf8) {
+                            do {
+                                let segments = jwtString.split(separator: ".")
+                                if segments.count == 3 {
+                                    // Decoding received JWT here
+                                    guard let jsonPayload = try? jwtString.decodeJWT(jwtToken: jwtString) else { return nil }
+                                    guard let data = try? JSONSerialization.data(withJSONObject: jsonPayload, options: []) else { return nil }
+                                    let model = try jsonDecoder.decode(PresentationRequest.self, from: data)
+                                    return model
+                                }
+                            } catch {
+                                debugPrint("Error:\(error)")
+                            }
+                        } else {
+                            let error = Error(message:"Invalid DID", code: nil)
+                            debugPrint(error)
+                            return nil
+                        }
                     }
                     return model
                 } catch {
-                    
+                    debugPrint("Error:\(error)")
                 }
             }
         }
