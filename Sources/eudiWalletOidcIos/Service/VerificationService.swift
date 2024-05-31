@@ -67,11 +67,7 @@ public class VerificationService: VerificationServiceProtocol {
             var presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
             
             if presentationDefinition != "" {
-                let presentationDefinitionModel: PresentationDefinitionModel?
-                presentationDefinition = presentationDefinition.replacingOccurrences(of: "+", with: "")
-                let jsonData = presentationDefinition.data(using: .utf8)!
-                do {
-                    presentationDefinitionModel = try JSONDecoder().decode(PresentationDefinitionModel.self, from: jsonData)
+            
                     let presentationRequest =  PresentationRequest(state: state,
                                                                    clientId: clientID,
                                                                    redirectUri: redirectUri,
@@ -80,11 +76,9 @@ public class VerificationService: VerificationServiceProtocol {
                                                                    scope: scope,
                                                                    nonce: nonce,
                                                                    requestUri: requestUri,
-                                                                   presentationDefinition: presentationDefinitionModel)
+                                                                   presentationDefinition: presentationDefinition)
                     return presentationRequest
-                } catch {
-                    debugPrint("Failed to decode JSON: \(error.localizedDescription)")
-                }
+              
             } else if requestUri != "" {
                 var request = URLRequest(url: URL(string: requestUri)!)
                 request.httpMethod = "GET"
