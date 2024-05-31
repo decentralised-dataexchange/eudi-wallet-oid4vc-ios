@@ -65,3 +65,16 @@ extension String {
         return try decodeJWTPart(segments[1])
     }
 }
+
+extension Encodable {
+    func toJSONString() -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        
+        if let jsonData = try? encoder.encode(self) {
+            return String(data: jsonData, encoding: .utf8)
+        }
+        
+        return nil
+    }
+}
