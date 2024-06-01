@@ -8,8 +8,8 @@
 import Foundation
 
 public struct PresentationRequest: Codable {
-    var state, clientId, redirectUri, responseType, responseMode, scope, nonce, requestUri: String?
-    var presentationDefinition: String?
+    public var state, clientId, redirectUri, responseType, responseMode, scope, nonce, requestUri: String?
+    public var presentationDefinition: String?
 
     enum CodingKeys: String, CodingKey {
         case state = "state"
