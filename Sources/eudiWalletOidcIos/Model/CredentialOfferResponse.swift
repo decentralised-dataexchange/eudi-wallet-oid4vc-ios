@@ -18,6 +18,7 @@ public struct CredentialOfferResponse: Codable {
         case credentialIssuer = "credential_issuer"
         case credentials, grants, error
     }
+
     
     public func encode(to encoder: Encoder) throws {
         
@@ -36,6 +37,7 @@ public struct CredentialOfferResponse: Codable {
         self.grants = try container.decodeIfPresent(GrantsResponse.self, forKey: .grants)
         self.error = try container.decodeIfPresent(ErrorResponse.self, forKey: .error)
     }
+
 }
 
 // MARK: - Credential
@@ -52,9 +54,11 @@ struct CredentialDataResponse: Codable {
     }
 }
 
+
 struct CredentialStringResponse{
     
 }
+
 
 // MARK: - CredentialDefinition
 struct CredentialDefinitionResponse: Codable {

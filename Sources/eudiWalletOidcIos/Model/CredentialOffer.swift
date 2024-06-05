@@ -18,6 +18,7 @@ public struct CredentialOffer {
         credentialIssuer = from.credentialIssuer
         
         if let credentialList = from.credentials, credentialList.count > 0{
+
             if let strCredentialList = credentialList as? [String]{
                 credentials = [Credential(fromTypes: strCredentialList)]
             } else if let objCredentialList = credentialList as? [CredentialDataResponse]{
@@ -26,7 +27,6 @@ public struct CredentialOffer {
                     return Credential(from: obj)
                 })
             }
-            
         }
         grants = from.grants == nil ? nil : Grants(from: from.grants!)
         error = from.error == nil ? nil : Error(from: from.error!)
