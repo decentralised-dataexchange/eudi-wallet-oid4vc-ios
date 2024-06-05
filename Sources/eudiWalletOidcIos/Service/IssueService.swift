@@ -32,12 +32,12 @@ public class IssueService {
             let (data, _) = try await URLSession.shared.data(for: request)
             
             do {
-                let model = try? jsonDecoder.decode(CredentialOffer.self, from: data)
+                let model = try? jsonDecoder.decode(CredentialOfferResponse.self, from: data)
                 if model?.credentialIssuer == nil {
-                    let error = Error(message:"Invalid DID", code: nil)
-                    return CredentialOffer(error: error)
+                    let error = Error(from: ErrorResponse(message:"Invalid DID", code: nil))
+                    return CredentialOffer(fromError: error)
                 }
-                return model
+                return (model == nil ? nil : CredentialOffer(from: model!))
             }
         } else {
             guard let credentialOffer = credentialOfferUrl?.queryParameters?["credential_offer"] else { return nil }
@@ -45,12 +45,12 @@ public class IssueService {
             
             if credentialOffer != "" {
                 do {
-                    let model = try? jsonDecoder.decode(CredentialOffer.self, from: jsonData)
+                    let model = try? jsonDecoder.decode(CredentialOfferResponse.self, from: jsonData)
                     if model?.credentialIssuer == nil {
-                        let error = Error(message:"Invalid DID", code: nil)
-                        return CredentialOffer(error: error)
+                        let error = Error(from: ErrorResponse(message:"Invalid DID", code: nil))
+                        return CredentialOffer(fromError: error)
                     }
-                    return model
+                    return (model == nil ? nil : CredentialOffer(from: model!))
                 }
             } else {
                 return nil
@@ -365,7 +365,7 @@ public class IssueService {
             debugPrint("Process credential request failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(message:error.localizedDescription, code: errorCode)
+            let error = Error(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return CredentialResponse(error: error)
         }
     }
@@ -402,7 +402,7 @@ public class IssueService {
             debugPrint("Process deferred credential request failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(message:error.localizedDescription, code: errorCode)
+            let error = Error(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return CredentialResponse(error: error)
         }
     }
@@ -437,7 +437,7 @@ public class IssueService {
             debugPrint("Get access token for preauth credential failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(message:error.localizedDescription, code: errorCode)
+            let error = Error(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return TokenResponse(error: error)
         }
     }
@@ -473,7 +473,7 @@ public class IssueService {
             debugPrint("Get access token for preauth credential failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(message:error.localizedDescription, code: errorCode)
+            let error = Error(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return TokenResponse(error: error)
         }
     }

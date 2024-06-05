@@ -87,7 +87,7 @@ public class VerificationService: VerificationServiceProtocol {
                     let jsonDecoder = JSONDecoder()
                     let model = try? jsonDecoder.decode(PresentationRequest.self, from: data)
                     if model == nil {
-                        _ = Error(message:"Invalid DID", code: nil)
+                        _ = Error(from: ErrorResponse(message:"Invalid DID", code: nil))
                         return nil
                     }
                     return model
