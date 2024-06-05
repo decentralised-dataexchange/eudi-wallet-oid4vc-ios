@@ -10,7 +10,7 @@ import CryptoKit
 
 public class DiscoveryService: DiscoveryServiceProtocol {
     
-    static var shared = DiscoveryService()
+    public static var shared = DiscoveryService()
     private init(){}
     
     // MARK: - Retrieves the issuer configuration asynchronously based on the provided credential issuer well-known URI.

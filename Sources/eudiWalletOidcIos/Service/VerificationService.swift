@@ -11,7 +11,7 @@ import PresentationExchangeSdkiOS
 
 public class VerificationService: VerificationServiceProtocol {
     
-    static var shared = VerificationService()
+    public static var shared = VerificationService()
     private init() {}
     
     // MARK: - Sends a Verifiable Presentation (VP) token asynchronously.
@@ -64,20 +64,21 @@ public class VerificationService: VerificationServiceProtocol {
             let requestUri = URL(string: code)?.queryParameters?["request_uri"] ?? ""
             let responseUri = URL(string: code)?.queryParameters?["response_uri"] ?? ""
             let responseMode = URL(string: code)?.queryParameters?["response_mode"] ?? ""
-            let presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
+            var presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
             
             if presentationDefinition != "" {
-                let presentationRequest = PresentationRequest(state: state,
-                                                              clientId: clientID,
-                                                              redirectUri: redirectUri,
-                                                              responseType: responseType,
-                                                              responseMode: responseMode,
-                                                              scope: scope,
-                                                              nonce: nonce,
-                                                              requestUri: requestUri,
-                                                              presentationDefinition: presentationDefinition)
-                
-                return presentationRequest
+            
+                    let presentationRequest =  PresentationRequest(state: state,
+                                                                   clientId: clientID,
+                                                                   redirectUri: redirectUri,
+                                                                   responseType: responseType,
+                                                                   responseMode: responseMode,
+                                                                   scope: scope,
+                                                                   nonce: nonce,
+                                                                   requestUri: requestUri,
+                                                                   presentationDefinition: presentationDefinition)
+                    return presentationRequest
+              
             } else if requestUri != "" {
                 var request = URLRequest(url: URL(string: requestUri)!)
                 request.httpMethod = "GET"
@@ -87,12 +88,28 @@ public class VerificationService: VerificationServiceProtocol {
                     let jsonDecoder = JSONDecoder()
                     let model = try? jsonDecoder.decode(PresentationRequest.self, from: data)
                     if model == nil {
-                        _ = Error(from: ErrorResponse(message:"Invalid DID", code: nil))
-                        return nil
+                        if let jwtString = String(data: data, encoding: .utf8) {
+                            do {
+                                let segments = jwtString.split(separator: ".")
+                                if segments.count == 3 {
+                                    // Decoding received JWT here
+                                    guard let jsonPayload = try? jwtString.decodeJWT(jwtToken: jwtString) else { return nil }
+                                    guard let data = try? JSONSerialization.data(withJSONObject: jsonPayload, options: []) else { return nil }
+                                    let model = try jsonDecoder.decode(PresentationRequest.self, from: data)
+                                    return model
+                                }
+                            } catch {
+                                debugPrint("Error:\(error)")
+                            }
+                        } else {
+                            let error = Error(from: ErrorResponse(message:"Invalid DID", code: nil))
+                            debugPrint(error)
+                            return nil
+                        }
                     }
                     return model
                 } catch {
-                    
+                    debugPrint("Error:\(error)")
                 }
             }
         }
@@ -235,8 +252,18 @@ public class VerificationService: VerificationServiceProtocol {
     public func filterCredentials(credentialList: [String?], presentationDefinition: PresentationDefinitionModel) -> [[String]] {
         var response: [[String]] = []
         
+        var tempCredentialList: [String?] = []
+        for item in credentialList {
+            if let limitDisclosure = presentationDefinition.inputDescriptors?.first?.constraints?.limitDisclosure,
+               item?.contains("~") == true {
+                tempCredentialList.append(item)
+            } else if presentationDefinition.inputDescriptors?.first?.constraints?.limitDisclosure == nil,
+                      item?.contains("~") == false {
+                tempCredentialList.append(item)
+            }
+        }
         var processedCredentials = [String]()
-        for cred in credentialList {
+        for cred in tempCredentialList {
             guard let cred = cred else { continue }
             let split = cred.split(separator: ".")
             
@@ -253,10 +280,11 @@ public class VerificationService: VerificationServiceProtocol {
             
             let json = try? JSONSerialization.jsonObject(with: Data(jsonString.utf8), options: []) as? [String: Any] ?? [:]
           
-            let vcString = if let vc = json?["vc"] as? [String: Any] {
-                vc.toString() ?? ""
+            var vcString = ""
+            if let vc = json?["vc"] as? [String: Any] {
+                vcString = vc.toString() ?? ""
             } else {
-                 jsonString
+                vcString = jsonString
             }
             
             processedCredentials.append(vcString)
@@ -282,10 +310,12 @@ public class VerificationService: VerificationServiceProtocol {
 
                 // Assuming `matchesString` contains a JSON array of matches
                 if let matchesData = matchesString.data(using: .utf8),
-                   let matchesArray = try? JSONSerialization.jsonObject(with: matchesData) as? [String: Any] {
-                    for index in 0..<matchesArray.count {
-                        if index < credentialList.count {
-                            filteredCredentialList.append(credentialList[index] ?? "")
+                   let matchesArray = try? JSONSerialization.jsonObject(with: matchesData) as? [String: Any],
+                   let matchedCredentials = matchesArray["MatchedCredentials"] as? [[String: Any]] {
+                    // Now you have access to the "MatchedCredentials" list
+                    for index in 0..<matchedCredentials.count {
+                        if index < tempCredentialList.count {
+                            filteredCredentialList.append(tempCredentialList[matchedCredentials[index]["index"] as? Int ?? 0] ?? "")
                         }
                     }
                 }
