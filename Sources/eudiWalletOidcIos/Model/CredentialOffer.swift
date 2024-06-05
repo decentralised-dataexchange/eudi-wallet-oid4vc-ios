@@ -18,7 +18,15 @@ public struct CredentialOffer {
         credentialIssuer = from.credentialIssuer
         
         if let credentialList = from.credentials, credentialList.count > 0{
-            credentials = credentialList.map({ Credential(from: $0) })
+
+            if let strCredentialList = credentialList as? [String]{
+                credentials = [Credential(fromTypes: strCredentialList)]
+            } else if let objCredentialList = credentialList as? [CredentialDataResponse]{
+                credentials = credentialList.map({
+                    let obj = $0 as! CredentialDataResponse
+                    return Credential(from: obj)
+                })
+            }
         }
         grants = from.grants == nil ? nil : Grants(from: from.grants!)
         error = from.error == nil ? nil : Error(from: from.error!)
@@ -42,6 +50,13 @@ public struct Credential {
         types = from.types
         trustFramework = from.trustFramework == nil ? nil : TrustFramework(from: from.trustFramework!)
         credentialDefinition = from.credentialDefinition == nil ? nil : CredentialDefinition(from: from.credentialDefinition!)
+    }
+    
+    init(fromTypes: [String]) {
+        types = fromTypes
+        format = nil
+        trustFramework = nil
+        credentialDefinition = nil
     }
 }
 

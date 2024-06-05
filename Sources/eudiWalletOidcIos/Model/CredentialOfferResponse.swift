@@ -10,7 +10,7 @@ import Foundation
 // MARK: - CredentialOffer model
 public struct CredentialOfferResponse: Codable {
     var credentialIssuer: String?
-    var credentials: [CredentialDataResponse]?
+    var credentials: [AnyObject]?
     var grants: GrantsResponse?
     var error: ErrorResponse?
     
@@ -18,6 +18,26 @@ public struct CredentialOfferResponse: Codable {
         case credentialIssuer = "credential_issuer"
         case credentials, grants, error
     }
+
+    
+    public func encode(to encoder: Encoder) throws {
+        
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.credentialIssuer = try container.decodeIfPresent(String.self, forKey: .credentialIssuer)
+        if let stringArray = try? container.decode([String].self, forKey: .credentials) {
+            credentials = stringArray as? [AnyObject]
+        } else if let credentialArray = try? container.decode([CredentialDataResponse].self, forKey: .credentials) {
+            credentials = credentialArray as? [AnyObject]
+        } else {
+            credentials = nil
+        }
+        self.grants = try container.decodeIfPresent(GrantsResponse.self, forKey: .grants)
+        self.error = try container.decodeIfPresent(ErrorResponse.self, forKey: .error)
+    }
+
 }
 
 // MARK: - Credential
@@ -33,6 +53,12 @@ struct CredentialDataResponse: Codable {
         case credentialDefinition
     }
 }
+
+
+struct CredentialStringResponse{
+    
+}
+
 
 // MARK: - CredentialDefinition
 struct CredentialDefinitionResponse: Codable {
