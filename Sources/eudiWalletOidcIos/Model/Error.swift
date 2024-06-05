@@ -7,12 +7,22 @@
 
 import Foundation
 
-struct Error: Codable {
+struct ErrorResponse: Codable {
     var message: String?
     var code: Int?
     
     enum CodingKeys: String, CodingKey {
         case message = "message"
         case code = "code"
+    }
+}
+
+public struct Error {
+    var message: String?
+    var code: Int?
+    
+    init(from: ErrorResponse) {
+        message = from.message
+        code = from.code
     }
 }

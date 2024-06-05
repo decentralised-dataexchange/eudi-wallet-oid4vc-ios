@@ -8,77 +8,94 @@
 import Foundation
 
 // MARK: - CredentialOffer model
-public struct CredentialOffer: Codable {
-    var credentialIssuer: String?
-    var credentials: [Credential]?
-    var grants: Grants?
-    var error: Error?
+public struct CredentialOffer {
+    public var credentialIssuer: String?
+    public var credentials: [Credential]?
+    public var grants: Grants?
+    public var error: Error?
     
-    enum CodingKeys: String, CodingKey {
-        case credentialIssuer = "credential_issuer"
-        case credentials, grants, error
+    public init(from: CredentialOfferResponse) {
+        credentialIssuer = from.credentialIssuer
+        
+        if let credentialList = from.credentials, credentialList.count > 0{
+            credentials = credentialList.map({ Credential(from: $0) })
+        }
+        grants = from.grants == nil ? nil : Grants(from: from.grants!)
+        error = from.error == nil ? nil : Error(from: from.error!)
     }
+    
+    public init(fromError: Error) {
+        error = fromError
+    }
+    
 }
 
 // MARK: - Credential
-struct Credential: Codable {
-    let format: String?
-    let types: [String]?
-    let trustFramework: TrustFramework?
-    var credentialDefinition: CredentialDefinition?
+public struct Credential {
+    public let format: String?
+    public let types: [String]?
+    public let trustFramework: TrustFramework?
+    public var credentialDefinition: CredentialDefinition?
     
-    enum CodingKeys: String, CodingKey {
-        case format, types
-        case trustFramework = "trust_framework"
-        case credentialDefinition
+    init(from: CredentialDataResponse) {
+        format = from.format
+        types = from.types
+        trustFramework = from.trustFramework == nil ? nil : TrustFramework(from: from.trustFramework!)
+        credentialDefinition = from.credentialDefinition == nil ? nil : CredentialDefinition(from: from.credentialDefinition!)
     }
 }
 
 // MARK: - CredentialDefinition
-struct CredentialDefinition: Codable {
-    var context: [String]?
-    var types: [String]?
-
-    enum CodingKeys: String, CodingKey {
-        case context
-        case types
+public struct CredentialDefinition {
+    public var context: [String]?
+    public var types: [String]?
+    
+    init(from: CredentialDefinitionResponse) {
+        context = from.context
+        types = from.types
     }
 }
 
 // MARK: - TrustFramework
-struct TrustFramework: Codable {
-    let name, type, uri: String?
+public struct TrustFramework {
+    public let name, type, uri: String?
+    
+    init(from: TrustFrameworkResponse) {
+        name = from.name
+        type = from.type
+        uri = from.uri
+    }
 }
 
 // MARK: - Grants
-struct Grants: Codable {
-    let authorizationCode: AuthorizationCode?
-    let urnIETFParamsOauthGrantTypePreAuthorizedCode: UrnIETFParamsOauthGrantTypePreAuthorizedCode?
-    let authCode: UrnIETFParamsOauthGrantTypePreAuthorizedCode?
-
-    enum CodingKeys: String, CodingKey {
-        case authorizationCode = "authorization_code"
-        case urnIETFParamsOauthGrantTypePreAuthorizedCode
-        case authCode = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+public struct Grants {
+    public let authorizationCode: AuthorizationCode?
+    public let urnIETFParamsOauthGrantTypePreAuthorizedCode: UrnIETFParamsOauthGrantTypePreAuthorizedCode?
+    public let authCode: UrnIETFParamsOauthGrantTypePreAuthorizedCode?
+    
+    init(from: GrantsResponse) {
+        authorizationCode = from.authorizationCode == nil ? nil : AuthorizationCode(from: from.authorizationCode!)
+        urnIETFParamsOauthGrantTypePreAuthorizedCode = from.urnIETFParamsOauthGrantTypePreAuthorizedCode == nil ? nil : UrnIETFParamsOauthGrantTypePreAuthorizedCode(from: from.urnIETFParamsOauthGrantTypePreAuthorizedCode!)
+        authCode = from.authCode == nil ? nil : UrnIETFParamsOauthGrantTypePreAuthorizedCode(from: from.authCode!)
     }
 }
 
 // MARK: - AuthorizationCode
-struct AuthorizationCode: Codable {
-    let issuerState: String?
+public struct AuthorizationCode  {
+    public let issuerState: String?
     
-    enum CodingKeys: String, CodingKey {
-        case issuerState = "issuer_state"
+    init(from: AuthorizationCodeResponse) {
+        issuerState = from.issuerState
     }
 }
 
 // MARK: - UrnIETFParamsOauthGrantTypePreAuthorizedCode
-struct UrnIETFParamsOauthGrantTypePreAuthorizedCode: Codable {
-    let preAuthorizedCode: String?
-    let userPinRequired: Bool?
+public struct UrnIETFParamsOauthGrantTypePreAuthorizedCode {
+    public let preAuthorizedCode: String?
+    public let userPinRequired: Bool?
     
-    enum CodingKeys: String, CodingKey {
-        case preAuthorizedCode = "pre-authorized_code"
-        case userPinRequired = "user_pin_required"
+    init(from: UrnIETFParamsOauthGrantTypePreAuthorizedCodeResponse) {
+        preAuthorizedCode = from.preAuthorizedCode
+        userPinRequired = from.userPinRequired
     }
 }

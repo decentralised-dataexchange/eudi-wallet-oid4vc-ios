@@ -102,7 +102,7 @@ public class VerificationService: VerificationServiceProtocol {
                                 debugPrint("Error:\(error)")
                             }
                         } else {
-                            let error = Error(message:"Invalid DID", code: nil)
+                            let error = Error(from: ErrorResponse(message:"Invalid DID", code: nil))
                             debugPrint(error)
                             return nil
                         }
