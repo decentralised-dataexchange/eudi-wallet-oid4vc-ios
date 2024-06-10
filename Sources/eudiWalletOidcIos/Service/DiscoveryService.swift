@@ -32,14 +32,14 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         let (data, _) = try await URLSession.shared.data(for: request)
         
         do {
-            let model = try jsonDecoder.decode(IssuerWellKnownConfiguration.self, from: data)
-            return model
+            let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponse.self, from: data)
+            return IssuerWellKnownConfiguration(from: model)
         } catch {
             debugPrint("Get Issuer config failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
             let error = Error(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
-            return try IssuerWellKnownConfiguration(from: error as! Decoder)
+            return try IssuerWellKnownConfiguration(from: error)
         }
     }
     
