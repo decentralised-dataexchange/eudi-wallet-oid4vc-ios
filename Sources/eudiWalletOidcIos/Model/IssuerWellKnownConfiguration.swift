@@ -8,191 +8,212 @@
 import Foundation
 
 // MARK: - IssuerWellKnownConfiguration
-struct Display: Codable {
-    let name: String?
-    let location: String?
-    let locale: String?
-    let description: String?
-}
-struct TrustFrameworkInIssuer: Codable {
-    let name: String?
-    let type: String?
-    let uri: String?
-    let display: Display?
-}
-struct CredentialsSupported: Codable {
-    let format: String?
-    let types: [String]?
-    let trustFramework: TrustFrameworkInIssuer?
-    let display: DisplayOrArray?
-}
-
-// MARK: - CredentialsSupportedObject
-struct CredentialsSupportedObjectType: Codable {
-    var credentialsSupported: CredentialSupportedObject?
-
-    enum CodingKeys: String, CodingKey {
-        case credentialsSupported = "credentials_supported"
+public struct Display{
+    public let name: String?
+    public let location: String?
+    public let locale: String?
+    public let description: String?
+    public var cover, logo: DisplayCover?
+    
+    init(from: DisplayResponse) {
+        name = from.name
+        location = from.location
+        locale = from.locale
+        description = from.description
+        cover = from.cover == nil ? nil : DisplayCover(from: from.cover!)
+        logo = from.logo == nil ? nil : DisplayCover(from: from.logo!)
     }
 }
+public struct TrustFrameworkInIssuer {
+    public let name: String?
+    public let type: String?
+    public let uri: String?
+    public let display: Display?
+    
+    init(from: TrustFrameworkInIssuerResponse) {
+        name = from.name
+        type = from.type
+        uri = from.uri
+        display = from.display == nil ? nil : Display(from: from.display!)
+    }
+}
+//struct CredentialsSupported: Codable {
+//    let format: String?
+//    let types: [String]?
+//    let trustFramework: TrustFrameworkInIssuer?
+//    let display: DisplayOrArray?
+//}
+//
+//// MARK: - CredentialsSupportedObject
+//struct CredentialsSupportedObjectType: Codable {
+//    var credentialsSupported: CredentialSupportedObject?
+//
+//    enum CodingKeys: String, CodingKey {
+//        case credentialsSupported = "credentials_supported"
+//    }
+//}
 
 // MARK: - CredentialObj
-struct CredentialSupportedObject : Codable {
-    var portableDocumentA1, parkingTicket, testDraft2, dataSharing: DataSharing?
-    var drivingLicense: DataSharing?
-    var format: Format?
-    var types: [String]?
-    var trustFramework: TrustFramework?
-    var display: [DisplayElement]?
+public struct CredentialSupportedObject {
     
-    enum CodingKeys: String, CodingKey {
-        case portableDocumentA1 = "PortableDocumentA1"
-        case parkingTicket = "Parking ticket"
-        case testDraft2 = "Test draft 2"
-        case dataSharing = "Data Sharing"
-        case drivingLicense = "DrivingLicense"
+    public var dataSharing: [String : DataSharing]?
+    
+    init(from: [String:DataSharingResponse]) {
+        
+        dataSharing = from.mapValues({
+            DataSharing(from: $0)
+        })
+        
+    }
+    
+    init(from: [DataSharingOldFormatResponse]) {
+        var ldataSharing = [String:DataSharing]()
+        if from.count > 0{
+            for item in from{
+                let dataSharingVal = DataSharing(from: item)
+                if let key = dataSharingVal.types?.last{
+                    ldataSharing[key] = dataSharingVal
+                }
+            }
+            
+            if ldataSharing.count > 0{
+                dataSharing = ldataSharing
+            }
+        }
+    }
+
+}
+
+public struct DisplayElement {
+    public var name: String?
+    public var locale: Locale?
+    
+    init(from: DisplayElementResponse) {
+        name = from.name
+        locale = from.locale
     }
 }
 
-struct DisplayElement: Codable {
-    var name: String?
-    var locale: Locale?
+public struct IssuerCredentialDefinition {
+    public var type: [String]?
+    public var vct: String?
+    
+    init(from: IssuerCredentialDefinitionResponse) {
+        type = from.type
+        vct = from.vct
+    }
 }
 
-enum Format: String, Codable {
-    case jwtVc = "jwt_vc"
-}
+//enum Format: String, Codable {
+//    case jwtVc = "jwt_vc"
+//}
 
 // MARK: - DataSharing
-struct DataSharing: Codable {
-    var format, scope: String?
-    var cryptographicBindingMethodsSupported, cryptographicSuitesSupported: [String]?
-    var display: [DataSharingDisplay]?
+public struct DataSharing {
+    public var format, scope: String?
+    public var cryptographicBindingMethodsSupported, cryptographicSuitesSupported: [String]?
+    public var display: [DataSharingDisplay]?
+    public var types: [String]?
+    public var trustFramework: TrustFramework?
+    public var credentialDefinition: IssuerCredentialDefinition?
     
-    enum CodingKeys: String, CodingKey {
-        case format, scope
-        case cryptographicBindingMethodsSupported = "cryptographic_binding_methods_supported"
-        case cryptographicSuitesSupported = "cryptographic_suites_supported"
-        case display
+    init(from: DataSharingResponse) {
+        format = from.format
+        scope = from.scope
+        cryptographicBindingMethodsSupported = from.cryptographicBindingMethodsSupported
+        cryptographicSuitesSupported = from.cryptographicSuitesSupported
+        if let dataSharingDisplayList = from.display, dataSharingDisplayList.count > 0{
+            display = dataSharingDisplayList.map({ DataSharingDisplay(from: $0) })
+        }
+        credentialDefinition = from.credentialDefinition == nil ? nil : IssuerCredentialDefinition(from: from.credentialDefinition!)
+    }
+    
+    init(from: DataSharingOldFormatResponse) {
+        format = from.format
+        types = from.types
+        trustFramework = from.trustFramework == nil ? nil : TrustFramework(from: from.trustFramework!)
+        if let dataSharingDisplayList = from.display, dataSharingDisplayList.count > 0{
+            display = dataSharingDisplayList.map({ DataSharingDisplay(from: $0)})
+        }
     }
 }
 
 // MARK: - DataSharingDisplay
-struct DataSharingDisplay: Codable {
-    var name, locale, backgroundColor, textColor: String?
-
-    enum CodingKeys: String, CodingKey {
-        case name, locale
-        case backgroundColor = "background_color"
-        case textColor = "text_color"
+public struct DataSharingDisplay {
+    public var name, locale, backgroundColor, textColor: String?
+    
+    init(from: DataSharingDisplayResponse) {
+        name = from.name
+        locale = from.locale
+        backgroundColor = from.backgroundColor
+        textColor = from.textColor
     }
+
 }
 
 // MARK: - CredentialsSupportedObjectDisplay
-struct CredentialsSupportedObjectDisplay: Codable {
-    var name, location, locale: String?
-    var cover, logo: Cover?
-    var description: String?
+public struct CredentialsSupportedObjectDisplay {
+    public var name, location, locale: String?
+    public var cover, logo: DisplayCover?
+    public var description: String?
 }
 
 // MARK: - Cover
-struct Cover: Codable {
-    var url: String?
-    var altText: String?
-
-    enum CodingKeys: String, CodingKey {
-        case url
-        case altText = "alt_text"
+public struct DisplayCover{
+    public var url: String?
+    public var altText: String?
+    
+    init(from: DisplayCoverResponse) {
+        url = from.url
+        altText = from.altText
     }
 }
 
 
-public struct IssuerWellKnownConfiguration: Codable {
-    let credentialIssuer: String?
-    let authorizationServer: String?
-    let credentialEndpoint: String?
-    let deferredCredentialEndpoint: String?
-    let display: DisplayOrArray?
-    let credentialsSupported: SingleCredentialsSupportedOrArray?
+public struct IssuerWellKnownConfiguration {
+    public let credentialIssuer: String?
+    public let authorizationServer: String?
+    public let credentialEndpoint: String?
+    public let deferredCredentialEndpoint: String?
+    public let display: [Display]?
+    public let credentialsSupported: CredentialSupportedObject?
+    public let error: Error?
     
-    enum CodingKeys: String, CodingKey {
-        case credentialIssuer = "credential_issuer"
-        case authorizationServer = "authorization_server"
-        case credentialEndpoint =  "credential_endpoint"
-        case deferredCredentialEndpoint = "deferred_credential_endpoint"
-        case display = "display"
-        case credentialsSupported = "credentials_supported"
-    }
-    
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        credentialIssuer = try container.decode(String.self, forKey: .credentialIssuer)
-        authorizationServer = try container.decode(String.self, forKey: .authorizationServer)
-        credentialEndpoint = try container.decode(String.self, forKey: .credentialEndpoint)
-        deferredCredentialEndpoint = try container.decode(String.self, forKey: .deferredCredentialEndpoint)
+    public init(from: IssuerWellKnownConfigurationResponse) {
+        credentialIssuer = from.credentialIssuer
+        authorizationServer = from.authorizationServer
+        credentialEndpoint = from.credentialEndpoint
+        deferredCredentialEndpoint = from.deferredCredentialEndpoint
         
-        if let singleCredentialSupported = try? container.decode(CredentialSupportedObject.self, forKey: .credentialsSupported) {
-            credentialsSupported = .single(singleCredentialSupported)
-        } else if let credentialSupportedArray = try? container.decode([CredentialsSupported].self, forKey: .credentialsSupported) {
-            credentialsSupported = .array(credentialSupportedArray)
-        } else {
-            throw DecodingError.dataCorruptedError(forKey: .credentialsSupported, in: container, debugDescription: "Display value is missing or invalid.")
+        if let displayList = from.display as? [DisplayResponse]
+        {
+            display = displayList.map({ Display(from: $0) })
+        } else{
+            display = nil
         }
         
-        if let singleDisplay = try? container.decode(Display.self, forKey: .display) {
-            display = .single(singleDisplay)
-        } else if let displayArray = try? container.decode([Display].self, forKey: .display) {
-            display = .array(displayArray)
-        } else {
-            throw DecodingError.dataCorruptedError(forKey: .display, in: container, debugDescription: "Display value is missing or invalid.")
+        if let credentialsSupportList = from.credentialsSupported as? [[String:DataSharingResponse]], let firstObj = credentialsSupportList.first{
+            credentialsSupported = CredentialSupportedObject(from: firstObj)
+        } else if let credentialsSupportListOldFormat = from.credentialsSupported as? [DataSharingOldFormatResponse]{
+            credentialsSupported = CredentialSupportedObject(from: credentialsSupportListOldFormat)
+        } else{
+            credentialsSupported = nil
         }
+        
+        error = nil
+  
     }
-}
-enum DisplayOrArray: Codable {
-    case single(Display)
-    case array([Display])
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .single(let display):
-            try container.encode(display)
-        case .array(let displayArray):
-            try container.encode(displayArray)
-        }
+    
+    init(from: Error) {
+        error = from
+        credentialIssuer = nil
+        authorizationServer = nil
+        credentialEndpoint = nil
+        deferredCredentialEndpoint = nil
+        display = nil
+        credentialsSupported = nil
     }
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let display = try? container.decode(Display.self) {
-            self = .single(display)
-        } else if let displayArray = try? container.decode([Display].self) {
-            self = .array(displayArray)
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Display value is missing or invalid.")
-        }
-    }
+    
+    
 }
 
-
-enum SingleCredentialsSupportedOrArray: Codable {
-    case single(CredentialSupportedObject)
-    case array([CredentialsSupported])
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .single(let credentialSupported):
-            try container.encode(credentialSupported)
-        case .array(let credentialSupportedArray):
-            try container.encode(credentialSupportedArray)
-        }
-    }
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let credentialSupported = try? container.decode(CredentialSupportedObject.self) {
-            self = .single(credentialSupported)
-        } else if let credentialSupportedArray = try? container.decode([CredentialsSupported].self) {
-            self = .array(credentialSupportedArray)
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Credential supported value is missing or invalid.")
-        }
-    }
-}
