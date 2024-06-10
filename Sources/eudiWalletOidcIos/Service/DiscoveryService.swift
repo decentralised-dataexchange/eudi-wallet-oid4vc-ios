@@ -38,7 +38,7 @@ public class DiscoveryService: DiscoveryServiceProtocol {
             debugPrint("Get Issuer config failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
+            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return try IssuerWellKnownConfiguration(from: error)
         }
     }
@@ -67,7 +67,7 @@ public class DiscoveryService: DiscoveryServiceProtocol {
             debugPrint("Get Auth config failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
+            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return AuthorisationServerWellKnownConfiguration(error: error)
         }
     }

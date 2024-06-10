@@ -18,7 +18,7 @@ public struct AuthorisationServerWellKnownConfiguration: Codable {
     var requestAuthenticationMethodsSupported: RequestAuthenticationMethodsSupported?
     var vpFormatsSupported: VpFormatsSupported?
     var subjectSyntaxTypesSupported, subjectSyntaxTypesDiscriminations, subjectTrustFrameworksSupported, idTokenTypesSupported: [String]?
-    var error: Error?
+    var error: EUDIError?
     
     enum CodingKeys: String, CodingKey {
         case redirectUris = "redirect_uris"

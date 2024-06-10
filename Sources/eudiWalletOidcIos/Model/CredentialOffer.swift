@@ -12,7 +12,7 @@ public struct CredentialOffer {
     public var credentialIssuer: String?
     public var credentials: [Credential]?
     public var grants: Grants?
-    public var error: Error?
+    public var error: EUDIError?
     
     public init(from: CredentialOfferResponse) {
         credentialIssuer = from.credentialIssuer
@@ -29,10 +29,10 @@ public struct CredentialOffer {
             }
         }
         grants = from.grants == nil ? nil : Grants(from: from.grants!)
-        error = from.error == nil ? nil : Error(from: from.error!)
+        error = from.error == nil ? nil : EUDIError(from: from.error!)
     }
     
-    public init(fromError: Error) {
+    public init(fromError: EUDIError) {
         error = fromError
     }
     

@@ -1,6 +1,6 @@
 //
 //  Error.swift
-//  
+//
 //
 //  Created by Mumthasir mohammed on 19/03/24.
 //
@@ -17,7 +17,7 @@ struct ErrorResponse: Codable {
     }
 }
 
-public struct Error {
+public struct EUDIError {
     var message: String?
     var code: Int?
     

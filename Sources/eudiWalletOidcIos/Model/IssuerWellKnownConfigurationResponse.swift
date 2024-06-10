@@ -14,6 +14,7 @@ struct DisplayResponse: Codable {
     let locale: String?
     let description: String?
     var cover, logo: DisplayCoverResponse?
+    var backgroundColor, textColor: String?
 }
 struct TrustFrameworkInIssuerResponse: Codable {
     let name: String?
@@ -90,7 +91,7 @@ enum FormatResponse: String, Codable {
 struct DataSharingResponse: Codable {
     var format, scope: String?
     var cryptographicBindingMethodsSupported, cryptographicSuitesSupported: [String]?
-    var display: [DataSharingDisplayResponse]?
+    var display: [DisplayResponse]?
     var credentialDefinition: IssuerCredentialDefinitionResponse?
     
     enum CodingKeys: String, CodingKey {
@@ -106,7 +107,7 @@ struct DataSharingOldFormatResponse: Codable {
     var format: String?
     var types: [String]?
     var trustFramework: TrustFrameworkResponse?
-    var display: [DataSharingDisplayResponse]?
+    var display: [DisplayResponse]?
     
     enum CodingKeys: String, CodingKey {
         case format, types
@@ -154,6 +155,7 @@ struct DisplayCoverResponse: Codable {
 public struct IssuerWellKnownConfigurationResponse: Codable {
     let credentialIssuer: String?
     let authorizationServer: String?
+   // let authorizationServers: [String]?
     let credentialEndpoint: String?
     let deferredCredentialEndpoint: String?
     let display: [AnyObject]?
@@ -162,6 +164,7 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
     enum CodingKeys: String, CodingKey {
         case credentialIssuer = "credential_issuer"
         case authorizationServer = "authorization_server"
+       // case authorizationServers = "authorization_servers"
         case credentialEndpoint =  "credential_endpoint"
         case deferredCredentialEndpoint = "deferred_credential_endpoint"
         case display = "display"
@@ -176,6 +179,7 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         credentialIssuer = try container.decode(String.self, forKey: .credentialIssuer)
         authorizationServer = try container.decode(String.self, forKey: .authorizationServer)
+       // authorizationServers = try container.decode([String].self, forKey: .authorizationServers)
         credentialEndpoint = try container.decode(String.self, forKey: .credentialEndpoint)
         deferredCredentialEndpoint = try container.decode(String.self, forKey: .deferredCredentialEndpoint)
         

@@ -14,7 +14,7 @@ public struct CredentialResponse: Codable {
     var issuerConfig: IssuerWellKnownConfiguration?
     var authorizationConfig: AuthorisationServerWellKnownConfiguration?
     var credentialOffer: CredentialOffer?
-    var error: Error?
+    var error: EUDIError?
     
     enum CodingKeys: String, CodingKey {
         case acceptanceToken = "acceptance_token"

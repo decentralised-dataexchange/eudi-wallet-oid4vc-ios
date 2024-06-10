@@ -14,6 +14,7 @@ public struct Display{
     public let locale: String?
     public let description: String?
     public var cover, logo: DisplayCover?
+    public var backgroundColor, textColor: String?
     
     init(from: DisplayResponse) {
         name = from.name
@@ -22,6 +23,8 @@ public struct Display{
         description = from.description
         cover = from.cover == nil ? nil : DisplayCover(from: from.cover!)
         logo = from.logo == nil ? nil : DisplayCover(from: from.logo!)
+        backgroundColor = from.backgroundColor
+        textColor = from.textColor
     }
 }
 public struct TrustFrameworkInIssuer {
@@ -112,7 +115,7 @@ public struct IssuerCredentialDefinition {
 public struct DataSharing {
     public var format, scope: String?
     public var cryptographicBindingMethodsSupported, cryptographicSuitesSupported: [String]?
-    public var display: [DataSharingDisplay]?
+    public var display: [Display]?
     public var types: [String]?
     public var trustFramework: TrustFramework?
     public var credentialDefinition: IssuerCredentialDefinition?
@@ -123,7 +126,7 @@ public struct DataSharing {
         cryptographicBindingMethodsSupported = from.cryptographicBindingMethodsSupported
         cryptographicSuitesSupported = from.cryptographicSuitesSupported
         if let dataSharingDisplayList = from.display, dataSharingDisplayList.count > 0{
-            display = dataSharingDisplayList.map({ DataSharingDisplay(from: $0) })
+            display = dataSharingDisplayList.map({ Display(from: $0) })
         }
         credentialDefinition = from.credentialDefinition == nil ? nil : IssuerCredentialDefinition(from: from.credentialDefinition!)
     }
@@ -133,22 +136,9 @@ public struct DataSharing {
         types = from.types
         trustFramework = from.trustFramework == nil ? nil : TrustFramework(from: from.trustFramework!)
         if let dataSharingDisplayList = from.display, dataSharingDisplayList.count > 0{
-            display = dataSharingDisplayList.map({ DataSharingDisplay(from: $0)})
+            display = dataSharingDisplayList.map({ Display(from: $0)})
         }
     }
-}
-
-// MARK: - DataSharingDisplay
-public struct DataSharingDisplay {
-    public var name, locale, backgroundColor, textColor: String?
-    
-    init(from: DataSharingDisplayResponse) {
-        name = from.name
-        locale = from.locale
-        backgroundColor = from.backgroundColor
-        textColor = from.textColor
-    }
-
 }
 
 // MARK: - CredentialsSupportedObjectDisplay
@@ -177,11 +167,11 @@ public struct IssuerWellKnownConfiguration {
     public let deferredCredentialEndpoint: String?
     public let display: [Display]?
     public let credentialsSupported: CredentialSupportedObject?
-    public let error: Error?
+    public let error: EUDIError?
     
     public init(from: IssuerWellKnownConfigurationResponse) {
         credentialIssuer = from.credentialIssuer
-        authorizationServer = from.authorizationServer
+        authorizationServer = from.authorizationServer ?? ""
         credentialEndpoint = from.credentialEndpoint
         deferredCredentialEndpoint = from.deferredCredentialEndpoint
         
@@ -204,7 +194,7 @@ public struct IssuerWellKnownConfiguration {
   
     }
     
-    init(from: Error) {
+    init(from: EUDIError) {
         error = from
         credentialIssuer = nil
         authorizationServer = nil

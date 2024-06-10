@@ -1,0 +1,41 @@
+{
+  "pins" : [
+    {
+      "identity" : "base58swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/keefertaylor/Base58Swift.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "1a7fe530e5198b81a1b9ddb5629b341116aa8c49"
+      }
+    },
+    {
+      "identity" : "bigint",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/attaswift/BigInt.git",
+      "state" : {
+        "revision" : "0ed110f7555c34ff468e72e1686e59721f2b0da6",
+        "version" : "5.3.0"
+      }
+    },
+    {
+      "identity" : "cryptoswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/krzyzanowskim/CryptoSwift.git",
+      "state" : {
+        "revision" : "c9c3df6ab812de32bae61fc0cd1bf6d45170ebf0",
+        "version" : "1.8.2"
+      }
+    },
+    {
+      "identity" : "presentationexchangesdkios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/decentralised-dataexchange/PresentationExchangeSdkiOS.git",
+      "state" : {
+        "revision" : "7038d35f98505f364d4cc50b65ab81de6a3d336c",
+        "version" : "2024.5.1"
+      }
+    }
+  ],
+  "version" : 2
+}

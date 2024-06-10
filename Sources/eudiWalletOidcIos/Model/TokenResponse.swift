@@ -16,7 +16,7 @@ public struct TokenResponse: Codable {
     var cNonce: String?
     var cNonceExpiresIn: Int?
     var scope: String?
-    var error: Error? // Optional error property
+    var error: EUDIError? // Optional error property
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
