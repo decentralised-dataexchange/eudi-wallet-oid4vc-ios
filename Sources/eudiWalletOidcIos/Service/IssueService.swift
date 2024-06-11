@@ -292,82 +292,120 @@ public class IssueService {
     public func processCredentialRequest(
         did: String,
         privateKey: P256.Signing.PrivateKey,
+        nonce: String,
         credentialOffer: CredentialOffer,
-        credentialEndpointUrlString: String,
-        c_nonce: String,
-        accessToken: String) async -> CredentialResponse? {
+        issuerConfig: IssuerWellKnownConfiguration,
+        accessToken: String,
+        format: String) async -> CredentialResponse? {
         
-        let jsonDecoder = JSONDecoder()
-        let methodSpecificId = did.replacingOccurrences(of: "did:key:", with: "")
+            let jsonDecoder = JSONDecoder()
+            let methodSpecificId = did.replacingOccurrences(of: "did:key:", with: "")
+                
+                
+            // Generate JWT header
+            let header = ([
+                    "typ": "openid4vci-proof+jwt",
+                    "alg": "ES256",
+                    "kid": "\(did)#\(methodSpecificId)"
+            ]).toString() ?? ""
             
+            // Generate JWT payload
+            let currentTime = Int(Date().epochTime) ?? 0
+            let payload = ([
+                    "iss": "\(did)",
+                    "iat": currentTime,
+                    "aud": "\(credentialOffer.credentialIssuer ?? "")",
+                    "exp": currentTime + 86400,
+                    "nonce": "\(nonce)"
+            ] as [String : Any]).toString() ?? ""
             
-        // Generate JWT header
-        let header = ([
-                "typ": "openid4vci-proof+jwt",
-                "alg": "ES256",
-                "kid": "\(did)#\(methodSpecificId)"
-        ]).toString() ?? ""
-        
-        // Generate JWT payload
-        let currentTime = Int(Date().epochTime) ?? 0
-        let payload = ([
-                "iss": "\(did)",
-                "iat": currentTime,
-                "aud": "\(credentialOffer.credentialIssuer ?? "")",
-                "exp": currentTime + 86400,
-                "nonce": "\(c_nonce)"
-        ] as [String : Any]).toString() ?? ""
-        
-        guard let url = URL(string: credentialOffer.credentialIssuer ?? "") else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        
-        // Create JWT token
-        let headerData = Data(header.utf8)
-        let payloadData = Data(payload.utf8)
-        let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-        let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
-        let signature = signatureData.rawRepresentation
-        let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
-        let format = credentialOffer.credentials?[0].format ?? ""
-        
-        // Set up parameters for the request
-        let params = [
-            "types": credentialOffer.credentials?[0].types ?? [],
-            "format": format,
-            "proof": [
-              "proof_type": "jwt",
-              "jwt": idToken
+            guard let url = URL(string: credentialOffer.credentialIssuer ?? "") else { return nil }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            
+            // Create JWT token
+            let headerData = Data(header.utf8)
+            let payloadData = Data(payload.utf8)
+            let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+            let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
+            let signature = signatureData.rawRepresentation
+            let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
+            let format = credentialOffer.credentials?[0].format ?? ""
+            
+            let credentialTypes = credentialOffer.credentials?[0].types ?? []
+            var params: [String: Any] = [
+                "credential_definition": [
+                    "type": credentialTypes
+                ],
+                "format": format,
+                "proof": [
+                    "proof_type": "jwt",
+                    "jwt": idToken
+                ]
             ]
-        ] as [String: Any]
+            if credentialOffer.credentials?[0].trustFramework != nil {
+                params = [
+                    "types": credentialTypes,
+                    "format": format,
+                    "proof": [
+                        "proof_type": "jwt",
+                        "jwt": idToken
+                    ]
+                ]
+            } else {
+                
+                if let data = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "") {
+                    if let dataArray = data as? [String] {
+                        params = [
+                            "credential_definition": [
+                                "type": dataArray
+                            ],
+                            "format": format,
+                            "proof": [
+                                "proof_type": "jwt",
+                                "jwt": idToken
+                            ]
+                        ]
+                    } else if let dataString = data as? String {
+                        params = [
+                            "vct": dataString,
+                            "format": format,
+                            "proof": [
+                                "proof_type": "jwt",
+                                "jwt": idToken
+                            ]
+                        ]
+                    }
+                }
+            }
         
-        // Create URL for the credential endpoint
-        guard let url = URL(string: credentialEndpointUrlString) else { return nil }
-        
-        // Set up the request for the credential endpoint
-        request = URLRequest(url: url)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.httpMethod = "POST"
+            // Create URL for the credential endpoint
+            guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
+            
+            // Set up the request for the credential endpoint
+            request = URLRequest(url: url)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            request.httpMethod = "POST"
 
-        // Convert the parameters to JSON data and set it as the request body
-        let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
-        request.httpBody =  requestBodyData
-        
-        // Perform the request and handle the response
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let model = try jsonDecoder.decode(CredentialResponse.self, from: data)
-            return model
-        } catch {
-            debugPrint("Process credential request failed: \(error)")
-            let nsError = error as NSError
-            let errorCode = nsError.code
-            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
-            return CredentialResponse(error: error)
-        }
+            // Convert the parameters to JSON data and set it as the request body
+            let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
+            request.httpBody =  requestBodyData
+            
+            // Perform the request and handle the response
+            do {
+                let (data, _) = try await URLSession.shared.data(for: request)
+                let model = try jsonDecoder.decode(CredentialResponse.self, from: data)
+                return model
+            } catch {
+                debugPrint("Process credential request failed: \(error)")
+                let nsError = error as NSError
+                let errorCode = nsError.code
+                let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
+                return CredentialResponse(error: error)
+            }
     }
     
     
@@ -475,6 +513,50 @@ public class IssueService {
             let errorCode = nsError.code
             let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return TokenResponse(error: error)
+        }
+    }
+    
+    public func getFormatFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> String? {
+        guard let issuerConfig = issuerConfig else { return nil }
+        
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
+            return credentialSupported.format
+        } else {
+            return nil
+        }
+    }
+    
+    public func getTypesFromCredentialOffer(credentialOffer: CredentialOffer?) -> [String]? {
+        guard let credentialOffer = credentialOffer else { return nil }
+        
+        if let types = credentialOffer.credentials?[0].types {
+            return types
+        } else {
+            return nil
+        }
+    }
+    
+    public func getTypesFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Any? {
+        guard let issuerConfig = issuerConfig else { return nil }
+        
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
+            if credentialSupported.format == "vc+sd-jwt" {
+                return credentialSupported.credentialDefinition?.vct
+            } else {
+                return credentialSupported.credentialDefinition?.type
+            }
+        } else {
+            return nil
+        }
+    }
+    
+    public func getCryptoFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> [String]? {
+        guard let issuerConfig = issuerConfig else { return nil }
+        
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
+            return credentialSupported.cryptographicSuitesSupported
+        } else {
+            return nil
         }
     }
 }
