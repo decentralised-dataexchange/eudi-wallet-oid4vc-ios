@@ -82,16 +82,13 @@ public struct TrustFramework {
     }
 }
 
-// MARK: - Grants
 public struct Grants {
     public let authorizationCode: AuthorizationCode?
     public let urnIETFParamsOauthGrantTypePreAuthorizedCode: UrnIETFParamsOauthGrantTypePreAuthorizedCode?
-    public let authCode: UrnIETFParamsOauthGrantTypePreAuthorizedCode?
     
     init(from: GrantsResponse) {
         authorizationCode = from.authorizationCode == nil ? nil : AuthorizationCode(from: from.authorizationCode!)
         urnIETFParamsOauthGrantTypePreAuthorizedCode = from.urnIETFParamsOauthGrantTypePreAuthorizedCode == nil ? nil : UrnIETFParamsOauthGrantTypePreAuthorizedCode(from: from.urnIETFParamsOauthGrantTypePreAuthorizedCode!)
-        authCode = from.authCode == nil ? nil : UrnIETFParamsOauthGrantTypePreAuthorizedCode(from: from.authCode!)
     }
 }
 

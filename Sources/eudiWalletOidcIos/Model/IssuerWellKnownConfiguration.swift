@@ -171,7 +171,7 @@ public struct IssuerWellKnownConfiguration {
     
     public init(from: IssuerWellKnownConfigurationResponse) {
         credentialIssuer = from.credentialIssuer
-        authorizationServer = from.authorizationServer ?? ""
+        authorizationServer = from.authorizationServer ?? from.authorizationServers?[0] ?? ""
         credentialEndpoint = from.credentialEndpoint
         deferredCredentialEndpoint = from.deferredCredentialEndpoint
         

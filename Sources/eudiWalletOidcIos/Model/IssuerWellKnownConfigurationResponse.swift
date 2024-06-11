@@ -155,7 +155,7 @@ struct DisplayCoverResponse: Codable {
 public struct IssuerWellKnownConfigurationResponse: Codable {
     let credentialIssuer: String?
     let authorizationServer: String?
-   // let authorizationServers: [String]?
+    let authorizationServers: [String]?
     let credentialEndpoint: String?
     let deferredCredentialEndpoint: String?
     let display: [AnyObject]?
@@ -164,7 +164,7 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
     enum CodingKeys: String, CodingKey {
         case credentialIssuer = "credential_issuer"
         case authorizationServer = "authorization_server"
-       // case authorizationServers = "authorization_servers"
+        case authorizationServers = "authorization_servers"
         case credentialEndpoint =  "credential_endpoint"
         case deferredCredentialEndpoint = "deferred_credential_endpoint"
         case display = "display"
@@ -178,8 +178,8 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         credentialIssuer = try container.decode(String.self, forKey: .credentialIssuer)
-        authorizationServer = try container.decode(String.self, forKey: .authorizationServer)
-       // authorizationServers = try container.decode([String].self, forKey: .authorizationServers)
+        authorizationServer = try? container.decode(String.self, forKey: .authorizationServer)
+        authorizationServers = try? container.decode([String].self, forKey: .authorizationServers)
         credentialEndpoint = try container.decode(String.self, forKey: .credentialEndpoint)
         deferredCredentialEndpoint = try container.decode(String.self, forKey: .deferredCredentialEndpoint)
         
@@ -196,7 +196,7 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
         } else if let displayArray = try? container.decode([DisplayResponse].self, forKey: .display) {
             display = displayArray as? [AnyObject]
         } else {
-            throw DecodingError.dataCorruptedError(forKey: .display, in: container, debugDescription: "Display value is missing or invalid.")
+            display = []
         }
     }
 }

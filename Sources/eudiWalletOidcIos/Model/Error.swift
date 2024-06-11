@@ -18,8 +18,8 @@ struct ErrorResponse: Codable {
 }
 
 public struct EUDIError {
-    var message: String?
-    var code: Int?
+    public var message: String?
+    public var code: Int?
     
     init(from: ErrorResponse) {
         message = from.message

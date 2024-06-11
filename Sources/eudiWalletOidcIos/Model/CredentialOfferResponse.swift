@@ -1,6 +1,6 @@
 //
 //  File.swift
-//  
+//
 //
 //  Created by Arun Raj on 05/06/24.
 //
@@ -80,12 +80,10 @@ struct TrustFrameworkResponse: Codable {
 struct GrantsResponse: Codable {
     let authorizationCode: AuthorizationCodeResponse?
     let urnIETFParamsOauthGrantTypePreAuthorizedCode: UrnIETFParamsOauthGrantTypePreAuthorizedCodeResponse?
-    let authCode: UrnIETFParamsOauthGrantTypePreAuthorizedCodeResponse?
 
     enum CodingKeys: String, CodingKey {
         case authorizationCode = "authorization_code"
-        case urnIETFParamsOauthGrantTypePreAuthorizedCode
-        case authCode = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+        case urnIETFParamsOauthGrantTypePreAuthorizedCode = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
     }
 }
 
