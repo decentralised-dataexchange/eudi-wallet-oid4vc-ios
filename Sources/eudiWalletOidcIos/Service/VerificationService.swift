@@ -71,6 +71,7 @@ public class VerificationService: VerificationServiceProtocol {
                     let presentationRequest =  PresentationRequest(state: state,
                                                                    clientId: clientID,
                                                                    redirectUri: redirectUri,
+                                                                   responseUri: responseUri,
                                                                    responseType: responseType,
                                                                    responseMode: responseMode,
                                                                    scope: scope,

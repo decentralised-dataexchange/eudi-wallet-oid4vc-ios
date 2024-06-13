@@ -41,9 +41,9 @@ struct CredentialsSupportedResponse: Codable {
     
    init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-       format = try container.decode(String.self, forKey: .format)
-       types = try container.decode([String].self, forKey: .types)
-       trustFramework = try container.decode(TrustFrameworkInIssuerResponse.self, forKey: .trustFramework)
+       format = try? container.decode(String.self, forKey: .format)
+       types = try? container.decode([String].self, forKey: .types)
+       trustFramework = try? container.decode(TrustFrameworkInIssuerResponse.self, forKey: .trustFramework)
         if let singleDisplay = try? container.decode(DisplayResponse.self, forKey: .display) {
             display = [singleDisplay] as? [AnyObject]
         } else if let displayArray = try? container.decode([DisplayResponse].self, forKey: .display) {
@@ -177,18 +177,18 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
     
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        credentialIssuer = try container.decode(String.self, forKey: .credentialIssuer)
+        credentialIssuer = try? container.decode(String.self, forKey: .credentialIssuer)
         authorizationServer = try? container.decode(String.self, forKey: .authorizationServer)
         authorizationServers = try? container.decode([String].self, forKey: .authorizationServers)
-        credentialEndpoint = try container.decode(String.self, forKey: .credentialEndpoint)
-        deferredCredentialEndpoint = try container.decode(String.self, forKey: .deferredCredentialEndpoint)
+        credentialEndpoint = try? container.decode(String.self, forKey: .credentialEndpoint)
+        deferredCredentialEndpoint = try? container.decode(String.self, forKey: .deferredCredentialEndpoint)
         
         if let singleCredentialSupported = try? container.decode([String:DataSharingResponse].self, forKey: .credentialsSupported) {
             credentialsSupported = [singleCredentialSupported] as? [AnyObject]
         } else if let credentialSupportedArray = try? container.decode([DataSharingOldFormatResponse].self, forKey: .credentialsSupported) {
             credentialsSupported = credentialSupportedArray as? [AnyObject]
         } else {
-            throw DecodingError.dataCorruptedError(forKey: .credentialsSupported, in: container, debugDescription: "Display value is missing or invalid.")
+            credentialsSupported = []
         }
         
         if let singleDisplay = try? container.decode(DisplayResponse.self, forKey: .display) {

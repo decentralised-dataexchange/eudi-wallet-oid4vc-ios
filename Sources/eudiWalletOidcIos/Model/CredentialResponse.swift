@@ -9,12 +9,12 @@ import Foundation
 
 // MARK: - CredentialResponse
 public struct CredentialResponse: Codable {
-    var format, credential, acceptanceToken: String?
-    var isDeferred, isPinRequired: Bool?
-    var issuerConfig: IssuerWellKnownConfiguration?
-    var authorizationConfig: AuthorisationServerWellKnownConfiguration?
-    var credentialOffer: CredentialOffer?
-    var error: EUDIError?
+    public var format, credential, acceptanceToken: String?
+    public var isDeferred, isPinRequired: Bool?
+    public var issuerConfig: IssuerWellKnownConfiguration?
+    public var authorizationConfig: AuthorisationServerWellKnownConfiguration?
+    public var credentialOffer: CredentialOffer?
+    public var error: EUDIError?
     
     enum CodingKeys: String, CodingKey {
         case acceptanceToken = "acceptance_token"
