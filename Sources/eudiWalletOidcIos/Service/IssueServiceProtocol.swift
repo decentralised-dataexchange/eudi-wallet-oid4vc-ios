@@ -54,7 +54,7 @@ protocol IssueServiceProtocol {
 
      - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
      */
-    func processCredentialRequest(did: String, privateKey: P256.Signing.PrivateKey, credentialOffer: CredentialOffer, credentialEndpointUrlString: String, c_nonce: String, accessToken: String) async -> CredentialResponse?
+    func processCredentialRequest(did: String, privateKey: P256.Signing.PrivateKey, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String) async -> CredentialResponse?
     
     // Processes a deferred credential request to obtain the credential response in deffered manner.
 
@@ -64,4 +64,14 @@ protocol IssueServiceProtocol {
         **/
     //    - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
     func processDeferredCredentialRequest(acceptanceToken: String, deferredCredentialEndPoint: String) async -> CredentialResponse?
+    
+    func getFormatFromIssuerConfig(
+            issuerConfig: IssuerWellKnownConfiguration?,
+            type: String?) -> String?
+    
+    func getTypesFromCredentialOffer(credentialOffer: CredentialOffer?) -> [String]?
+
+    func getTypesFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Any?
+    
+    func getCryptoFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> [String]?
 }

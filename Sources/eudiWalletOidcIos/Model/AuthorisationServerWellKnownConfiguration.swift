@@ -9,16 +9,16 @@ import Foundation
 
 // MARK: - AuthorisationServerWellKnownConfiguration
 public struct AuthorisationServerWellKnownConfiguration: Codable {
-    var redirectUris: [String]?
-    var issuer, authorizationEndpoint, tokenEndpoint, jwksURI: String?
-    var scopesSupported, responseTypesSupported, responseModesSupported, grantTypesSupported: [String]?
-    var subjectTypesSupported, idTokenSigningAlgValuesSupported, requestObjectSigningAlgValuesSupported: [String]?
-    var requestParameterSupported, requestURIParameterSupported: Bool?
-    var tokenEndpointAuthMethodsSupported: [String]?
-    var requestAuthenticationMethodsSupported: RequestAuthenticationMethodsSupported?
-    var vpFormatsSupported: VpFormatsSupported?
-    var subjectSyntaxTypesSupported, subjectSyntaxTypesDiscriminations, subjectTrustFrameworksSupported, idTokenTypesSupported: [String]?
-    var error: Error?
+    public var redirectUris: [String]?
+    public var issuer, authorizationEndpoint, tokenEndpoint, jwksURI: String?
+    public var scopesSupported, responseTypesSupported, responseModesSupported, grantTypesSupported: [String]?
+    public var subjectTypesSupported, idTokenSigningAlgValuesSupported, requestObjectSigningAlgValuesSupported: [String]?
+    public var requestParameterSupported, requestURIParameterSupported: Bool?
+    public var tokenEndpointAuthMethodsSupported: [String]?
+    public var requestAuthenticationMethodsSupported: RequestAuthenticationMethodsSupported?
+    public var vpFormatsSupported: VpFormatsSupported?
+    public var subjectSyntaxTypesSupported, subjectSyntaxTypesDiscriminations, subjectTrustFrameworksSupported, idTokenTypesSupported: [String]?
+    public var error: EUDIError?
     
     enum CodingKeys: String, CodingKey {
         case redirectUris = "redirect_uris"
@@ -46,8 +46,8 @@ public struct AuthorisationServerWellKnownConfiguration: Codable {
 }
 
 // MARK: - RequestAuthenticationMethodsSupported
-struct RequestAuthenticationMethodsSupported: Codable {
-    var authorizationEndpoint: [String]?
+public struct RequestAuthenticationMethodsSupported: Codable {
+    public var authorizationEndpoint: [String]?
 
     enum CodingKeys: String, CodingKey {
         case authorizationEndpoint = "authorization_endpoint"
@@ -55,8 +55,8 @@ struct RequestAuthenticationMethodsSupported: Codable {
 }
 
 // MARK: - VpFormatsSupported
-struct VpFormatsSupported: Codable {
-    var jwtVp, jwtVc: JwtV?
+public struct VpFormatsSupported: Codable {
+    public var jwtVp, jwtVc: JwtV?
 
     enum CodingKeys: String, CodingKey {
         case jwtVp = "jwt_vp"
@@ -65,7 +65,7 @@ struct VpFormatsSupported: Codable {
 }
 
 // MARK: - JwtV
-struct JwtV: Codable {
+public struct JwtV: Codable {
     var algValuesSupported: [String]?
 
     enum CodingKeys: String, CodingKey {

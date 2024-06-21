@@ -10,10 +10,14 @@ import CryptoKit
 //import KeychainSwift
 import CryptoSwift
 
-public class IssueService {
+public class IssueService: NSObject {
     
     public static var shared = IssueService()
-    private init() {}
+    var session: URLSession?
+    private override init() {
+        super.init()
+        session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+    }
     
     // MARK: - Retrieves credential issuer asynchronously based on the provided credential_offer / credential_offer_uri.
     ///
@@ -32,12 +36,12 @@ public class IssueService {
             let (data, _) = try await URLSession.shared.data(for: request)
             
             do {
-                let model = try? jsonDecoder.decode(CredentialOffer.self, from: data)
+                let model = try? jsonDecoder.decode(CredentialOfferResponse.self, from: data)
                 if model?.credentialIssuer == nil {
-                    let error = Error(message:"Invalid DID", code: nil)
-                    return CredentialOffer(error: error)
+                    let error = EUDIError(from: ErrorResponse(message:"Invalid DID", code: nil))
+                    return CredentialOffer(fromError: error)
                 }
-                return model
+                return (model == nil ? nil : CredentialOffer(from: model!))
             }
         } else {
             guard let credentialOffer = credentialOfferUrl?.queryParameters?["credential_offer"] else { return nil }
@@ -45,12 +49,12 @@ public class IssueService {
             
             if credentialOffer != "" {
                 do {
-                    let model = try? jsonDecoder.decode(CredentialOffer.self, from: jsonData)
+                    let model = try? jsonDecoder.decode(CredentialOfferResponse.self, from: jsonData)
                     if model?.credentialIssuer == nil {
-                        let error = Error(message:"Invalid DID", code: nil)
-                        return CredentialOffer(error: error)
+                        let error = EUDIError(from: ErrorResponse(message:"Invalid DID", code: nil))
+                        return CredentialOffer(fromError: error)
                     }
-                    return model
+                    return (model == nil ? nil : CredentialOffer(from: model!))
                 }
             } else {
                 return nil
@@ -130,19 +134,31 @@ public class IssueService {
         // Service call to get authorisation response
         var request = URLRequest(url: authorizationURL)
         request.httpMethod = "GET"
-                
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        
         var responseUrl = ""
         do {
             // Try to fetch data from the URL session
-            let (data, _) = try await URLSession.shared.data(for: request)
-            guard let authorization_response = String.init(data: data, encoding: .utf8) else { return nil }
-            responseUrl = authorization_response
+            if session == nil{
+                session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+            }
+            let (data, response) = try await session!.data(for: request)
+            
+            let httpres = response as? HTTPURLResponse
+            if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
+                responseUrl = location
+            } else{
+                guard let authorization_response = String.init(data: data, encoding: .utf8) else { return nil }
+                responseUrl = authorization_response
+            }
+            
         } catch {
             // If an error occurs, attempt to extract the failing URL from the error
             let nsError = error as NSError
             let response = nsError.userInfo["NSErrorFailingURLKey"]
             responseUrl = String(describing: response ?? "")
         }
+        
         
         if responseUrl.contains("code=") {
             let url = URL(string: responseUrl)
@@ -227,10 +243,22 @@ public class IssueService {
             
             do {
                 // Perform the request to the redirect URI
-                let (data, _) = try await URLSession.shared.data(for: request)
-                let authorization_response = String.init(data: data, encoding: .utf8) ?? ""
-                guard let authorisation_url = URL(string: authorization_response) else { return nil }
-                
+                //let (data, _) = try await URLSession.shared.data(for: request)
+                if session == nil{
+                    session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+                }
+                let (data, response) = try await session!.data(for: request)
+                let httpres = response as? HTTPURLResponse
+                if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
+                    responseUrl = location
+                } else{
+                    let authorization_response = String.init(data: data, encoding: .utf8) ?? ""
+                    
+                    responseUrl = authorization_response
+                }
+//                let authorization_response = String.init(data: data, encoding: .utf8) ?? ""
+//                guard let authorisation_url = URL(string: authorization_response) else { return nil }
+                guard let authorisation_url = URL(string: responseUrl) else { return nil }
                 if let components = URLComponents(url: authorisation_url, resolvingAgainstBaseURL: false),
                    let auth_code = components.queryItems?.first(where: { $0.name == "code" })?.value {
                     return auth_code
@@ -292,82 +320,120 @@ public class IssueService {
     public func processCredentialRequest(
         did: String,
         privateKey: P256.Signing.PrivateKey,
+        nonce: String,
         credentialOffer: CredentialOffer,
-        credentialEndpointUrlString: String,
-        c_nonce: String,
-        accessToken: String) async -> CredentialResponse? {
+        issuerConfig: IssuerWellKnownConfiguration,
+        accessToken: String,
+        format: String) async -> CredentialResponse? {
         
-        let jsonDecoder = JSONDecoder()
-        let methodSpecificId = did.replacingOccurrences(of: "did:key:", with: "")
+            let jsonDecoder = JSONDecoder()
+            let methodSpecificId = did.replacingOccurrences(of: "did:key:", with: "")
+                
+                
+            // Generate JWT header
+            let header = ([
+                    "typ": "openid4vci-proof+jwt",
+                    "alg": "ES256",
+                    "kid": "\(did)#\(methodSpecificId)"
+            ]).toString() ?? ""
             
+            // Generate JWT payload
+            let currentTime = Int(Date().epochTime) ?? 0
+            let payload = ([
+                    "iss": "\(did)",
+                    "iat": currentTime,
+                    "aud": "\(credentialOffer.credentialIssuer ?? "")",
+                    "exp": currentTime + 86400,
+                    "nonce": "\(nonce)"
+            ] as [String : Any]).toString() ?? ""
             
-        // Generate JWT header
-        let header = ([
-                "typ": "openid4vci-proof+jwt",
-                "alg": "ES256",
-                "kid": "\(did)#\(methodSpecificId)"
-        ]).toString() ?? ""
-        
-        // Generate JWT payload
-        let currentTime = Int(Date().epochTime) ?? 0
-        let payload = ([
-                "iss": "\(did)",
-                "iat": currentTime,
-                "aud": "\(credentialOffer.credentialIssuer ?? "")",
-                "exp": currentTime + 86400,
-                "nonce": "\(c_nonce)"
-        ] as [String : Any]).toString() ?? ""
-        
-        guard let url = URL(string: credentialOffer.credentialIssuer ?? "") else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        
-        // Create JWT token
-        let headerData = Data(header.utf8)
-        let payloadData = Data(payload.utf8)
-        let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-        let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
-        let signature = signatureData.rawRepresentation
-        let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
-        let format = credentialOffer.credentials?[0].format ?? ""
-        
-        // Set up parameters for the request
-        let params = [
-            "types": credentialOffer.credentials?[0].types ?? [],
-            "format": format,
-            "proof": [
-              "proof_type": "jwt",
-              "jwt": idToken
+            guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            
+            // Create JWT token
+            let headerData = Data(header.utf8)
+            let payloadData = Data(payload.utf8)
+            let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+            let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
+            let signature = signatureData.rawRepresentation
+            let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
+            
+            let credentialTypes = credentialOffer.credentials?[0].types ?? []
+            let formatT = getFormatFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
+            var params: [String: Any] = [
+                "credential_definition": [
+                    "type": credentialTypes
+                ],
+                "format": formatT,
+                "proof": [
+                    "proof_type": "jwt",
+                    "jwt": idToken
+                ]
             ]
-        ] as [String: Any]
+            if credentialOffer.credentials?[0].trustFramework != nil {
+                params = [
+                    "types": credentialTypes,
+                    "format": formatT,
+                    "proof": [
+                        "proof_type": "jwt",
+                        "jwt": idToken
+                    ]
+                ]
+            } else {
+                
+                if let data = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "") {
+                    if let dataArray = data as? [String] {
+                        params = [
+                            "credential_definition": [
+                                "type": dataArray
+                            ],
+                            "format": formatT,
+                            "proof": [
+                                "proof_type": "jwt",
+                                "jwt": idToken
+                            ]
+                        ]
+                    } else if let dataString = data as? String {
+                        params = [
+                            "vct": dataString,
+                            "format": formatT,
+                            "proof": [
+                                "proof_type": "jwt",
+                                "jwt": idToken
+                            ]
+                        ]
+                    }
+                }
+            }
         
-        // Create URL for the credential endpoint
-        guard let url = URL(string: credentialEndpointUrlString) else { return nil }
-        
-        // Set up the request for the credential endpoint
-        request = URLRequest(url: url)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.httpMethod = "POST"
+            // Create URL for the credential endpoint
+            guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
+            
+            // Set up the request for the credential endpoint
+            request = URLRequest(url: url)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            request.httpMethod = "POST"
 
-        // Convert the parameters to JSON data and set it as the request body
-        let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
-        request.httpBody =  requestBodyData
-        
-        // Perform the request and handle the response
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let model = try jsonDecoder.decode(CredentialResponse.self, from: data)
-            return model
-        } catch {
-            debugPrint("Process credential request failed: \(error)")
-            let nsError = error as NSError
-            let errorCode = nsError.code
-            let error = Error(message:error.localizedDescription, code: errorCode)
-            return CredentialResponse(error: error)
-        }
+            // Convert the parameters to JSON data and set it as the request body
+            let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
+            request.httpBody =  requestBodyData
+            
+            // Perform the request and handle the response
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let model = try jsonDecoder.decode(CredentialResponse.self, from: data)
+                return model
+            } catch {
+                debugPrint("Process credential request failed: \(error)")
+                let nsError = error as NSError
+                let errorCode = nsError.code
+                let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
+                return CredentialResponse(error: error)
+            }
     }
     
     
@@ -402,7 +468,7 @@ public class IssueService {
             debugPrint("Process deferred credential request failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(message:error.localizedDescription, code: errorCode)
+            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return CredentialResponse(error: error)
         }
     }
@@ -437,7 +503,7 @@ public class IssueService {
             debugPrint("Get access token for preauth credential failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(message:error.localizedDescription, code: errorCode)
+            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return TokenResponse(error: error)
         }
     }
@@ -473,8 +539,60 @@ public class IssueService {
             debugPrint("Get access token for preauth credential failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(message:error.localizedDescription, code: errorCode)
+            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return TokenResponse(error: error)
         }
     }
+    
+    public func getFormatFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> String? {
+        guard let issuerConfig = issuerConfig else { return nil }
+        
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
+            return credentialSupported.format
+        } else {
+            return "jwt_vc"
+        }
+    }
+    
+    public func getTypesFromCredentialOffer(credentialOffer: CredentialOffer?) -> [String]? {
+        guard let credentialOffer = credentialOffer else { return nil }
+        
+        if let types = credentialOffer.credentials?[0].types {
+            return types
+        } else {
+            return nil
+        }
+    }
+    
+    public func getTypesFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Any? {
+        guard let issuerConfig = issuerConfig else { return nil }
+        
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
+            if credentialSupported.format == "vc+sd-jwt" {
+                return credentialSupported.credentialDefinition?.vct
+            } else {
+                return credentialSupported.credentialDefinition?.type
+            }
+        } else {
+            return nil
+        }
+    }
+    
+    public func getCryptoFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> [String]? {
+        guard let issuerConfig = issuerConfig else { return nil }
+        
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
+            return credentialSupported.cryptographicSuitesSupported
+        } else {
+            return nil
+        }
+    }
 }
+
+
+extension IssueService: URLSessionDelegate, URLSessionTaskDelegate {
+    public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+            // Stops the redirection, and returns (internally) the response body.
+            completionHandler(nil)
+        }
+    }

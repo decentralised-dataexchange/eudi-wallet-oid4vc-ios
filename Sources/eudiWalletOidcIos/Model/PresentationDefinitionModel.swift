@@ -4,73 +4,58 @@
 //
 //  Created by Mumthasir mohammed on 13/03/24.
 //
-
 import Foundation
-
 // MARK: - PresentationDefinitionModel
 public struct PresentationDefinitionModel: Codable {
-    let id: String?
-    let format: [String: JwtVp]?
-    let inputDescriptors: [InputDescriptor]?
-
+    public let id: String?
+    public let format: [String: JwtVp]?
+    public let inputDescriptors: [InputDescriptor]?
     enum CodingKeys: String, CodingKey {
         case id, format
         case inputDescriptors = "input_descriptors"
     }
 }
-
-// MARK: - PresentationDefinitionModelFormat
-struct PresentationDefinitionModelFormat: Codable {
-    let jwtVc, jwtVp: JwtVp?
-
-    enum CodingKeys: String, CodingKey {
-        case jwtVc = "jwt_vc"
-        case jwtVp = "jwt_vp"
-    }
-}
-
 // MARK: - JwtVp
-struct JwtVp: Codable {
-    let alg: [String]?
+public struct JwtVp: Codable {
+    public let alg: [String]?
 }
-
 // MARK: - InputDescriptor
-struct InputDescriptor: Codable {
-    var id: String?
-    let name: String?
-    let purpose: String?
-    let constraints: Constraints?
-    let format: InputDescriptorFormat?
+public struct InputDescriptor: Codable {
+    public var id: String?
+    public let name: String?
+    public let purpose: String?
+    public var constraints: Constraints?
+    public let format: InputDescriptorFormat?
 }
-
 // MARK: - Constraints
-struct Constraints: Codable {
-    let fields: [Field]?
+public struct Constraints: Codable {
+    public let limitDisclosure: String?
+    public var fields: [Field]?
+    enum CodingKeys: String, CodingKey {
+        case fields
+        case limitDisclosure = "limit_disclosure"
+    }
 }
-
 // MARK: - Field
-struct Field: Codable {
-    let path: [String]?
-    let filter: Filter?
+public struct Field: Codable {
+    public var path: [String]?
+    public let filter: Filter?
 }
-
 // MARK: - Filter
-struct Filter: Codable {
-    let type: String?
-    let contains: Contains?
+public struct Filter: Codable {
+    public let type: String?
+    public let contains: Contains?
+    public let pattern: String?
 }
-
 // MARK: - Contains
-struct Contains: Codable {
-    let const: String?
+public struct Contains: Codable {
+    public let const: String?
+    public let pattern: String?
 }
-
 // MARK: - InputDescriptorFormat
-struct InputDescriptorFormat: Codable {
+public struct InputDescriptorFormat: Codable {
     let jwtVc: JwtVp?
-
     enum CodingKeys: String, CodingKey {
         case jwtVc = "jwt_vc"
     }
 }
-

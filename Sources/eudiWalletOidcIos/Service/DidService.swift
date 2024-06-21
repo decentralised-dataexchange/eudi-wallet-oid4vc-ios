@@ -10,7 +10,7 @@ import CryptoKit
 import Base58Swift
 
 public class DidService {
-    static var shared = DidService()
+    public static var shared = DidService()
     private init(){}
     
     // MARK: - Creates a Decentralized Identifier (DID) asynchronously based on the provided JWK (JSON Web Key).

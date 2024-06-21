@@ -10,7 +10,7 @@ import CryptoKit
 
 public class DiscoveryService: DiscoveryServiceProtocol {
     
-    static var shared = DiscoveryService()
+    public static var shared = DiscoveryService()
     private init(){}
     
     // MARK: - Retrieves the issuer configuration asynchronously based on the provided credential issuer well-known URI.
@@ -32,14 +32,14 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         let (data, _) = try await URLSession.shared.data(for: request)
         
         do {
-            let model = try jsonDecoder.decode(IssuerWellKnownConfiguration.self, from: data)
-            return model
+            let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponse.self, from: data)
+            return IssuerWellKnownConfiguration(from: model)
         } catch {
             debugPrint("Get Issuer config failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(message:error.localizedDescription, code: errorCode)
-            return try IssuerWellKnownConfiguration(from: error as! Decoder)
+            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
+            return try IssuerWellKnownConfiguration(from: error)
         }
     }
     
@@ -67,7 +67,7 @@ public class DiscoveryService: DiscoveryServiceProtocol {
             debugPrint("Get Auth config failed: \(error)")
             let nsError = error as NSError
             let errorCode = nsError.code
-            let error = Error(message:error.localizedDescription, code: errorCode)
+            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
             return AuthorisationServerWellKnownConfiguration(error: error)
         }
     }
