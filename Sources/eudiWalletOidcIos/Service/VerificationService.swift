@@ -4,11 +4,9 @@
 //
 //  Created by Mumthasir mohammed on 11/03/24.
 //
-
 import Foundation
 import CryptoKit
 import PresentationExchangeSdkiOS
-
 public class VerificationService: VerificationServiceProtocol {
     
     public static var shared = VerificationService()
@@ -249,7 +247,6 @@ public class VerificationService: VerificationServiceProtocol {
             throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Error processing presentation definition"])
         }
     }
-
     public func filterCredentials(credentialList: [String?], presentationDefinition: PresentationDefinitionModel) -> [[String]] {
         var response: [[String]] = []
         
@@ -293,22 +290,21 @@ public class VerificationService: VerificationServiceProtocol {
         
         if let inputDescriptors = presentationDefinition.inputDescriptors {
             for inputDescriptor in inputDescriptors {
+        let updatedDescriptor = updatePath(in: inputDescriptor)
                 var filteredCredentialList: [String] = []
                 
                 let jsonEncoder = JSONEncoder()
                 jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
-                guard let jsonData = try? jsonEncoder.encode(inputDescriptor),
+                guard let jsonData = try? jsonEncoder.encode(updatedDescriptor),
                       let dictionary = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
                     fatalError("Failed to convert Person to dictionary")
                 }
-
                 // Convert the dictionary to a string
                 guard let inputDescriptorString = String(data: try! JSONSerialization.data(withJSONObject: dictionary, options: .withoutEscapingSlashes), encoding: .utf8) else {
                     fatalError("Failed to convert dictionary to string")
                 }
                 
                 let matchesString = matchCredentials(inputDescriptorJson: inputDescriptorString, credentials: processedCredentials)
-
                 // Assuming `matchesString` contains a JSON array of matches
                 if let matchesData = matchesString.data(using: .utf8),
                    let matchesArray = try? JSONSerialization.jsonObject(with: matchesData) as? [String: Any],
@@ -327,4 +323,28 @@ public class VerificationService: VerificationServiceProtocol {
         
         return response
     }
+func updatePath(in descriptor: InputDescriptor) -> InputDescriptor {
+    var updatedDescriptor = descriptor
+    guard var constraints = updatedDescriptor.constraints else { return updatedDescriptor }
+    guard var fields = constraints.fields else { return updatedDescriptor }
+    
+    for j in 0..<fields.count {
+        guard var pathList = fields[j].path else { continue }
+        
+        for k in 0..<pathList.count {
+            let path = pathList[k]
+            if path.contains("$.vc.") {
+                let newPath = path.replacingOccurrences(of: "$.vc.", with: "$.")
+                if !pathList.contains(newPath) {
+                    pathList.append(newPath)
+                }
+            }
+        }
+        fields[j].path = pathList
+    }
+    constraints.fields = fields
+    updatedDescriptor.constraints = constraints
+    
+    return updatedDescriptor
+}
 }

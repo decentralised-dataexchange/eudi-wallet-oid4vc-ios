@@ -9,14 +9,14 @@ import Foundation
 
 // MARK: - TokenResponse (getAccessToken() Api call response model))
 public struct TokenResponse: Codable {
-    var accessToken: String?
-    var tokenType: String?
-    var expiresIn: Int?
-    var idToken: String?
-    var cNonce: String?
-    var cNonceExpiresIn: Int?
-    var scope: String?
-    var error: EUDIError? // Optional error property
+    public var accessToken: String?
+    public var tokenType: String?
+    public var expiresIn: Int?
+    public var idToken: String?
+    public var cNonce: String?
+    public var cNonceExpiresIn: Int?
+    public var scope: String?
+    public var error: EUDIError? // Optional error property
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
