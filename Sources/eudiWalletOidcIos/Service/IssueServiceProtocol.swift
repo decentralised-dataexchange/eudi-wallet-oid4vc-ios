@@ -24,7 +24,7 @@ protocol IssueServiceProtocol {
     ///   - authServer: The authorization server configuration.
     ///   - codeVerifier - to build the authorisation request
     /// - Returns: code if successful; otherwise, nil.
-    func processAuthorisationRequest(did: String, privateKey: P256.Signing.PrivateKey, credentialOffer: CredentialOffer, codeVerifier: String, authServer: AuthorisationServerWellKnownConfiguration) async -> String?
+    func processAuthorisationRequest(did: String, secureKey: SecureKeyData, credentialOffer: CredentialOffer, codeVerifier: String, authServer: AuthorisationServerWellKnownConfiguration) async -> String?
     
     // Processes the token request to obtain the access token.
     /** - Parameters
@@ -40,7 +40,7 @@ protocol IssueServiceProtocol {
      
      - Returns: A `TokenResponse` object if the request is successful, otherwise `nil`.
      */
-    func processTokenRequest(authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration, code: String, did: String, privateKey: P256.Signing.PrivateKey, codeVerifier: String, isPreAuthorisedCodeFlow: Bool, preAuthCode: String, userPin: String?) async -> TokenResponse?
+    func processTokenRequest(authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration, code: String, did: String, codeVerifier: String, isPreAuthorisedCodeFlow: Bool, preAuthCode: String, userPin: String?) async -> TokenResponse?
     
     
     // Processes a credential request to the specified credential endpoint.
@@ -54,7 +54,7 @@ protocol IssueServiceProtocol {
 
      - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
      */
-    func processCredentialRequest(did: String, privateKey: P256.Signing.PrivateKey, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String) async -> CredentialResponse?
+    func processCredentialRequest(did: String, secureKey: SecureKeyData, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String) async -> CredentialResponse?
     
     // Processes a deferred credential request to obtain the credential response in deffered manner.
 
@@ -74,4 +74,5 @@ protocol IssueServiceProtocol {
     func getTypesFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Any?
     
     func getCryptoFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> [String]?
+    
 }

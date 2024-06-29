@@ -9,17 +9,20 @@ import CryptoKit
 import PresentationExchangeSdkiOS
 public class VerificationService: VerificationServiceProtocol {
     
-    public static var shared = VerificationService()
-    private init() {}
+    var keyHandler: SecureKeyProtocol
+    
+    public required init(keyhandler: SecureKeyProtocol) {
+        keyHandler = keyhandler
+    }
     
     // MARK: - Sends a Verifiable Presentation (VP) token asynchronously.
     public func sendVPToken(
         did: String,
-        privateKey: P256.Signing.PrivateKey,
+        secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
         credentialsList: [String]?) async -> Data? {
         
-        let jwk = generateJWKFromPrivateKey(privateKey: privateKey, did: did)
+        let jwk = generateJWKFromPrivateKey(secureKey: secureKey, did: did)
         
         // Generate JWT header
         let header = generateJWTHeader(jwk: jwk, did: did)
@@ -28,7 +31,7 @@ public class VerificationService: VerificationServiceProtocol {
         let payload = generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "")
         debugPrint("payload:\(payload)")
         
-        let vpToken =  generateVPToken(header: header, payload: payload, privateKey: privateKey)
+            let vpToken =  generateVPToken(header: header, payload: payload, secureKey: secureKey)
         
         // Presentation Submission model
         guard let presentationSubmission = preparePresentationSubmission() else { return nil }
@@ -36,8 +39,8 @@ public class VerificationService: VerificationServiceProtocol {
         return await sendVPRequest(vpToken: vpToken, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "")
     }
     
-    private func generateJWKFromPrivateKey(privateKey: P256.Signing.PrivateKey, did: String) -> [String: Any] {
-        let rawRepresentation = privateKey.publicKey.rawRepresentation
+    private func generateJWKFromPrivateKey(secureKey: SecureKeyData, did: String) -> [String: Any] {
+        let rawRepresentation = secureKey.publicKey
         let x = rawRepresentation[rawRepresentation.startIndex..<rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)]
         let y = rawRepresentation[rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)..<rawRepresentation.endIndex]
         return [
@@ -155,13 +158,14 @@ public class VerificationService: VerificationServiceProtocol {
         ] as [String : Any]).toString() ?? ""
     }
     
-    private func generateVPToken(header: String, payload: String, privateKey: P256.Signing.PrivateKey) -> String {
+    private func generateVPToken(header: String, payload: String, secureKey: SecureKeyData) -> String {
         let headerData = Data(header.utf8)
         let payloadData = Data(payload.utf8)
         let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-        let signatureData = try? privateKey.signature(for: unsignedToken.data(using: .utf8)!)
-        let signature = signatureData?.rawRepresentation
-        return "\(unsignedToken).\(signature?.base64URLEncodedString() ?? "")"
+        //let signatureData = try? privateKey.signature(for: unsignedToken.data(using: .utf8)!)
+        //let signature = signatureData?.rawRepresentation
+        guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return ""}
+        return "\(unsignedToken).\(signature.base64URLEncodedString() ?? "")"
     }
     
     private func preparePresentationSubmission() -> PresentationSubmissionModel? {
@@ -223,7 +227,7 @@ public class VerificationService: VerificationServiceProtocol {
     }
     
     
-   public func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel {
+   public static func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel {
        do {
            guard let presentationDefinition = presentationDefinition else {
                throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid presentation definition"])

@@ -50,7 +50,7 @@ public class SDJWTService {
             
             let processedCredentialWithRequiredDisclosures = try processDisclosuresWithPresentationDefinition(
                 credential: credential,
-                presentationDefinition: VerificationService.shared.processPresentationDefinition(presentationRequest.presentationDefinition)
+                presentationDefinition: VerificationService.processPresentationDefinition(presentationRequest.presentationDefinition)
             )
             
 //            let iat = Date()

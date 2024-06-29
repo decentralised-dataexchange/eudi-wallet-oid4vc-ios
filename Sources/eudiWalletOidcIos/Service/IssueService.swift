@@ -10,13 +10,15 @@ import CryptoKit
 //import KeychainSwift
 import CryptoSwift
 
-public class IssueService: NSObject {
-    
-    public static var shared = IssueService()
+public class IssueService: NSObject, IssueServiceProtocol {
+
     var session: URLSession?
-    private override init() {
+    var keyHandler: SecureKeyProtocol!
+    
+    public init(keyHandler: SecureKeyProtocol) {
         super.init()
         session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        self.keyHandler = keyHandler
     }
     
     // MARK: - Retrieves credential issuer asynchronously based on the provided credential_offer / credential_offer_uri.
@@ -24,7 +26,7 @@ public class IssueService: NSObject {
     /// - Parameters:
     ///   - credentialOffer: The string representation of the credential offer.
     /// - Returns: A `CredentialOffer` object if the resolution is successful; otherwise, `nil`.
-    public func resolveCredentialOffer(credentialOfferString: String) async throws -> CredentialOffer? {
+    public func resolveCredentialOffer(credentialOffer credentialOfferString: String) async throws -> CredentialOffer? {
         let credentialOfferUrl = URL(string: credentialOfferString)
         guard let credentialOfferUri = credentialOfferUrl?.queryParameters?["credential_offer_uri"] else { return nil }
         let jsonDecoder = JSONDecoder()
@@ -70,7 +72,7 @@ public class IssueService: NSObject {
     ///   - codeVerifier - to build the authorisation request
     /// - Returns: code if successful; otherwise, nil.
     public func processAuthorisationRequest(did: String,
-                                            privateKey: P256.Signing.PrivateKey,
+                                            secureKey: SecureKeyData,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,
                                             authServer: AuthorisationServerWellKnownConfiguration) async -> String? {
@@ -173,7 +175,7 @@ public class IssueService: NSObject {
             
             let code =  await processAuthorisationRequestUsingIdToken(
                 did: did,
-                privateKey: privateKey,
+                secureKey: secureKey,
                 authServerWellKnownConfig: authServer,
                 redirectURI: redirectUri ?? "",
                 nonce: nonce ?? "",
@@ -185,7 +187,7 @@ public class IssueService: NSObject {
     
     private func processAuthorisationRequestUsingIdToken(
         did: String,
-        privateKey: P256.Signing.PrivateKey,
+        secureKey: SecureKeyData,
         authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration,
         redirectURI: String,
         nonce: String,
@@ -217,8 +219,9 @@ public class IssueService: NSObject {
             let headerData = Data(header.utf8)
             let payloadData = Data(payload.utf8)
             let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-            let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
-            let signature = signatureData.rawRepresentation
+            //let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
+            //let signature = signatureData.rawRepresentation
+            guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
             let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
             
             guard let urlComponents = URLComponents(string: redirectURI) else { return nil }
@@ -288,7 +291,6 @@ public class IssueService: NSObject {
     public func processTokenRequest(authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration,
                                     code: String,
                                     did: String,
-                                    privateKey: P256.Signing.PrivateKey,
                                     codeVerifier: String,
                                     isPreAuthorisedCodeFlow: Bool = false,
                                     preAuthCode: String,
@@ -297,7 +299,7 @@ public class IssueService: NSObject {
         let codeVal = code.removingPercentEncoding ?? ""
         // Service call for access token and details
         if userPin == nil || userPin == "" {
-            let tokenResponse = await getAccessToken(didKeyIdentifier: did, codeVerifier: codeVerifier, authCode: codeVal, privateKey: privateKey, tokenEndpoint: authServerWellKnownConfig.tokenEndpoint ?? "")
+            let tokenResponse = await getAccessToken(didKeyIdentifier: did, codeVerifier: codeVerifier, authCode: codeVal, tokenEndpoint: authServerWellKnownConfig.tokenEndpoint ?? "")
             return tokenResponse
         } else {
             // Service call for access token and details
@@ -319,7 +321,7 @@ public class IssueService: NSObject {
      */
     public func processCredentialRequest(
         did: String,
-        privateKey: P256.Signing.PrivateKey,
+        secureKey: SecureKeyData,
         nonce: String,
         credentialOffer: CredentialOffer,
         issuerConfig: IssuerWellKnownConfiguration,
@@ -357,8 +359,9 @@ public class IssueService: NSObject {
             let headerData = Data(header.utf8)
             let payloadData = Data(payload.utf8)
             let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-            let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
-            let signature = signatureData.rawRepresentation
+            //let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
+            //let signature = signatureData.rawRepresentation
+            guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
             let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
             
             let credentialTypes = credentialOffer.credentials?[0].types ?? []
@@ -513,7 +516,6 @@ public class IssueService: NSObject {
         didKeyIdentifier: String,
         codeVerifier: String,
         authCode: String,
-        privateKey: P256.Signing.PrivateKey,
         tokenEndpoint: String) async -> TokenResponse? {
             
         let jsonDecoder = JSONDecoder()

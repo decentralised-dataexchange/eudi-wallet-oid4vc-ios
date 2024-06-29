@@ -20,7 +20,7 @@ protocol VerificationServiceProtocol {
      */
     func sendVPToken(
         did: String,
-        privateKey: P256.Signing.PrivateKey,
+        secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
         credentialsList: [String]?
     ) async -> Data?
@@ -38,7 +38,7 @@ protocol VerificationServiceProtocol {
      - Throws: An error if the presentation definition data is invalid or cannot be processed.
      - Returns: The PresentationDefinitionModel object representing the presentation definition.
      */
-    func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel
+    static func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel
 
     /**
      Filters the provided list of credentials based on the given presentation definition.
