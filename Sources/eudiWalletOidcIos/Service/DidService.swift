@@ -52,15 +52,9 @@ public class DidService {
     }
     
     // MARK: - Exposed method to create a JSON Web Key (JWK) asynchronously.
-    ///
+    /// - Parameter keyHandler: A handler to encryption key generation class
     /// - Returns: A dictionary representing the JWK, or nil if an error occurs.
     public func createJWK(keyHandler: SecureKeyProtocol) async -> ([String: Any], SecureKeyData)?{
-//        let privateKey =  P256.Signing.PrivateKey()
-//        // Step 1: Create P-256 public and private key pair
-//        let publicKey = privateKey.publicKey
-        
-        // Step 2: Export public key JWK
-        //let rawRepresentation = publicKey.rawRepresentation
         
         if let keys = keyHandler.generateSecureKey(){
             let rawRepresentation = keys.publicKey

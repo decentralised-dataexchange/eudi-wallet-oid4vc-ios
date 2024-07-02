@@ -88,6 +88,7 @@ final class SecureEnclaveHelper {
         var signatureBytes = [UInt8](repeating: 0, count: blockSize)
         var signatureLength = blockSize
         
+        
         let status = SecKeyRawSign(privateKey.underlying, .PKCS1, digestBytes, digestBytes.count, &signatureBytes, &signatureLength)
         guard status == errSecSuccess else {
             if status == errSecParam {

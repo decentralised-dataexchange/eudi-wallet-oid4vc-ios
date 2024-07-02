@@ -34,12 +34,16 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
     
     public func generateSecureKey() -> SecureKeyData?{
         if createSecureEnclaveHandlerFor(){
-            if getSecureKeys() == nil{
+            if let anyExistingKey = getSecureKeys(){
+                return SecureKeyData(publicKey: anyExistingKey.public.data, privateKey: nil)
+            } else{
                 do{
-                    if let accessControl = try secureEnclaveHandler?.accessControl(){
-                        let keys = try secureEnclaveHandler?.generateKeyPair(accessControl: accessControl)
-                        if let retrievedKeys = getSecureKeys(){
-                            return SecureKeyData(publicKey: retrievedKeys.public.data, privateKey: nil)
+                    if let accessControl = try? secureEnclaveHandler?.accessControl(){
+                        if let keys = try? secureEnclaveHandler?.generateKeyPair(accessControl: accessControl){
+                            try? secureEnclaveHandler?.forceSavePublicKey(keys.public)
+                            if let retrievedKeys = getSecureKeys(){
+                                return SecureKeyData(publicKey: retrievedKeys.public.data, privateKey: nil)
+                            }
                         }
                     }
 
@@ -49,14 +53,15 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
                     return nil
                 }
             }
+            
         }
         return nil
     }
     
     private func getSecureKeys() -> (public: SecureEnclaveKeyData, private: SecureEnclaveKeyReference)?{
         do{
-            if let privateKey = try secureEnclaveHandler?.getPrivateKey(){
-                if let publicKey = try secureEnclaveHandler?.getPublicKey(){
+            if let privateKey = try? secureEnclaveHandler?.getPrivateKey(){
+                if let publicKey = try? secureEnclaveHandler?.getPublicKey(){
                     return (publicKey, privateKey)
                 }
             }
@@ -71,8 +76,8 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
     public func sign(data: Data, withKey privateKey: Data?) -> Data?{
         if createSecureEnclaveHandlerFor(){
             do{
-                if let privateKey = try secureEnclaveHandler?.getPrivateKey(){
-                    let signedData = try secureEnclaveHandler?.sign(data, privateKey: privateKey)
+                if let privateKey = try? secureEnclaveHandler?.getPrivateKey(){
+                    let signedData = try? secureEnclaveHandler?.sign(data, privateKey: privateKey)
                     return signedData
                 }
             }

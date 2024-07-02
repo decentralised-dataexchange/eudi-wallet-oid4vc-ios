@@ -13,6 +13,7 @@ protocol VerificationServiceProtocol {
      Sends a verifiable presentation token (VP token) asynchronously.
      - Parameters:
        - did: The decentralized identifier (DID) of the entity issuing the token.
+       - secureKey: A wrapper object containing the public and private encryption keys
        - privateKey: The private key used for signing the token.
        - presentationRequest: The presentation request containing the details of the requested presentation, or nil if not applicable.
        - credentialsList: The list of credentials to be included in the token, or nil if not applicable.

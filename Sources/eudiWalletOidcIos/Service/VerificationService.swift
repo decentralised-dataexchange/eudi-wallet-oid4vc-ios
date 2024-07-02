@@ -11,6 +11,11 @@ public class VerificationService: VerificationServiceProtocol {
     
     var keyHandler: SecureKeyProtocol
     
+    // MARK: - A custom initialiser with dependency injection for encryption key generation handler
+    ///
+    /// - Parameters:
+    ///   - keyhandler: A handler to encryption key generation class
+    /// - Returns: An `VerificationService` object
     public required init(keyhandler: SecureKeyProtocol) {
         keyHandler = keyhandler
     }

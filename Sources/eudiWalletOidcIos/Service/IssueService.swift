@@ -15,6 +15,12 @@ public class IssueService: NSObject, IssueServiceProtocol {
     var session: URLSession?
     var keyHandler: SecureKeyProtocol!
     
+    // MARK: - A custom initialiser with dependency injection for encryption key generation handler
+    ///
+    /// - Parameters:
+    ///   - keyhandler: A handler to encryption key generation class
+    /// - Returns: An `IssueService` object
+    
     public init(keyHandler: SecureKeyProtocol) {
         super.init()
         session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
@@ -67,9 +73,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
     // MARK: - To process the authorisation request, The authorisation request is to grant access to the credential endpoint.
     /// - Parameters:
     ///   - did - DID created for the issuance
+    ///   - secureKey: A wrapper object containing the public and private encryption keys
     ///   - credentialOffer: The credential offer containing the necessary details for authorization.
-    ///   - authServer: The authorization server configuration.
     ///   - codeVerifier - to build the authorisation request
+    ///   - authServer: The authorization server configuration.
     /// - Returns: code if successful; otherwise, nil.
     public func processAuthorisationRequest(did: String,
                                             secureKey: SecureKeyData,
@@ -219,8 +226,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let headerData = Data(header.utf8)
             let payloadData = Data(payload.utf8)
             let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-            //let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
-            //let signature = signatureData.rawRepresentation
+            
             guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
             let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
             
@@ -312,6 +318,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
     
     /** - Parameters
         - did: The identifier for the DID key.
+        - secureKey: A wrapper object containing the public and private encryption keys
         - credentialOffer: The credential offer object containing offer details.
         - credentialEndpointUrlString: The URL string of the credential endpoint.
         - c_nonce: The nonce value for the credential request.
@@ -359,8 +366,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let headerData = Data(header.utf8)
             let payloadData = Data(payload.utf8)
             let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-            //let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
-            //let signature = signatureData.rawRepresentation
+            // sign the data to be encrypted and exchanged
             guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
             let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
             

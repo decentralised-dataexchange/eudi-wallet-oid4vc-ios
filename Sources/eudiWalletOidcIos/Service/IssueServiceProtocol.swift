@@ -20,6 +20,7 @@ protocol IssueServiceProtocol {
     // To process the authorisation request, The authorisation request is to grant access to the credential endpoint.
     /// - Parameters:
     ///   - did - DID created for the issuance
+    ///   - secureKey: A wrapper object containing the public and private encryption keys
     ///   - credentialOffer: The credential offer containing the necessary details for authorization.
     ///   - authServer: The authorization server configuration.
     ///   - codeVerifier - to build the authorisation request
@@ -32,7 +33,6 @@ protocol IssueServiceProtocol {
         - code:  If the credential offer is pre authorised, then use the pre authorised code from the credential offer
           else use the code from the previous function - processAuthorisationRequest
         - did: The identifier for the DID key.
-        - privateKey:
         - codeverifier:
         - isPreAuthorisedCodeFlow: A boolean indicating if it's a pre-authorized code flow.
         - preAuthCode: The pre-authorization code for the token request.
@@ -47,6 +47,7 @@ protocol IssueServiceProtocol {
     
     /** - Parameters
         - did: The identifier for the DID key.
+        - secureKey: A wrapper object containing the public and private encryption keys
         - credentialOffer: The credential offer object containing offer details.
         - credentialEndpointUrlString: The URL string of the credential endpoint.
         - c_nonce: The nonce value for the credential request.
