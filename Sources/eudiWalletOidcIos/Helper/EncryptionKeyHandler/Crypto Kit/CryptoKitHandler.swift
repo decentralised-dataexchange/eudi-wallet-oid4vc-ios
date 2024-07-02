@@ -29,7 +29,4 @@ public class CryptoKitHandler:NSObject, SecureKeyProtocol{
         return nil
     }
     
-    public func isPrivateKeyStoredInternally() -> Bool {
-        return false
-    }
 }
