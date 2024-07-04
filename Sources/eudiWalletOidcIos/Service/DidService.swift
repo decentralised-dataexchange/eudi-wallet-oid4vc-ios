@@ -52,23 +52,22 @@ public class DidService {
     }
     
     // MARK: - Exposed method to create a JSON Web Key (JWK) asynchronously.
-    ///
+    /// - Parameter keyHandler: A handler to encryption key generation class
     /// - Returns: A dictionary representing the JWK, or nil if an error occurs.
-    public func createJWK() async -> ([String: Any], P256.Signing.PrivateKey)?{
-        let privateKey =  P256.Signing.PrivateKey()
-        // Step 1: Create P-256 public and private key pair
-        let publicKey = privateKey.publicKey
+    public func createJWK(keyHandler: SecureKeyProtocol) async -> ([String: Any], SecureKeyData)?{
         
-        // Step 2: Export public key JWK
-        let rawRepresentation = publicKey.rawRepresentation
-        let x = rawRepresentation[rawRepresentation.startIndex..<rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)]
-        let y = rawRepresentation[rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)..<rawRepresentation.endIndex]
-        let jwk: [String: Any] = [
-            "crv": "P-256",
-            "kty": "EC",
-            "x": x.urlSafeBase64EncodedString(),
-            "y": y.urlSafeBase64EncodedString()
-        ]
-        return (jwk, privateKey)
+        if let keys = keyHandler.generateSecureKey(){
+            let rawRepresentation = keys.publicKey
+            let x = rawRepresentation[rawRepresentation.startIndex..<rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)]
+            let y = rawRepresentation[rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)..<rawRepresentation.endIndex]
+            let jwk: [String: Any] = [
+                "crv": "P-256",
+                "kty": "EC",
+                "x": x.urlSafeBase64EncodedString(),
+                "y": y.urlSafeBase64EncodedString()
+            ]
+            return (jwk, SecureKeyData(publicKey: keys.publicKey, privateKey: keys.privateKey))
+        }
+        return nil
     }
 }

@@ -13,6 +13,7 @@ protocol VerificationServiceProtocol {
      Sends a verifiable presentation token (VP token) asynchronously.
      - Parameters:
        - did: The decentralized identifier (DID) of the entity issuing the token.
+       - secureKey: A wrapper object containing the public and private encryption keys
        - privateKey: The private key used for signing the token.
        - presentationRequest: The presentation request containing the details of the requested presentation, or nil if not applicable.
        - credentialsList: The list of credentials to be included in the token, or nil if not applicable.
@@ -20,7 +21,7 @@ protocol VerificationServiceProtocol {
      */
     func sendVPToken(
         did: String,
-        privateKey: P256.Signing.PrivateKey,
+        secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
         credentialsList: [String]?
     ) async -> Data?
@@ -38,7 +39,7 @@ protocol VerificationServiceProtocol {
      - Throws: An error if the presentation definition data is invalid or cannot be processed.
      - Returns: The PresentationDefinitionModel object representing the presentation definition.
      */
-    func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel
+    static func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel
 
     /**
      Filters the provided list of credentials based on the given presentation definition.

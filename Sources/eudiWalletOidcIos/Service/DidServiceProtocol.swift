@@ -17,5 +17,5 @@ protocol DidServiceProtocol {
     // Exposed method to create a JSON Web Key (JWK) asynchronously.
     ///
     /// - Returns: A dictionary representing the JWK, or nil if an error occurs.
-    func createJWK() async -> [String: Any]?
+    func createJWK(keyHandler: SecureKeyProtocol) async -> ([String: Any], SecureKeyData)?
 }
