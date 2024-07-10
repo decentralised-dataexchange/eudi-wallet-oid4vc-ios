@@ -7,19 +7,27 @@
 import Foundation
 import CryptoKit
 import PresentationExchangeSdkiOS
-public class VerificationService: VerificationServiceProtocol {
+public class VerificationService: NSObject, VerificationServiceProtocol {
     
-    public static var shared = VerificationService()
-    private init() {}
+    var keyHandler: SecureKeyProtocol
+    
+    // MARK: - A custom initialiser with dependency injection for encryption key generation handler
+    ///
+    /// - Parameters:
+    ///   - keyhandler: A handler to encryption key generation class
+    /// - Returns: An `VerificationService` object
+    public required init(keyhandler: SecureKeyProtocol) {
+        keyHandler = keyhandler
+    }
     
     // MARK: - Sends a Verifiable Presentation (VP) token asynchronously.
     public func sendVPToken(
         did: String,
-        privateKey: P256.Signing.PrivateKey,
+        secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
-        credentialsList: [String]?) async -> Data? {
+        credentialsList: [String]?) async -> WrappedVerificationResponse? {
         
-        let jwk = generateJWKFromPrivateKey(privateKey: privateKey, did: did)
+        let jwk = generateJWKFromPrivateKey(secureKey: secureKey, did: did)
         
         // Generate JWT header
         let header = generateJWTHeader(jwk: jwk, did: did)
@@ -28,16 +36,16 @@ public class VerificationService: VerificationServiceProtocol {
         let payload = generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "")
         debugPrint("payload:\(payload)")
         
-        let vpToken =  generateVPToken(header: header, payload: payload, privateKey: privateKey)
+            let vpToken =  generateVPToken(header: header, payload: payload, secureKey: secureKey)
         
         // Presentation Submission model
-        guard let presentationSubmission = preparePresentationSubmission() else { return nil }
+            guard let presentationSubmission = preparePresentationSubmission(presentationRequest: presentationRequest) else { return nil }
         
         return await sendVPRequest(vpToken: vpToken, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "")
     }
     
-    private func generateJWKFromPrivateKey(privateKey: P256.Signing.PrivateKey, did: String) -> [String: Any] {
-        let rawRepresentation = privateKey.publicKey.rawRepresentation
+    private func generateJWKFromPrivateKey(secureKey: SecureKeyData, did: String) -> [String: Any] {
+        let rawRepresentation = secureKey.publicKey
         let x = rawRepresentation[rawRepresentation.startIndex..<rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)]
         let y = rawRepresentation[rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)..<rawRepresentation.endIndex]
         return [
@@ -155,42 +163,41 @@ public class VerificationService: VerificationServiceProtocol {
         ] as [String : Any]).toString() ?? ""
     }
     
-    private func generateVPToken(header: String, payload: String, privateKey: P256.Signing.PrivateKey) -> String {
+    private func generateVPToken(header: String, payload: String, secureKey: SecureKeyData) -> String {
         let headerData = Data(header.utf8)
         let payloadData = Data(payload.utf8)
         let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-        let signatureData = try? privateKey.signature(for: unsignedToken.data(using: .utf8)!)
-        let signature = signatureData?.rawRepresentation
-        return "\(unsignedToken).\(signature?.base64URLEncodedString() ?? "")"
+        //let signatureData = try? privateKey.signature(for: unsignedToken.data(using: .utf8)!)
+        //let signature = signatureData?.rawRepresentation
+        guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return ""}
+        return "\(unsignedToken).\(signature.base64URLEncodedString() ?? "")"
     }
     
-    private func preparePresentationSubmission() -> PresentationSubmissionModel? {
-//        if !isVPExchange && !isPassportExchange {
-//            var descMaps = [DescriptorMap]()
-//            for i in 0..<(presentationDefinitionModel?.inputDescriptors?.count ?? 1) {
-//                descMaps.append(DescriptorMap(id: presentationDefinitionModel?.inputDescriptors?[i].id ?? "", path: "$", format: "jwt_vp", pathNested: DescriptorMap(id: presentationDefinitionModel?.inputDescriptors?[i].id ?? "", path: "$.verifiableCredential[\(i)]", format: "jwt_vc", pathNested: nil)))
-//            }
-//            return PresentationSubmissionModel(id: "a30e3b91-fb77-4d22-95fa-871689c322e2", definitionID: "holder-wallet-qualification-presentation", descriptorMap: descMaps)
-//        } else if isPassportExchange {
-//            let uuid = UUID().uuidString
-//            let component = nonce
-//            let dict = UIApplicationUtils.shared.convertToDictionary(text: component)
-//            guard let data = try? JSONSerialization.data(withJSONObject: dict ?? [:]) else { return nil }
-//            let elements = try? JSONDecoder().decode(PresentationDefinitionModel.self, from: data)
-//
-//            let pathNested = DescriptorMap(id: elements?.inputDescriptors?[0].id ?? "", path: "$.verifiableCredential[0]", format: "jwt_vc", pathNested: nil)
-//            let descMap = [
-//                DescriptorMap(id: elements?.inputDescriptors?[0].id ?? "", path: "$", format: "jwt_vp", pathNested: pathNested)]
-//            return PresentationSubmissionModel(id: uuid, definitionID: elements?.id ?? "", descriptorMap: descMap)
-//        } else {
-            let pathNested = DescriptorMap(id: "vp1", path: "$.verifiableCredential[0]", format: "jwt_vc", pathNested: nil)
-            let descMap = [
-                DescriptorMap(id: "vp1", path: "$", format: "jwt_vp", pathNested: pathNested)]
-            return PresentationSubmissionModel(id: "essppda1", definitionID: "essppda1", descriptorMap: descMap)
- //       }
+    private func preparePresentationSubmission(
+        presentationRequest: PresentationRequest?
+    ) -> PresentationSubmissionModel? {
+        if presentationRequest == nil { return nil }
+        var descMap : [DescriptorMap] = []
+        var presentationDefinition :PresentationDefinitionModel? = nil
+        do {
+            presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
+        } catch {
+            presentationDefinition = nil
+        }
+        if let inputDescriptors = presentationDefinition?.inputDescriptors {
+            for index in 0..<inputDescriptors.count {
+                let item = inputDescriptors[index]
+                let pathNested = DescriptorMap(id: item.id ?? "", path: "$.verifiableCredential[\(index)]", format: "jwt_vc", pathNested: nil)
+                // FIXME: take format from the presentation definition
+                descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: "jwt_vp", pathNested: pathNested))
+            }
+        }
+        
+            
+        return PresentationSubmissionModel(id: "essppda1", definitionID: presentationDefinition?.id ?? "", descriptorMap: descMap)
     }
     
-    private func sendVPRequest(vpToken: String, presentationSubmission: PresentationSubmissionModel, redirectURI: String, state: String) async -> Data? {
+    private func sendVPRequest(vpToken: String, presentationSubmission: PresentationSubmissionModel, redirectURI: String, state: String) async -> WrappedVerificationResponse? {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let data = try? encoder.encode(presentationSubmission)
@@ -213,9 +220,25 @@ public class VerificationService: VerificationServiceProtocol {
         request.httpBody = paramsData
         
         // Performing the token request
+        var responseUrl = ""
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            return data
+            let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+         
+            let (data, response) = try await session.data(for: request)
+        
+              
+            let httpres = response as? HTTPURLResponse
+            if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
+                responseUrl = location
+                return WrappedVerificationResponse(data: responseUrl, error: nil)
+            } else if httpres?.statusCode ?? 400 >= 400 {
+                return WrappedVerificationResponse(data: nil, error: ErrorHandler.processError(data: data))
+            } else{
+                guard let dataString = String(data: data, encoding: .utf8) else {
+                    return WrappedVerificationResponse(data: "data", error: nil)
+                }
+                return WrappedVerificationResponse(data: dataString, error: nil)
+            }
         } catch {
             debugPrint("JSON Serialization Error: \(error)")
             return nil
@@ -223,7 +246,7 @@ public class VerificationService: VerificationServiceProtocol {
     }
     
     
-   public func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel {
+   public static func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel {
        do {
            guard let presentationDefinition = presentationDefinition else {
                throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid presentation definition"])
@@ -348,3 +371,10 @@ func updatePath(in descriptor: InputDescriptor) -> InputDescriptor {
     return updatedDescriptor
 }
 }
+
+extension VerificationService: URLSessionDelegate, URLSessionTaskDelegate {
+    public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+            // Stops the redirection, and returns (internally) the response body.
+            completionHandler(nil)
+        }
+    }
