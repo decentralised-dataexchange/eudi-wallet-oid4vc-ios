@@ -12,7 +12,7 @@ class ErrorHandler {
     static func processError(data: Data?) -> EUDIError? {
             // Convert Data to String for initial check
             guard let data = data, let dataString = String(data: data, encoding: .utf8) else {
-                return nil
+                return EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1))
             }
 
             // Attempt to parse the data string as a JSON object
@@ -20,7 +20,7 @@ class ErrorHandler {
             do {
                 jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
             } catch {
-                jsonObject = nil
+                return EUDIError(from: ErrorResponse(message: dataString, code: -1))
             }
 
             // Determine the error response based on the content of the error message
@@ -39,10 +39,10 @@ class ErrorHandler {
                 } else if let error = jsonObject["detail"] as? String {
                     errorResponse = EUDIError(from: ErrorResponse(message:error, code: -1))
                 }  else {
-                    errorResponse = nil
+                    errorResponse = EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1))
                 }
             } else {
-                errorResponse = nil
+                errorResponse = EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1))
             }
             return errorResponse
         }

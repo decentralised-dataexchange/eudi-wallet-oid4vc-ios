@@ -230,11 +230,14 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             let httpres = response as? HTTPURLResponse
             if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
                 responseUrl = location
-                return WrappedVerificationResponse(data: responseUrl, error: ErrorHandler.processError(data: data))
+                return WrappedVerificationResponse(data: responseUrl, error: nil)
             } else if httpres?.statusCode ?? 400 >= 400 {
                 return WrappedVerificationResponse(data: nil, error: ErrorHandler.processError(data: data))
             } else{
-                return WrappedVerificationResponse(data: "data", error: nil)
+                guard let dataString = String(data: data, encoding: .utf8) else {
+                    return WrappedVerificationResponse(data: "data", error: nil)
+                }
+                return WrappedVerificationResponse(data: dataString, error: nil)
             }
         } catch {
             debugPrint("JSON Serialization Error: \(error)")
