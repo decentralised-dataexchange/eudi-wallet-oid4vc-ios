@@ -66,6 +66,13 @@ public class DidService {
                 "x": x.urlSafeBase64EncodedString(),
                 "y": y.urlSafeBase64EncodedString()
             ]
+            if let theJSONData = try? JSONSerialization.data(
+                withJSONObject: jwk,
+                options: []) {
+                let theJSONText = String(data: theJSONData,
+                                           encoding: .ascii)
+                print("JSON string = \(theJSONText!)")
+            }
             return (jwk, SecureKeyData(publicKey: keys.publicKey, privateKey: keys.privateKey))
         }
         return nil

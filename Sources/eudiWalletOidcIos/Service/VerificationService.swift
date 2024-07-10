@@ -41,6 +41,7 @@ public class VerificationService: VerificationServiceProtocol {
         // Presentation Submission model
         guard let presentationSubmission = preparePresentationSubmission() else { return nil }
         
+        guard let redirectURL = presentationRequest?.redirectUri else {return nil}
         return await sendVPRequest(vpToken: vpToken, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "")
     }
     
@@ -165,12 +166,13 @@ public class VerificationService: VerificationServiceProtocol {
     
     private func generateVPToken(header: String, payload: String, secureKey: SecureKeyData) -> String {
         let headerData = Data(header.utf8)
-        let payloadData = Data(payload.utf8)
-        let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+        //let payloadData = Data(payload.utf8)
+        //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
         //let signatureData = try? privateKey.signature(for: unsignedToken.data(using: .utf8)!)
         //let signature = signatureData?.rawRepresentation
-        guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return ""}
-        return "\(unsignedToken).\(signature.base64URLEncodedString() ?? "")"
+        guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return ""}
+        //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return ""}
+        return idToken//"\(unsignedToken).\(signature.base64URLEncodedString() ?? "")"
     }
     
     private func preparePresentationSubmission() -> PresentationSubmissionModel? {
@@ -223,7 +225,11 @@ public class VerificationService: VerificationServiceProtocol {
         
         // Performing the token request
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let httpresponse = response as? HTTPURLResponse
+            print(httpresponse?.statusCode)
+            
+            
             return data
         } catch {
             debugPrint("JSON Serialization Error: \(error)")

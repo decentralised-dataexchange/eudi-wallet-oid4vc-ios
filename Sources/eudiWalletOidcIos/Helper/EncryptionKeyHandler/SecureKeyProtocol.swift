@@ -19,6 +19,6 @@ public struct SecureKeyData{
 
 public protocol SecureKeyProtocol: NSObjectProtocol{
     func generateSecureKey() -> SecureKeyData?
-    func sign(data: Data, withKey privateKey: Data?) -> Data?
+    func sign(payload: String, header: Data, withKey privateKey: Data?) -> String?
    
 }

@@ -224,12 +224,13 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Create JWT token
             let headerData = Data(header.utf8)
-            let payloadData = Data(payload.utf8)
-            let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+            //let payloadData = Data(payload.utf8)
+            //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
             
-            guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
-            let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
-            
+            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return nil}
+            //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
+            //let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
+            print(idToken)
             guard let urlComponents = URLComponents(string: redirectURI) else { return nil }
     
             // Create the URL with the added query parameters
@@ -294,6 +295,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
      
      - Returns: A `TokenResponse` object if the request is successful, otherwise `nil`.
      */
+    //FIX Me: Use isPreAuthorisedCodeFlow to check if its pre-auth or auth flow
+    //remove authServerWellKnownConfig and change it to a string to get the endpoint value alone
     public func processTokenRequest(authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration,
                                     code: String,
                                     did: String,
@@ -364,11 +367,12 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Create JWT token
             let headerData = Data(header.utf8)
-            let payloadData = Data(payload.utf8)
-            let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+            //let payloadData = Data(payload.utf8)
+            //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
             // sign the data to be encrypted and exchanged
-            guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
-            let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
+            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return nil}
+            //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
+            //let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
             
             let credentialTypes = credentialOffer.credentials?[0].types ?? []
             let formatT = getFormatFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
