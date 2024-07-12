@@ -26,17 +26,6 @@ public struct Display{
         backgroundColor = from.backgroundColor
         textColor = from.textColor
     }
-    
-    public init(mName: String, mLocation:String, mLocale: String?, mDescription: String, mCover: DisplayCover?, mLogo: DisplayCover?, mBackgroundColor: String?, mTextColor: String?) {
-           name = mName
-           location = mLocation
-           locale = mLocale
-           description = mDescription
-           cover = mCover
-           logo = mLogo
-           backgroundColor = mBackgroundColor
-           textColor = mTextColor
-       }
 }
 public struct TrustFrameworkInIssuer {
     public let name: String?
@@ -168,11 +157,6 @@ public struct DisplayCover{
         url = from.url
         altText = from.altText
     }
-    
-    public init(mUrl: String?, mAltText: String?) {
-        url = mUrl
-        altText = mAltText
-    }
 }
 
 
@@ -210,20 +194,6 @@ public struct IssuerWellKnownConfiguration {
   
     }
     
-    public init(mCredentialIssuer: String?,
-                mAuthorizationServer: String?,
-                mCredentialEndpoint: String?,
-                mDeferredCredentialEndpoint: String?,
-                mDisplay: Display?) {
-        credentialIssuer = nil
-        authorizationServer = nil
-        credentialEndpoint = nil
-        deferredCredentialEndpoint = nil
-        display = mDisplay != nil ? [mDisplay!] : nil
-        credentialsSupported = nil
-        error = nil
-    }
-    
     init(from: EUDIError) {
         error = from
         credentialIssuer = nil
@@ -233,5 +203,7 @@ public struct IssuerWellKnownConfiguration {
         display = nil
         credentialsSupported = nil
     }
+    
+    
 }
 

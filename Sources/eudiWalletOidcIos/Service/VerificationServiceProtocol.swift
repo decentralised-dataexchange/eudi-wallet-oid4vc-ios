@@ -24,7 +24,7 @@ protocol VerificationServiceProtocol {
         secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
         credentialsList: [String]?
-    ) async -> WrappedVerificationResponse?
+    ) async -> Data?
 
     /**
      Processes an authorization request and extracts a PresentationRequest object asynchronously.
