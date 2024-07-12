@@ -224,8 +224,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Create JWT token
             let headerData = Data(header.utf8)
+
             //let payloadData = Data(payload.utf8)
             //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+
             
             guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return nil}
             //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
@@ -367,12 +369,14 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Create JWT token
             let headerData = Data(header.utf8)
+
             //let payloadData = Data(payload.utf8)
             //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
             // sign the data to be encrypted and exchanged
             guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return nil}
             //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
             //let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
+
             
             let credentialTypes = credentialOffer.credentials?[0].types ?? []
             let formatT = getFormatFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)

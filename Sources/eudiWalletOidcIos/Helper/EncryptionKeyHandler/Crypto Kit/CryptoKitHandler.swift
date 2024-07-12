@@ -17,6 +17,7 @@ public class CryptoKitHandler:NSObject, SecureKeyProtocol{
         return SecureKeyData(publicKey: privateKey.publicKey.rawRepresentation, privateKey: privateKey.rawRepresentation)
     }
     
+
     public func sign(payload: String, header: Data, withKey privateKey: Data?) -> String?{
         if let privateKeyData = privateKey{
             do{
@@ -29,6 +30,7 @@ public class CryptoKitHandler:NSObject, SecureKeyProtocol{
                     let idToken = "\(unsignedToken).\(signedData.rawRepresentation.base64URLEncodedString())"
                     return idToken
                 }
+
             }
             catch{
                 return nil

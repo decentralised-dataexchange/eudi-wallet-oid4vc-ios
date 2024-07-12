@@ -32,4 +32,5 @@ public protocol SecureKeyProtocol: NSObjectProtocol{
 
 extension SecureKeyProtocol{
     public func getJWK(publicKey:Data) -> [String:Any]? {return nil}
+
 }
