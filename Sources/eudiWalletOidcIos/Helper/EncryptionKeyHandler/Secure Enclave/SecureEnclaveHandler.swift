@@ -13,17 +13,19 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
     var publicKeyLabel = ""
     var organisationID = ""
     var secureEnclaveHandler: SecureEnclave?
+    public var keyStorageType: SecureKeyTypes = .cryptoKit
     
     public init(organisationID: String) {
         super.init()
         self.organisationID = organisationID
+        self.keyStorageType = .secureEnclave
     }
     
+    //Creating secure enclave instance with unique identifer for the keys
     private func createSecureEnclaveHandlerFor() -> Bool{
         if !organisationID.isEmpty{
             secureEnclaveHandler = nil
             privateKeyLabel = "com.EudiWallet.\(organisationID).PrivateKey"
-            //publicKeyLabel = "com.EudiWallet.\(organisationID).PrivateKey"
             secureEnclaveHandler = SecureEnclave(privateKeyApplicationTag: privateKeyLabel)
             return true
             } else{
@@ -32,6 +34,8 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
         }
     }
     
+    //Generate private and public keys from secure enclave and pass the public key back
+    //private key is stored securely within secure enclave is not accessible directly
     public func generateSecureKey() -> SecureKeyData?{
         if createSecureEnclaveHandlerFor(){
             do{
@@ -45,6 +49,9 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
                 
                 do{
                     let newKeys = try SecureEnclave.generateKeyPair(with: privateKeyLabel)
+                    if let publicKeyData = convertSecKeyToData(key: newKeys.publicKey){
+                        return SecureKeyData(publicKey: publicKeyData, privateKey: nil)
+                    }
                 }
                 catch{
                     print("Error retrieving the key")
@@ -65,28 +72,11 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
         return publicKeydata
     }
     
-//    private func getSecureKeys() -> (public: SecureEnclaveKeyData, private: SecureEnclaveKeyReference)?{
-//        do{
-//            if let privateKey = try? secureEnclaveHandler?.getPrivateKey(){
-//                if let publicKey = try? secureEnclaveHandler?.getPublicKey(){
-//                    return (publicKey, privateKey)
-//                }
-//            }
-//            return nil
-//        }
-//        catch{
-//            print("Error retrieving the key")
-//            return nil
-//        }
-//    }
-    
     public func sign(payload: String, header: Data, withKey privateKey: Data?) -> String?{
         if createSecureEnclaveHandlerFor(){
             do{
                 if let signedData = try secureEnclaveHandler?.sign(payload, header: header){
-                    if ((try secureEnclaveHandler?.verify(signedData)) != nil){
-                        print("verified")
-                    }
+                    
                     return signedData
                 }
             }
@@ -95,6 +85,11 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
             }
         }
         return nil
+    }
+    
+    public func getJWK(publicKey: Data) -> [String:Any]?{
+        let jwk = secureEnclaveHandler?.getJWK(publicKey: publicKey)
+        return jwk
     }
     
 }

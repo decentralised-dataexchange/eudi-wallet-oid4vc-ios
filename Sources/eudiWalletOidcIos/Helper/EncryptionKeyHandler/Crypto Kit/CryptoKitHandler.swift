@@ -10,6 +10,8 @@ import CryptoKit
 
 public class CryptoKitHandler:NSObject, SecureKeyProtocol{
     
+    public var keyStorageType: SecureKeyTypes = .cryptoKit
+    
     public func generateSecureKey() -> SecureKeyData?{
         let privateKey =  P256.Signing.PrivateKey()
         return SecureKeyData(publicKey: privateKey.publicKey.rawRepresentation, privateKey: privateKey.rawRepresentation)

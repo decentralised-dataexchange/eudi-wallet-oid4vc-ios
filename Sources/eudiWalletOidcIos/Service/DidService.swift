@@ -57,24 +57,35 @@ public class DidService {
     public func createJWK(keyHandler: SecureKeyProtocol) async -> ([String: Any], SecureKeyData)?{
         
         if let keys = keyHandler.generateSecureKey(){
-            let rawRepresentation = keys.publicKey
-            let x = rawRepresentation[rawRepresentation.startIndex..<rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)]
-            let y = rawRepresentation[rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)..<rawRepresentation.endIndex]
-            let jwk: [String: Any] = [
-                "crv": "P-256",
-                "kty": "EC",
-                "x": x.urlSafeBase64EncodedString(),
-                "y": y.urlSafeBase64EncodedString()
-            ]
-            if let theJSONData = try? JSONSerialization.data(
-                withJSONObject: jwk,
-                options: []) {
-                let theJSONText = String(data: theJSONData,
-                                           encoding: .ascii)
-                print("JSON string = \(theJSONText!)")
+            
+            if keyHandler.keyStorageType == .cryptoKit{
+                let rawRepresentation = keys.publicKey
+                let x = rawRepresentation[rawRepresentation.startIndex..<rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)]
+                let y = rawRepresentation[rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)..<rawRepresentation.endIndex]
+                let jwk: [String: Any] = [
+                    "crv": "P-256",
+                    "kty": "EC",
+                    "x": x.urlSafeBase64EncodedString(),
+                    "y": y.urlSafeBase64EncodedString()
+                ]
+                if let theJSONData = try? JSONSerialization.data(
+                    withJSONObject: jwk,
+                    options: []) {
+                    let theJSONText = String(data: theJSONData,
+                                               encoding: .ascii)
+                    print("JSON string = \(theJSONText!)")
+                }
+                return (jwk, SecureKeyData(publicKey: keys.publicKey, privateKey: keys.privateKey))
+            } else{
+                
+                if let jsonDict = keyHandler.getJWK(publicKey: keys.publicKey){
+                    return (jsonDict, SecureKeyData(publicKey: keys.publicKey, privateKey: keys.privateKey))
+                }
             }
-            return (jwk, SecureKeyData(publicKey: keys.publicKey, privateKey: keys.privateKey))
+
         }
         return nil
     }
+    
+    
 }
