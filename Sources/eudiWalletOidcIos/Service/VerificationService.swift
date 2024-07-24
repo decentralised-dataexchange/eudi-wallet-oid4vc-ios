@@ -44,7 +44,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         guard let redirectURL = presentationRequest?.redirectUri else {return nil}
         return await sendVPRequest(vpToken: vpToken, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "")
     }
-
     
     private func generateJWKFromPrivateKey(secureKey: SecureKeyData, did: String) -> [String: Any] {
         let rawRepresentation = secureKey.publicKey
@@ -57,7 +56,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             "y": y.urlSafeBase64EncodedString()
         ]
     }
-    
     
     public func processAuthorisationRequest(data: String?) async -> PresentationRequest? {
         guard let _ = data else { return nil }
@@ -138,11 +136,12 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     }
     
     private func generateJWTPayload(did: String, nonce: String, credentialsList: [String], state: String, clientID: String) -> String {
+        let uuid4 = UUID().uuidString
         let vp =
         ([
             "@context": ["https://www.w3.org/2018/credentials/v1"],
             "holder": did,
-            "id": "urn:uuid:\(UUID().uuidString)",
+            "id": "urn:uuid:\(uuid4)",
             "type": [
                 "VerifiablePresentation"
             ],
@@ -150,7 +149,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         ] as [String : Any])
         
         let currentTime = Int(Date().timeIntervalSince1970)
-        let uuid4 = UUID().uuidString
         
         return ([
             "aud": clientID,
@@ -167,7 +165,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     
     private func generateVPToken(header: String, payload: String, secureKey: SecureKeyData) -> String {
         let headerData = Data(header.utf8)
-
         //let payloadData = Data(payload.utf8)
         //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
         //let signatureData = try? privateKey.signature(for: unsignedToken.data(using: .utf8)!)
@@ -175,7 +172,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return ""}
         //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return ""}
         return idToken//"\(unsignedToken).\(signature.base64URLEncodedString() ?? "")"
-
     }
     
     private func preparePresentationSubmission(
@@ -192,7 +188,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         if let inputDescriptors = presentationDefinition?.inputDescriptors {
             for index in 0..<inputDescriptors.count {
                 let item = inputDescriptors[index]
-                let pathNested = DescriptorMap(id: item.id ?? "", path: "$.verifiableCredential[\(index)]", format: "jwt_vc", pathNested: nil)
+                let pathNested = DescriptorMap(id: item.id ?? "", path: "$.vp.verifiableCredential[\(index)]", format: "jwt_vc", pathNested: nil)
                 // FIXME: take format from the presentation definition
                 descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: "jwt_vp", pathNested: pathNested))
             }
@@ -227,7 +223,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         // Performing the token request
         var responseUrl = ""
         do {
-
             let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
             
             let (data, response) = try await session.data(for: request)
@@ -245,7 +240,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 }
                 return WrappedVerificationResponse(data: dataString, error: nil)
             }
-
         } catch {
             debugPrint("JSON Serialization Error: \(error)")
             return nil
@@ -391,7 +385,6 @@ func updatePath(in descriptor: InputDescriptor) -> InputDescriptor {
     return updatedDescriptor
 }
 }
-
 extension VerificationService: URLSessionDelegate, URLSessionTaskDelegate {
     public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
             // Stops the redirection, and returns (internally) the response body.
