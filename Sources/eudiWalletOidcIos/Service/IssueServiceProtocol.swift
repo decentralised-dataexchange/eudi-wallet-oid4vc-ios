@@ -40,7 +40,7 @@ protocol IssueServiceProtocol {
      
      - Returns: A `TokenResponse` object if the request is successful, otherwise `nil`.
      */
-    func processTokenRequest(authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration, code: String, did: String, codeVerifier: String, isPreAuthorisedCodeFlow: Bool, preAuthCode: String, userPin: String?) async -> TokenResponse?
+    func processTokenRequest(did: String, tokenEndPoint: String?, code: String, codeVerifier: String, isPreAuthorisedCodeFlow: Bool, userPin: String?) async -> TokenResponse?
     
     
     // Processes a credential request to the specified credential endpoint.

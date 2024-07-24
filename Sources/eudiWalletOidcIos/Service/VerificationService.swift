@@ -26,21 +26,22 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
         credentialsList: [String]?) async -> WrappedVerificationResponse? {
-        
-        let jwk = generateJWKFromPrivateKey(secureKey: secureKey, did: did)
-        
-        // Generate JWT header
-        let header = generateJWTHeader(jwk: jwk, did: did)
-        
-        // Generate JWT payload
-        let payload = generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "")
-        debugPrint("payload:\(payload)")
-        
+            
+            let jwk = generateJWKFromPrivateKey(secureKey: secureKey, did: did)
+            
+            // Generate JWT header
+            let header = generateJWTHeader(jwk: jwk, did: did)
+            
+            // Generate JWT payload
+            let payload = generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "")
+            debugPrint("payload:\(payload)")
+            
             let vpToken =  generateVPToken(header: header, payload: payload, secureKey: secureKey)
-        
-        // Presentation Submission model
+            
+            // Presentation Submission model
             guard let presentationSubmission = preparePresentationSubmission(presentationRequest: presentationRequest) else { return nil }
         
+        guard let redirectURL = presentationRequest?.redirectUri else {return nil}
         return await sendVPRequest(vpToken: vpToken, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "")
     }
     
@@ -55,7 +56,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             "y": y.urlSafeBase64EncodedString()
         ]
     }
-    
     
     public func processAuthorisationRequest(data: String?) async -> PresentationRequest? {
         guard let _ = data else { return nil }
@@ -73,19 +73,19 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             var presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
             
             if presentationDefinition != "" {
-            
-                    let presentationRequest =  PresentationRequest(state: state,
-                                                                   clientId: clientID,
-                                                                   redirectUri: redirectUri,
-                                                                   responseUri: responseUri,
-                                                                   responseType: responseType,
-                                                                   responseMode: responseMode,
-                                                                   scope: scope,
-                                                                   nonce: nonce,
-                                                                   requestUri: requestUri,
-                                                                   presentationDefinition: presentationDefinition)
-                    return presentationRequest
-              
+                
+                let presentationRequest =  PresentationRequest(state: state,
+                                                               clientId: clientID,
+                                                               redirectUri: redirectUri,
+                                                               responseUri: responseUri,
+                                                               responseType: responseType,
+                                                               responseMode: responseMode,
+                                                               scope: scope,
+                                                               nonce: nonce,
+                                                               requestUri: requestUri,
+                                                               presentationDefinition: presentationDefinition)
+                return presentationRequest
+                
             } else if requestUri != "" {
                 var request = URLRequest(url: URL(string: requestUri)!)
                 request.httpMethod = "GET"
@@ -136,11 +136,12 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     }
     
     private func generateJWTPayload(did: String, nonce: String, credentialsList: [String], state: String, clientID: String) -> String {
+        let uuid4 = UUID().uuidString
         let vp =
         ([
             "@context": ["https://www.w3.org/2018/credentials/v1"],
             "holder": did,
-            "id": "urn:uuid:\(UUID().uuidString)",
+            "id": "urn:uuid:\(uuid4)",
             "type": [
                 "VerifiablePresentation"
             ],
@@ -148,7 +149,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         ] as [String : Any])
         
         let currentTime = Int(Date().timeIntervalSince1970)
-        let uuid4 = UUID().uuidString
         
         return ([
             "aud": clientID,
@@ -165,12 +165,13 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     
     private func generateVPToken(header: String, payload: String, secureKey: SecureKeyData) -> String {
         let headerData = Data(header.utf8)
-        let payloadData = Data(payload.utf8)
-        let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+        //let payloadData = Data(payload.utf8)
+        //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
         //let signatureData = try? privateKey.signature(for: unsignedToken.data(using: .utf8)!)
         //let signature = signatureData?.rawRepresentation
-        guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return ""}
-        return "\(unsignedToken).\(signature.base64URLEncodedString() ?? "")"
+        guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return ""}
+        //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return ""}
+        return idToken//"\(unsignedToken).\(signature.base64URLEncodedString() ?? "")"
     }
     
     private func preparePresentationSubmission(
@@ -187,13 +188,13 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         if let inputDescriptors = presentationDefinition?.inputDescriptors {
             for index in 0..<inputDescriptors.count {
                 let item = inputDescriptors[index]
-                let pathNested = DescriptorMap(id: item.id ?? "", path: "$.verifiableCredential[\(index)]", format: "jwt_vc", pathNested: nil)
+                let pathNested = DescriptorMap(id: item.id ?? "", path: "$.vp.verifiableCredential[\(index)]", format: "jwt_vc", pathNested: nil)
                 // FIXME: take format from the presentation definition
                 descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: "jwt_vp", pathNested: pathNested))
             }
         }
         
-            
+        
         return PresentationSubmissionModel(id: "essppda1", definitionID: presentationDefinition?.id ?? "", descriptorMap: descMap)
     }
     
@@ -223,10 +224,10 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         var responseUrl = ""
         do {
             let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-         
+            
             let (data, response) = try await session.data(for: request)
-        
-              
+            
+            
             let httpres = response as? HTTPURLResponse
             if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
                 responseUrl = location
@@ -246,74 +247,41 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     }
     
     
-   public static func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel {
-       do {
-           guard let presentationDefinition = presentationDefinition else {
-               throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid presentation definition"])
-           }
-           
-           if let presentationDefinition = presentationDefinition as? PresentationDefinitionModel {
-               return presentationDefinition
-           } else if let linkedTreeMap = presentationDefinition as? [AnyHashable: Any] {
-               let jsonData = try JSONSerialization.data(withJSONObject: linkedTreeMap)
-               let jsonString = String(data: jsonData, encoding: .utf8) ?? ""
-               return try JSONDecoder().decode(PresentationDefinitionModel.self, from: jsonString.data(using: .utf8) ?? Data())
-           } else if let jsonString = presentationDefinition as? String {
-               let str = jsonString.replacingOccurrences(of: "+", with: "")
-               let data = str.data(using: .utf8)
-               let model = try JSONDecoder().decode(PresentationDefinitionModel.self, from: data!)
-               return model
-           } else {
-               throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid presentation definition format"])
-           }
-       } catch {
+    public static func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel {
+        do {
+            guard let presentationDefinition = presentationDefinition else {
+                throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid presentation definition"])
+            }
+            
+            if let presentationDefinition = presentationDefinition as? PresentationDefinitionModel {
+                return presentationDefinition
+            } else if let linkedTreeMap = presentationDefinition as? [AnyHashable: Any] {
+                let jsonData = try JSONSerialization.data(withJSONObject: linkedTreeMap)
+                let jsonString = String(data: jsonData, encoding: .utf8) ?? ""
+                return try JSONDecoder().decode(PresentationDefinitionModel.self, from: jsonString.data(using: .utf8) ?? Data())
+            } else if let jsonString = presentationDefinition as? String {
+                let str = jsonString.replacingOccurrences(of: "+", with: "")
+                let data = str.data(using: .utf8)
+                let model = try JSONDecoder().decode(PresentationDefinitionModel.self, from: data!)
+                return model
+            } else {
+                throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid presentation definition format"])
+            }
+        } catch {
             throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Error processing presentation definition"])
         }
     }
     public func filterCredentials(credentialList: [String?], presentationDefinition: PresentationDefinitionModel) -> [[String]] {
         var response: [[String]] = []
         
-        var tempCredentialList: [String?] = []
-        for item in credentialList {
-            if let limitDisclosure = presentationDefinition.inputDescriptors?.first?.constraints?.limitDisclosure,
-               item?.contains("~") == true {
-                tempCredentialList.append(item)
-            } else if presentationDefinition.inputDescriptors?.first?.constraints?.limitDisclosure == nil,
-                      item?.contains("~") == false {
-                tempCredentialList.append(item)
-            }
-        }
-        var processedCredentials = [String]()
-        for cred in tempCredentialList {
-            guard let cred = cred else { continue }
-            let split = cred.split(separator: ".")
-            
-            let jsonString: String
-            if (cred.split(separator: "~").count) > 0 {
-                jsonString = SDJWTService.shared.updateIssuerJwtWithDisclosures(credential: cred) ?? ""
-            } else if split.count > 1,
-                      let base64Data = Data(base64Encoded: String(split[1]), options: .ignoreUnknownCharacters),
-                      let decodedString = String(data: base64Data, encoding: .utf8) {
-                jsonString = decodedString
-            } else {
-                jsonString = ""
-            }
-            
-            let json = try? JSONSerialization.jsonObject(with: Data(jsonString.utf8), options: []) as? [String: Any] ?? [:]
-          
-            var vcString = ""
-            if let vc = json?["vc"] as? [String: Any] {
-                vcString = vc.toString() ?? ""
-            } else {
-                vcString = jsonString
-            }
-            
-            processedCredentials.append(vcString)
-        }
-        
         if let inputDescriptors = presentationDefinition.inputDescriptors {
             for inputDescriptor in inputDescriptors {
-        let updatedDescriptor = updatePath(in: inputDescriptor)
+                
+                let tempCredentialList = splitCredentialsBySdJWT(allCredentials: credentialList, isSdJwt: inputDescriptor.constraints?.limitDisclosure != nil)
+                
+                let processedCredentials = processCredentialsToJsonString(credentialList: tempCredentialList)
+                
+                let updatedDescriptor = updatePath(in: inputDescriptor)
                 var filteredCredentialList: [String] = []
                 
                 let jsonEncoder = JSONEncoder()
@@ -346,6 +314,52 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         
         return response
     }
+    
+    private func splitCredentialsBySdJWT(allCredentials: [String?], isSdJwt: Bool) -> [String?] {
+        var filteredCredentials: [String?] = []
+        for item in allCredentials {
+            if isSdJwt == true,
+               item?.contains("~") == true {
+                filteredCredentials.append(item)
+            } else if isSdJwt == false,
+                      item?.contains("~") == false {
+                filteredCredentials.append(item)
+            }
+        }
+        return filteredCredentials
+    }
+    
+    private func processCredentialsToJsonString(credentialList: [String?]) -> [String] {
+        var processedCredentials = [String]()
+        for cred in credentialList {
+            guard let cred = cred else { continue }
+            let split = cred.split(separator: ".")
+            
+            let jsonString: String
+            if (cred.split(separator: "~").count) > 0 {
+                jsonString = SDJWTService.shared.updateIssuerJwtWithDisclosures(credential: cred) ?? ""
+            } else if split.count > 1,
+                      let base64Data = Data(base64Encoded: String(split[1]), options: .ignoreUnknownCharacters),
+                      let decodedString = String(data: base64Data, encoding: .utf8) {
+                jsonString = decodedString
+            } else {
+                jsonString = ""
+            }
+            
+            let json = try? JSONSerialization.jsonObject(with: Data(jsonString.utf8), options: []) as? [String: Any] ?? [:]
+            
+            var vcString = ""
+            if let vc = json?["vc"] as? [String: Any] {
+                vcString = vc.toString() ?? ""
+            } else {
+                vcString = jsonString
+            }
+            
+            processedCredentials.append(vcString)
+        }
+        return processedCredentials
+    }
+    
 func updatePath(in descriptor: InputDescriptor) -> InputDescriptor {
     var updatedDescriptor = descriptor
     guard var constraints = updatedDescriptor.constraints else { return updatedDescriptor }
@@ -371,7 +385,6 @@ func updatePath(in descriptor: InputDescriptor) -> InputDescriptor {
     return updatedDescriptor
 }
 }
-
 extension VerificationService: URLSessionDelegate, URLSessionTaskDelegate {
     public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
             // Stops the redirection, and returns (internally) the response body.

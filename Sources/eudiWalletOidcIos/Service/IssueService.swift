@@ -169,10 +169,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
         }
         
         
-        if responseUrl.contains("code=") {
-            let url = URL(string: responseUrl)
-            let code =  url?.queryParameters?["code"]
-            return code
+        if responseUrl.contains("code=") || responseUrl.contains("error=") || responseUrl.contains("presentation_definition="){
+            return responseUrl
         } else {
            // if 'code' is not present
             let url = URL(string: responseUrl)
@@ -224,12 +222,15 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Create JWT token
             let headerData = Data(header.utf8)
-            let payloadData = Data(payload.utf8)
-            let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+
+            //let payloadData = Data(payload.utf8)
+            //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+
             
-            guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
-            let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
-            
+            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return nil}
+            //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
+            //let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
+            print(idToken)
             guard let urlComponents = URLComponents(string: redirectURI) else { return nil }
     
             // Create the URL with the added query parameters
@@ -260,6 +261,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 let httpres = response as? HTTPURLResponse
                 if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
                     responseUrl = location
+                    return responseUrl
                 } else{
                     let authorization_response = String.init(data: data, encoding: .utf8) ?? ""
                     
@@ -270,7 +272,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 guard let authorisation_url = URL(string: responseUrl) else { return nil }
                 if let components = URLComponents(url: authorisation_url, resolvingAgainstBaseURL: false),
                    let auth_code = components.queryItems?.first(where: { $0.name == "code" })?.value {
-                    return auth_code
+                    return responseUrl
                 } else {
                     return nil
                 }
@@ -294,24 +296,22 @@ public class IssueService: NSObject, IssueServiceProtocol {
      
      - Returns: A `TokenResponse` object if the request is successful, otherwise `nil`.
      */
-    public func processTokenRequest(authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration,
-                                    code: String,
-                                    did: String,
-                                    codeVerifier: String,
-                                    isPreAuthorisedCodeFlow: Bool = false,
-                                    preAuthCode: String,
-                                    userPin: String?) async -> TokenResponse? {
+    public func processTokenRequest(
+        did: String,
+        tokenEndPoint: String?,
+        code: String,
+        codeVerifier: String,
+        isPreAuthorisedCodeFlow: Bool = false,
+        userPin: String?) async -> TokenResponse? {
         
-        let codeVal = code.removingPercentEncoding ?? ""
-        // Service call for access token and details
-        if userPin == nil || userPin == "" {
-            let tokenResponse = await getAccessToken(didKeyIdentifier: did, codeVerifier: codeVerifier, authCode: codeVal, tokenEndpoint: authServerWellKnownConfig.tokenEndpoint ?? "")
-            return tokenResponse
-        } else {
-            // Service call for access token and details
-            let tokenResponse = await getAccessTokenForPreAuthCredential(preAuthCode: preAuthCode, otpVal: userPin ?? "", tokenEndpoint: authServerWellKnownConfig.tokenEndpoint ?? "")
-            return tokenResponse
-        }
+            if isPreAuthorisedCodeFlow {
+                let tokenResponse = await getAccessTokenForPreAuthCredential(preAuthCode: code, otpVal: userPin ?? "", tokenEndpoint: tokenEndPoint ?? "")
+                return tokenResponse
+            } else {
+                let codeVal = code.removingPercentEncoding ?? ""
+                let tokenResponse = await getAccessToken(didKeyIdentifier: did, codeVerifier: codeVerifier, authCode: codeVal, tokenEndpoint: tokenEndPoint ?? "")
+                return tokenResponse
+            }
     }
     
     // MARK:  Processes a credential request to the specified credential endpoint.
@@ -364,24 +364,40 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Create JWT token
             let headerData = Data(header.utf8)
-            let payloadData = Data(payload.utf8)
-            let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+
+            //let payloadData = Data(payload.utf8)
+            //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
             // sign the data to be encrypted and exchanged
-            guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
-            let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
+            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return nil}
+            //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
+            //let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
+
             
             let credentialTypes = credentialOffer.credentials?[0].types ?? []
+            let types = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")
             let formatT = getFormatFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
-            var params: [String: Any] = [
-                "credential_definition": [
-                    "type": credentialTypes
-                ],
-                "format": formatT,
-                "proof": [
-                    "proof_type": "jwt",
-                    "jwt": idToken
+            var params: [String: Any] = [:]
+            if types is String {
+                params = [
+                    "vct": types ?? "",
+                    "format": format ?? "jwt_vc",
+                    "proof": [
+                        "proof_type": "jwt",
+                        "jwt": idToken
+                    ]
                 ]
-            ]
+            }else{
+                params = [
+                    "credential_definition": [
+                        "type": types
+                    ],
+                    "format": format ?? "jwt_vc",
+                    "proof": [
+                        "proof_type": "jwt",
+                        "jwt": idToken
+                    ]
+                ]
+            }
             if credentialOffer.credentials?[0].trustFramework != nil {
                 params = [
                     "types": credentialTypes,
