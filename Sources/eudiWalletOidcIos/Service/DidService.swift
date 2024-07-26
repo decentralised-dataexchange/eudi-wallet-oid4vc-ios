@@ -146,4 +146,29 @@ public class DidService {
         }
         return nil
     }
+    
+    public func createJWKfromDID(did: String?) -> [String: Any] {
+            do {
+                guard let did = did else { return [:]}
+                let multibaseString = String(did.dropFirst("did:key:z".count))
+                
+                guard let decodedData = Base58.base58Decode(multibaseString) else {
+                    print("Failed to decode Multibase string")
+                    return [:]
+                }
+                
+                let multicodecPrefixLength = 3
+                guard decodedData.count > multicodecPrefixLength else {
+                    print("Invalid decoded data length")
+                    return [:]
+                }
+                let jsonData = Data(decodedData.dropFirst(multicodecPrefixLength))
+                
+                let jwk = try JSONSerialization.jsonObject(with: jsonData, options: [])
+                return jwk as? [String: Any] ?? [:]
+            } catch {
+                print("Error: \(error)")
+                return [:]
+            }
+        }
 }
