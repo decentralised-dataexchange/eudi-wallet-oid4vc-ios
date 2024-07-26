@@ -8,5 +8,5 @@
 import Foundation
 
 protocol CredentialValidaorProtocol {
-    func validateCredential(jwt: String?) async throws
+       func validateCredential(jwt: String?, jwksURI: String?) async throws
 }
