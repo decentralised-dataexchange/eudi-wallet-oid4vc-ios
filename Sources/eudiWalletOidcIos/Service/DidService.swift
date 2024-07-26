@@ -65,11 +65,12 @@ public class DidService {
     
     public func createEdDSADID(jwk: [String: Any]) async -> String? {
         do {
-            let decodedBytes = Base58.base58Decode(jwk["x"] as? String ?? "")
+            let privateKeyX = Data(base64URLEncoded: jwk["x"] as? String ?? "") ?? Data()
             // unicode to utf8 "\xed\x01" = [5c 78 65 64 5c 78 30 31]
+            let privateKeyBytes = [UInt8](privateKeyX)
             let multicodeByreArray: [UInt8] = [237, 1]
             var hexWithMulticode = multicodeByreArray
-            hexWithMulticode.append(contentsOf: decodedBytes ?? [])
+            hexWithMulticode.append(contentsOf: privateKeyBytes )
             let encodedString = Base58.base58Encode(hexWithMulticode)
             let finalString = "z" + encodedString
             return "did:key:" + finalString
