@@ -169,7 +169,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
         }
         
         
-        if responseUrl.contains("code=") || responseUrl.contains("error=") || responseUrl.contains("presentation_definition="){
+        if responseUrl.contains("code=") ||
+            responseUrl.contains("error=") ||
+            responseUrl.contains("presentation_definition=") ||
+            (responseUrl.contains("request_uri=") && !responseUrl.contains("response_type=") && !responseUrl.contains("state=")){
             return responseUrl
         } else {
            // if 'code' is not present
