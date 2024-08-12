@@ -23,7 +23,8 @@ let package = Package(
     targets: [
         .target(
             name: "eudiWalletOidcIos",
-            dependencies: ["Base58Swift", "CryptoSwift", "PresentationExchangeSdkiOS", "JOSESwift"]),
+            dependencies: ["Base58Swift", "CryptoSwift", "PresentationExchangeSdkiOS", "JOSESwift", .product(name: "Crypto", package: "swift-crypto")],
+            path: "Sources"),
         .testTarget(
             name: "eudi-wallet-oidc-iosTests",
             dependencies: ["eudiWalletOidcIos"]),

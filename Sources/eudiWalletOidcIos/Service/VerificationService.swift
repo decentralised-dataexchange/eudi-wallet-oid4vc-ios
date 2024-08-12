@@ -185,17 +185,21 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         } catch {
             presentationDefinition = nil
         }
+        //encoding is done because '+' was removed by the URL session
+        let formatKey = presentationDefinition?.format?.first(where: { key, _ in key.contains("vc") })?.key ?? ""
+        let format = formatKey == "vcsd-jwt" ? "vc+sd-jwt" : formatKey
+        let encodedFormat = format.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "+")).subtracting(CharacterSet(charactersIn: "+")))?.replacingOccurrences(of: "+", with: "%2B")
         if let inputDescriptors = presentationDefinition?.inputDescriptors {
             for index in 0..<inputDescriptors.count {
                 let item = inputDescriptors[index]
                 let pathNested = DescriptorMap(id: item.id ?? "", path: "$.vp.verifiableCredential[\(index)]", format: "jwt_vc", pathNested: nil)
-                // FIXME: take format from the presentation definition
-                descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: "jwt_vp", pathNested: pathNested))
+                
+                descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: encodedFormat ?? "", pathNested: pathNested))
             }
         }
         
         
-        return PresentationSubmissionModel(id: "essppda1", definitionID: presentationDefinition?.id ?? "", descriptorMap: descMap)
+        return PresentationSubmissionModel(id: UUID().uuidString, definitionID: presentationDefinition?.id ?? "", descriptorMap: descMap)
     }
     
     private func sendVPRequest(vpToken: String, presentationSubmission: PresentationSubmissionModel, redirectURI: String, state: String) async -> WrappedVerificationResponse? {
@@ -229,9 +233,14 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             
             
             let httpres = response as? HTTPURLResponse
-            if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
-                responseUrl = location
-                return WrappedVerificationResponse(data: responseUrl, error: nil)
+            
+            if httpres?.statusCode == 302 || httpres?.statusCode == 200 {
+                if let location = httpres?.value(forHTTPHeaderField: "Location") {
+                    responseUrl = location
+                    return WrappedVerificationResponse(data: responseUrl, error: nil)
+                } else {
+                    return WrappedVerificationResponse(data: "https://www.example.com?code=1", error: nil)
+                }
             } else if httpres?.statusCode ?? 400 >= 400 {
                 return WrappedVerificationResponse(data: nil, error: ErrorHandler.processError(data: data))
             } else{

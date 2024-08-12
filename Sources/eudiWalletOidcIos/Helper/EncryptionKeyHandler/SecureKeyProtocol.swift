@@ -10,6 +10,7 @@ import Foundation
 //Enum to identify the type of key generation class used like CryptoKitHandler, SecureEnclaveHandler
 public enum SecureKeyTypes{
     case cryptoKit
+    case eddsa
     case secureEnclave
 }
 
