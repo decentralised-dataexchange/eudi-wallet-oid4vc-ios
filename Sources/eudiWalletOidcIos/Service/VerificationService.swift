@@ -304,19 +304,14 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                     fatalError("Failed to convert dictionary to string")
                 }
                 
-                let matchesString = matchCredentials(inputDescriptorJson: inputDescriptorString, credentials: processedCredentials)
-                // Assuming `matchesString` contains a JSON array of matches
-                if let matchesData = matchesString.data(using: .utf8),
-                   let matchesArray = try? JSONSerialization.jsonObject(with: matchesData) as? [String: Any],
-                   let matchedCredentials = matchesArray["MatchedCredentials"] as? [[String: Any]] {
-                    // Now you have access to the "MatchedCredentials" list
-                    for index in 0..<matchedCredentials.count {
-                        if index < tempCredentialList.count {
-                            filteredCredentialList.append(tempCredentialList[matchedCredentials[index]["index"] as? Int ?? 0] ?? "")
-                        }
+                do {
+                    let matchesString = try matchCredentials(inputDescriptorJson: inputDescriptorString, credentials: processedCredentials)
+                    for item in matchesString {
+                        filteredCredentialList.append(tempCredentialList[item.index] ?? "")
                     }
+                } catch {
+                    print("error")
                 }
-                
                 response.append(filteredCredentialList)
             }
         }
