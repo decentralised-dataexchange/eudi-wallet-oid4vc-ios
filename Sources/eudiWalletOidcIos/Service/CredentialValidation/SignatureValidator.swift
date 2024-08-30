@@ -116,7 +116,7 @@ class SignatureValidator {
         if let expectedCrv = algToCrvMap[alg], expectedCrv != crv {
             return false
         }
-        guard let publicKey = extractPublicKey(from: jwk) else {
+        guard let publicKey = extractPublicKey(from: jwk, crv: crv) else {
             return false
         }
         
@@ -126,8 +126,8 @@ class SignatureValidator {
         return isVerified
     }
     
-    static private func extractPublicKey(from jwk: [String: Any]) -> P256.Signing.PublicKey? {
-        guard let crv = jwk["crv"] as? String, crv == "P-256",
+    static private func extractPublicKey(from jwk: [String: Any], crv: String? = "ES") -> Any? {
+        guard let crv = jwk["crv"] as? String,
               let x = jwk["x"] as? String,
               let y = jwk["y"] as? String,
               let xData = Data(base64URLEncoded: x),
@@ -141,20 +141,54 @@ class SignatureValidator {
         publicKeyData.append(yData)
         
         do {
-            let publicKey = try P256.Signing.PublicKey(x963Representation: publicKeyData)
-            return publicKey
+            switch crv {
+            case "P-256":
+                return try P256.Signing.PublicKey(x963Representation: publicKeyData)
+            case "P-384":
+                return try P384.Signing.PublicKey(x963Representation: publicKeyData)
+            case "P-521":
+                return try P521.Signing.PublicKey(x963Representation: publicKeyData)
+            default:
+                return try P256.Signing.PublicKey(x963Representation: publicKeyData)
+            }
         } catch {
             print("Error creating public key: \(error)")
             return nil
         }
     }
     
-    static private func verifySignature(signature: Data, for data: Data, using publicKey: P256.Signing.PublicKey) -> Bool {
-        guard let ecdsaSignature = try? P256.Signing.ECDSASignature(rawRepresentation: signature) else {
-            print("Error converting signature to ECDSASignature")
+    static private func verifySignature(signature: Data, for data: Data, using publicKey: Any) -> Bool {
+        do {
+            switch publicKey {
+            case let publicKey as P256.Signing.PublicKey:
+                guard let ecdsaSignature = try? P256.Signing.ECDSASignature(rawRepresentation: signature) else {
+                    print("Error converting signature to P256 ECDSASignature")
+                    return false
+                }
+                return publicKey.isValidSignature(ecdsaSignature, for: data)
+                
+            case let publicKey as P384.Signing.PublicKey:
+                guard let ecdsaSignature = try? P384.Signing.ECDSASignature(rawRepresentation: signature) else {
+                    print("Error converting signature to P384 ECDSASignature")
+                    return false
+                }
+                return publicKey.isValidSignature(ecdsaSignature, for: data)
+                
+            case let publicKey as P521.Signing.PublicKey:
+                guard let ecdsaSignature = try? P521.Signing.ECDSASignature(rawRepresentation: signature) else {
+                    print("Error converting signature to P521 ECDSASignature")
+                    return false
+                }
+                return publicKey.isValidSignature(ecdsaSignature, for: data)
+                
+            default:
+                print("Unsupported public key type")
+                return false
+            }
+        } catch {
+            print("Error during signature verification: \(error)")
             return false
         }
-        return publicKey.isValidSignature(ecdsaSignature, for: data)
     }
     
 }
