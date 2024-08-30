@@ -40,10 +40,10 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             
             // Presentation Submission model
             guard let presentationSubmission = preparePresentationSubmission(presentationRequest: presentationRequest) else { return nil }
-        
-        guard let redirectURL = presentationRequest?.redirectUri else {return nil}
-        return await sendVPRequest(vpToken: vpToken, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "")
-    }
+            
+            guard let redirectURL = presentationRequest?.redirectUri else {return nil}
+            return await sendVPRequest(vpToken: vpToken, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "")
+        }
     
     private func generateJWKFromPrivateKey(secureKey: SecureKeyData, did: String) -> [String: Any] {
         let rawRepresentation = secureKey.publicKey
@@ -71,6 +71,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             let responseUri = URL(string: code)?.queryParameters?["response_uri"] ?? ""
             let responseMode = URL(string: code)?.queryParameters?["response_mode"] ?? ""
             var presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
+            var clientMetaData = URL(string: code)?.queryParameters?["client_metadata"] ?? ""
             
             if presentationDefinition != "" {
                 
@@ -83,7 +84,9 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                                                                scope: scope,
                                                                nonce: nonce,
                                                                requestUri: requestUri,
-                                                               presentationDefinition: presentationDefinition)
+                                                               presentationDefinition: presentationDefinition,
+                                                               clientMetaData: clientMetaData
+                )
                 return presentationRequest
                 
             } else if requestUri != "" {
@@ -186,7 +189,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             presentationDefinition = nil
         }
         //encoding is done because '+' was removed by the URL session
-        let formatKey = presentationDefinition?.format?.first(where: { key, _ in key.contains("vc") })?.key ?? ""
+        let formatKey = presentationDefinition?.format?.first(where: { key, _ in key.contains("vc") })?.key ?? "jwt_vp"
         let format = formatKey == "vcsd-jwt" ? "vc+sd-jwt" : formatKey
         let encodedFormat = format.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "+")).subtracting(CharacterSet(charactersIn: "+")))?.replacingOccurrences(of: "+", with: "%2B")
         if let inputDescriptors = presentationDefinition?.inputDescriptors {
@@ -194,7 +197,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 let item = inputDescriptors[index]
                 let pathNested = DescriptorMap(id: item.id ?? "", path: "$.vp.verifiableCredential[\(index)]", format: "jwt_vc", pathNested: nil)
                 
-                descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: encodedFormat ?? "", pathNested: pathNested))
+                descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: encodedFormat ?? "jwt_vp", pathNested: pathNested))
             }
         }
         
@@ -303,15 +306,16 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 guard let inputDescriptorString = String(data: try! JSONSerialization.data(withJSONObject: dictionary, options: .withoutEscapingSlashes), encoding: .utf8) else {
                     fatalError("Failed to convert dictionary to string")
                 }
-                
                 do {
                     let matchesString = try matchCredentials(inputDescriptorJson: inputDescriptorString, credentials: processedCredentials)
                     for item in matchesString {
                         filteredCredentialList.append(tempCredentialList[item.index] ?? "")
                     }
+                    
                 } catch {
                     print("error")
                 }
+                
                 response.append(filteredCredentialList)
             }
         }
@@ -364,34 +368,34 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         return processedCredentials
     }
     
-func updatePath(in descriptor: InputDescriptor) -> InputDescriptor {
-    var updatedDescriptor = descriptor
-    guard var constraints = updatedDescriptor.constraints else { return updatedDescriptor }
-    guard var fields = constraints.fields else { return updatedDescriptor }
-    
-    for j in 0..<fields.count {
-        guard var pathList = fields[j].path else { continue }
+    func updatePath(in descriptor: InputDescriptor) -> InputDescriptor {
+        var updatedDescriptor = descriptor
+        guard var constraints = updatedDescriptor.constraints else { return updatedDescriptor }
+        guard var fields = constraints.fields else { return updatedDescriptor }
         
-        for k in 0..<pathList.count {
-            let path = pathList[k]
-            if path.contains("$.vc.") {
-                let newPath = path.replacingOccurrences(of: "$.vc.", with: "$.")
-                if !pathList.contains(newPath) {
-                    pathList.append(newPath)
+        for j in 0..<fields.count {
+            guard var pathList = fields[j].path else { continue }
+            
+            for k in 0..<pathList.count {
+                let path = pathList[k]
+                if path.contains("$.vc.") {
+                    let newPath = path.replacingOccurrences(of: "$.vc.", with: "$.")
+                    if !pathList.contains(newPath) {
+                        pathList.append(newPath)
+                    }
                 }
             }
+            fields[j].path = pathList
         }
-        fields[j].path = pathList
+        constraints.fields = fields
+        updatedDescriptor.constraints = constraints
+        
+        return updatedDescriptor
     }
-    constraints.fields = fields
-    updatedDescriptor.constraints = constraints
-    
-    return updatedDescriptor
-}
 }
 extension VerificationService: URLSessionDelegate, URLSessionTaskDelegate {
     public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-            // Stops the redirection, and returns (internally) the response body.
-            completionHandler(nil)
-        }
+        // Stops the redirection, and returns (internally) the response body.
+        completionHandler(nil)
     }
+}
