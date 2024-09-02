@@ -240,7 +240,13 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             if httpres?.statusCode == 302 || httpres?.statusCode == 200 {
                 if let location = httpres?.value(forHTTPHeaderField: "Location") {
                     responseUrl = location
-                    return WrappedVerificationResponse(data: responseUrl, error: nil)
+                    let url = URL.init(string: location)
+                    if let errorDescription = url?.queryParameters?["error_description"] as? String {
+                        let error = errorDescription.replacingOccurrences(of: "+", with: " ").data(using: .utf8)
+                        return WrappedVerificationResponse(data: nil, error: ErrorHandler.processError(data: error))
+                    } else {
+                        return WrappedVerificationResponse(data: responseUrl, error: nil)
+                    }
                 } else {
                     return WrappedVerificationResponse(data: "https://www.example.com?code=1", error: nil)
                 }
