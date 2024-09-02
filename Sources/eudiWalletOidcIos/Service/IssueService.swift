@@ -70,6 +70,26 @@ public class IssueService: NSObject, IssueServiceProtocol {
         }
     }
     
+    private func buildAuthorizationRequest(credentialOffer: CredentialOffer?) -> String {
+        var authorizationDetails =  if credentialOffer?.credentials?[0].trustFramework == nil {
+            "[" + (([
+                "type": "openid_credential",
+                "format": "jwt_vc_json",
+                "credential_definition": ["type":credentialOffer?.credentials?[0].types ?? []],
+                "locations": [credentialOffer?.credentialIssuer ?? ""]
+            ] as [String : Any]).toString() ?? "") + "]"
+        } else {
+            "[" + (([
+                "type": "openid_credential",
+                "format": "jwt_vc",
+                "types": credentialOffer?.credentials?[0].types ?? [],
+                "locations": [credentialOffer?.credentialIssuer ?? ""]
+            ] as [String : Any]).toString() ?? "") + "]"
+        }
+        
+        return authorizationDetails
+    }
+    
     // MARK: - To process the authorisation request, The authorisation request is to grant access to the credential endpoint.
     /// - Parameters:
     ///   - did - DID created for the issuance
@@ -91,13 +111,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         let responseType = "code"
         let scope = "openid"
         let state = UUID().uuidString
-        let authorizationDetails =
-        "[" + (([
-            "type": "openid_credential",
-            "format": "jwt_vc",
-            "types": credentialOffer.credentials?[0].types ?? [],
-            "locations": [credentialOffer.credentialIssuer]
-        ] as [String : Any]).toString() ?? "") + "]"
+        let authorizationDetails = buildAuthorizationRequest(credentialOffer: credentialOffer)
         
         let nonce = UUID().uuidString
         let codeChallenge = CodeVerifierService.shared.generateCodeChallenge(codeVerifier: codeVerifier)
