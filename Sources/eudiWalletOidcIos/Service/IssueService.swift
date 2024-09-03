@@ -628,6 +628,16 @@ public class IssueService: NSObject, IssueServiceProtocol {
             return nil
         }
     }
+    
+    public func getCredentialDisplayFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Display? {
+        guard let issuerConfig = issuerConfig else { return nil }
+        
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
+            return credentialSupported.display?[0] ?? nil
+        } else {
+            return nil
+        }
+    }
 }
 
 
