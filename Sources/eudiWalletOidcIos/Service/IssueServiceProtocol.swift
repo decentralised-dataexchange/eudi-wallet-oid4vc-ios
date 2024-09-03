@@ -76,4 +76,6 @@ protocol IssueServiceProtocol {
     
     func getCryptoFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> [String]?
     
+    func etCredentialDisplayFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Display?
+    
 }
