@@ -8,13 +8,25 @@
 import Foundation
 
 // MARK: - IssuerWellKnownConfiguration
-struct DisplayResponse: Codable {
+public struct DisplayResponse: Codable {
     let name: String?
     let location: String?
     let locale: String?
     let description: String?
-    var cover, logo: DisplayCoverResponse?
+    var cover, logo, bgImage: DisplayCoverResponse?
     var backgroundColor, textColor: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name = "name"
+        case location = "location"
+        case locale =  "locale"
+        case description = "display"
+        case cover = "cover"
+        case logo = "logo"
+        case bgImage =  "background_image"
+        case backgroundColor = "background_color"
+        case textColor = "text_color"
+    }
 }
 struct TrustFrameworkInIssuerResponse: Codable {
     let name: String?
@@ -143,10 +155,12 @@ struct IssuerCredentialDefinitionResponse: Codable {
 // MARK: - Cover
 struct DisplayCoverResponse: Codable {
     var url: String?
+    var uri: String?
     var altText: String?
 
     enum CodingKeys: String, CodingKey {
         case url
+        case uri
         case altText = "alt_text"
     }
 }
@@ -200,5 +214,3 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
         }
     }
 }
-
-

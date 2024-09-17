@@ -4,16 +4,15 @@
 //
 //  Created by Mumthasir mohammed on 08/03/24.
 //
-
 import Foundation
 
 // MARK: - IssuerWellKnownConfiguration
-public struct Display{
+public struct Display: Codable{
     public let name: String?
     public let location: String?
     public let locale: String?
     public let description: String?
-    public var cover, logo: DisplayCover?
+    public var bgImage, logo, cover: DisplayCover?
     public var backgroundColor, textColor: String?
     
     init(from: DisplayResponse) {
@@ -21,23 +20,25 @@ public struct Display{
         location = from.location
         locale = from.locale
         description = from.description
-        cover = from.cover == nil ? nil : DisplayCover(from: from.cover!)
+        bgImage = from.bgImage == nil ? nil : DisplayCover(from: from.bgImage!)
         logo = from.logo == nil ? nil : DisplayCover(from: from.logo!)
+        cover = from.cover == nil ? nil : DisplayCover(from: from.cover!)
         backgroundColor = from.backgroundColor
         textColor = from.textColor
     }
     
-    public init(mName: String, mLocation:String, mLocale: String?, mDescription: String, mCover: DisplayCover?, mLogo: DisplayCover?, mBackgroundColor: String?, mTextColor: String?) {
+    public init(mName: String?, mLocation:String?, mLocale: String?, mDescription: String?, mCover: DisplayCover?, mLogo: DisplayCover?, mBackgroundColor: String?, mTextColor: String?) {
            name = mName
            location = mLocation
            locale = mLocale
            description = mDescription
-           cover = mCover
+           bgImage = mCover
            logo = mLogo
            backgroundColor = mBackgroundColor
            textColor = mTextColor
        }
 }
+
 public struct TrustFrameworkInIssuer {
     public let name: String?
     public let type: String?
@@ -51,21 +52,6 @@ public struct TrustFrameworkInIssuer {
         display = from.display == nil ? nil : Display(from: from.display!)
     }
 }
-//struct CredentialsSupported: Codable {
-//    let format: String?
-//    let types: [String]?
-//    let trustFramework: TrustFrameworkInIssuer?
-//    let display: DisplayOrArray?
-//}
-//
-//// MARK: - CredentialsSupportedObject
-//struct CredentialsSupportedObjectType: Codable {
-//    var credentialsSupported: CredentialSupportedObject?
-//
-//    enum CodingKeys: String, CodingKey {
-//        case credentialsSupported = "credentials_supported"
-//    }
-//}
 
 // MARK: - CredentialObj
 public struct CredentialSupportedObject {
@@ -95,7 +81,6 @@ public struct CredentialSupportedObject {
             }
         }
     }
-
 }
 
 public struct DisplayElement {
@@ -117,10 +102,6 @@ public struct IssuerCredentialDefinition {
         vct = from.vct
     }
 }
-
-//enum Format: String, Codable {
-//    case jwtVc = "jwt_vc"
-//}
 
 // MARK: - DataSharing
 public struct DataSharing {
@@ -160,21 +141,23 @@ public struct CredentialsSupportedObjectDisplay {
 }
 
 // MARK: - Cover
-public struct DisplayCover{
-    public var url: String?
+public struct DisplayCover: Codable {
+    public var uri: String?
     public var altText: String?
+    public var url: String?
     
     init(from: DisplayCoverResponse) {
-        url = from.url
+        uri = from.uri
         altText = from.altText
+        url =  from.url
     }
     
     public init(mUrl: String?, mAltText: String?) {
-        url = mUrl
+        uri = mUrl
         altText = mAltText
+        url = mUrl
     }
 }
-
 
 public struct IssuerWellKnownConfiguration {
     public let credentialIssuer: String?
@@ -234,4 +217,3 @@ public struct IssuerWellKnownConfiguration {
         credentialsSupported = nil
     }
 }
-
