@@ -52,13 +52,11 @@ protocol IssueServiceProtocol {
         - credentialEndpointUrlString: The URL string of the credential endpoint.
         - c_nonce: The nonce value for the credential request.
         - accessToken: The access token for authentication.
-
      - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
      */
     func processCredentialRequest(did: String, secureKey: SecureKeyData, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String) async -> CredentialResponse?
     
     // Processes a deferred credential request to obtain the credential response in deffered manner.
-
         /** - Parameters
             - acceptanceToken - token which we got from credential request
             - deferredCredentialEndPoint - end point to call the deferred credential
@@ -76,6 +74,6 @@ protocol IssueServiceProtocol {
     
     func getCryptoFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> [String]?
     
-    func etCredentialDisplayFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Display?
+    func getCredentialDisplayFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Display?
     
 }
