@@ -7,6 +7,9 @@
 import Foundation
 import CryptoKit
 import PresentationExchangeSdkiOS
+import SwiftCBOR
+import OrderedCollections
+
 public class VerificationService: NSObject, VerificationServiceProtocol {
     
     var keyHandler: SecureKeyProtocol
@@ -25,7 +28,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         did: String,
         secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
-        credentialsList: [String]?) async -> WrappedVerificationResponse? {
+        credentialsList: [String]?, format: String) async -> WrappedVerificationResponse? {
             
             let jwk = generateJWKFromPrivateKey(secureKey: secureKey, did: did)
             
@@ -36,7 +39,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             let payload = generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "")
             debugPrint("payload:\(payload)")
             
-            let vpToken =  generateVPToken(header: header, payload: payload, secureKey: secureKey)
+            let vpToken =  format == "mso_mdoc" ? generateVPTokenForMdoc(credential: credentialsList ?? []) :generateVPToken(header: header, payload: payload, secureKey: secureKey)
             
             // Presentation Submission model
             guard let presentationSubmission = preparePresentationSubmission(presentationRequest: presentationRequest) else { return nil }
@@ -176,6 +179,34 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return ""}
         return idToken//"\(unsignedToken).\(signature.base64URLEncodedString() ?? "")"
     }
+
+    private func generateVPTokenForMdoc(credential: [String]) -> String {
+        var cborString: String = ""
+    var base64StringWithoutPadding = ""
+        for cred in credential {
+            if let issuerAuthData = getIssuerAuth(credential: cred), let nameSpaceData = getNameSpaces(credential: cred) {
+        let dummy = getLimitDisclosureCBOR(index: 0, cborData: nameSpaceData)
+        let docType = getDocTypeFromIssuerAuth(cborData: issuerAuthData)
+                let docFiltered = [Document(docType: docType ?? "", issuerSigned: IssuerSigned(nameSpaces: nameSpaceData, issuerAuth: issuerAuthData))]
+                
+                let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
+                let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
+                let responseDict = deviceResponseToSend.toDictionary()
+                if let cborData = encodeToCBOR(responseDict) {
+                    cborString = Data(cborData.encode()).base64EncodedString()
+
+            base64StringWithoutPadding = cborString.replacingOccurrences(of: "=", with: "") ?? ""
+                base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "+", with: "-")
+                base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "/", with: "_")
+        
+                    print(Data(cborData.encode()).base64EncodedString())
+                } else {
+                    print("Failed to encode data")
+                }
+            }
+        }
+        return base64StringWithoutPadding
+    }
     
     private func preparePresentationSubmission(
         presentationRequest: PresentationRequest?
@@ -188,16 +219,33 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         } catch {
             presentationDefinition = nil
         }
+    var credentialFormat: String = ""
+                            //Need to check for the format
+                            if let format = presentationDefinition?.format ?? presentationDefinition?.inputDescriptors?.first?.format {
+                                for (key, _) in format {
+                                    credentialFormat = key
+                                }
+                            }
+
         //encoding is done because '+' was removed by the URL session
         let formatKey = presentationDefinition?.format?.first(where: { key, _ in key.contains("vc") })?.key ?? "jwt_vp"
         let format = formatKey == "vcsd-jwt" ? "vc+sd-jwt" : formatKey
+    var formatType: String? = ""
         let encodedFormat = format.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "+")).subtracting(CharacterSet(charactersIn: "+")))?.replacingOccurrences(of: "+", with: "%2B")
         if let inputDescriptors = presentationDefinition?.inputDescriptors {
             for index in 0..<inputDescriptors.count {
                 let item = inputDescriptors[index]
-                let pathNested = DescriptorMap(id: item.id ?? "", path: "$.vp.verifiableCredential[\(index)]", format: "jwt_vc", pathNested: nil)
+        var pathNested: DescriptorMap? = nil
+                let pathNestedValue = DescriptorMap(id: item.id ?? "", path: "$.vp.verifiableCredential[\(index)]", format: "jwt_vc", pathNested: nil)
+        if credentialFormat == "mso_mdoc" {
+            formatType = "mso_mdoc"
+            pathNested = nil
+        } else {
+            formatType = encodedFormat ?? "jwt_vp"
+            pathNested = pathNestedValue
+        }
                 
-                descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: encodedFormat ?? "jwt_vp", pathNested: pathNested))
+                descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: formatType ?? "", pathNested: pathNested))
             }
         }
         
@@ -294,10 +342,22 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         
         if let inputDescriptors = presentationDefinition.inputDescriptors {
             for inputDescriptor in inputDescriptors {
-                
-                let tempCredentialList = splitCredentialsBySdJWT(allCredentials: credentialList, isSdJwt: inputDescriptor.constraints?.limitDisclosure != nil)
-                
-                let processedCredentials = processCredentialsToJsonString(credentialList: tempCredentialList)
+        var processedCredentials:[String] = []
+                var tempCredentialList: [String?] = []
+                var credentialFormat: String = ""
+                if let format = presentationDefinition.format ?? inputDescriptor.format {
+                    for (key, value) in format {
+                        credentialFormat = key
+                    }
+                }
+                if credentialFormat == "mso_mdoc" {
+                    tempCredentialList = credentialList
+                    processedCredentials = processCborCredentialToJsonString(credentialList: tempCredentialList)
+                } else {
+                    tempCredentialList = splitCredentialsBySdJWT(allCredentials: credentialList, isSdJwt: inputDescriptor.constraints?.limitDisclosure != nil)
+                    
+                    processedCredentials = processCredentialsToJsonString(credentialList: tempCredentialList)
+                }
                 
                 let updatedDescriptor = updatePath(in: inputDescriptor)
                 var filteredCredentialList: [String] = []
@@ -341,6 +401,445 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             }
         }
         return filteredCredentials
+    }
+
+    func processCborCredentialToJsonString(credentialList: [String?]) -> [String] {
+        var processedCredentials = [String]()
+        for cred in credentialList {
+            var cborItem = convertCBORtoJson(credential: cred ?? "") ?? ""
+            processedCredentials.append(cborItem)
+        }
+        return processedCredentials
+    }
+
+
+    func getDocTypeFromIssuerAuth(cborData: CBOR) -> String? {
+    guard case let CBOR.array(elements) = cborData else {
+        print("Expected CBOR array, but got something else.")
+        return nil
+    }
+    var docType: String? = ""
+    for element in elements {
+        if case let CBOR.byteString(byteString) = element {
+            if let nestedCBOR = try? CBOR.decode(byteString) {
+        if case let CBOR.tagged(tag, item) = nestedCBOR, tag.rawValue == 24 {
+            if case let CBOR.byteString(data) = item {
+                if let decodedInnerCBOR = try? CBOR.decode([UInt8](data)) {
+            docType = extractDocType(cborData: decodedInnerCBOR )
+                } else {
+                    print("Failed to decode inner ByteString under Tag 24.")
+                }
+            }
+        }
+            } else {
+                print("Could not decode ByteString as CBOR, inspecting data directly.")
+                print("ByteString data: \(byteString)")
+            }
+        } else {
+            print("Element: \(element)")
+        }
+    }
+    return docType ?? ""
+}
+
+func extractDocType(cborData: CBOR) -> String? {
+    guard case let CBOR.map(map) = cborData else {
+        return nil
+    }
+
+    // Iterate over the map to find the key 'docType'
+    for (key, value) in map {
+        if case let CBOR.utf8String(keyString) = key, keyString == "docType" {
+            if case let CBOR.utf8String(docTypeValue) = value {
+                return docTypeValue
+            } else {
+                print("The value associated with 'docType' is not a string.")
+            }
+        }
+    }
+
+    print("docType not found in the CBOR map.")
+    return nil
+}
+
+    func getIssuerAuth(credential: String) -> CBOR? {
+        // Convert the base64 URL encoded credential to Data
+        if let data = Data(base64URLEncoded: credential) {
+            do {
+                // Decode the CBOR data into a dictionary
+                let decodedCBOR = try CBOR.decode([UInt8](data))
+                
+                if let dictionary = decodedCBOR {
+                    // Check for the presence of "issuerAuth" in the dictionary
+                    if let issuerAuthValue = dictionary[CBOR.utf8String("issuerAuth")] {
+                        return issuerAuthValue // Return the issuerAuth value directly
+                    }
+                }
+            } catch {
+                print("Error decoding CBOR: \(error)")
+                return nil
+            }
+        } else {
+            print("Invalid base64 URL encoded credential.")
+            return nil
+        }
+        
+        return nil // Return nil if "issuerAuth" is not found
+    }
+
+    func getNameSpaces(credential: String) -> CBOR? {
+        // Convert the base64 URL encoded credential to Data
+        if let data = Data(base64URLEncoded: credential) {
+            do {
+                // Decode the CBOR data into a dictionary
+                let decodedCBOR = try CBOR.decode([UInt8](data))
+                
+                if let dictionary = decodedCBOR {
+                    // Check for the presence of "issuerAuth" in the dictionary
+                    if let issuerAuthValue = dictionary[CBOR.utf8String("nameSpaces")] {
+                        return issuerAuthValue // Return the issuerAuth value directly
+                    }
+                }
+            } catch {
+                print("Error decoding CBOR: \(error)")
+                return nil
+            }
+        } else {
+            print("Invalid base64 URL encoded credential.")
+            return nil
+        }
+        
+        return nil // Return nil if "issuerAuth" is not found
+    }
+
+
+
+func getLimitDisclosureCBOR(index: Int, cborData: CBOR) -> CBOR? {
+    // Ensure the input is a map type
+    guard case let CBOR.map(map) = cborData else {
+        print("Input data is not a CBOR map.")
+        return nil
+    }
+
+    // Iterate over the map to locate the target key
+    var modifiedMap = map
+    for (key, value) in map {
+        // Check if the key is the target key and its value is an array
+        if case let CBOR.utf8String(keyString) = key, keyString == "org.iso.18013.5.1.pID" {
+            if case let CBOR.array(array) = value {
+                // Validate the index
+                guard index >= 0 && index < array.count else {
+                    print("Index is out of bounds.")
+                    return nil
+                }
+
+                // Extract the element at the given index
+                let selectedElement = array[index]
+
+                // Replace the original array with the new one containing only the selected element
+                modifiedMap[key] = CBOR.array([selectedElement])
+            } else {
+                print("Value associated with key is not an array.")
+                return nil
+            }
+        }
+    }
+
+    // Return the modified CBOR object
+    return CBOR.map(modifiedMap)
+}
+
+
+    func extractIssuerAuth(credential: String) -> Any? {
+    // Convert the base64 URL encoded credential to Data
+    if let data = Data(base64URLEncoded: credential) {
+        do {
+            // Decode the CBOR data into a dictionary
+            let decodedCBOR = try CBOR.decode([UInt8](data))
+            
+            if let dictionary = decodedCBOR {
+                // Check for the presence of "issuerAuth" in the dictionary
+                if let issuerAuthValue = dictionary[CBOR.utf8String("issuerAuth")] {
+                    return issuerAuthValue // Return the issuerAuth value directly
+                }
+            }
+        } catch {
+            print("Error decoding CBOR: \(error)")
+            return nil
+        }
+    } else {
+        print("Invalid base64 URL encoded credential.")
+        return nil
+    }
+    
+    return nil // Return nil if "issuerAuth" is not found
+}
+
+
+
+        func convertCBORToHumanReadable(_ cbor: CBOR) -> [String: Any] {
+    var result: [String: Any] = [:]
+    
+    switch cbor {
+    case let .map(map):
+        for (key, value) in map {
+            let keyString = cborToString(key)
+            let valueReadable = cborToHumanReadable(value)
+            result[keyString] = valueReadable
+        }
+    default:
+        print("Unhandled CBOR type")
+    }
+    
+    return result
+}
+
+func cborToHumanReadable(_ cborValue: CBOR) -> Any {
+    switch cborValue {
+    case let .negativeInt(value):
+        // Convert the UInt64 negative integer to an Int safely
+        if let intValue = Int(exactly: value) {
+            return -(intValue + 1)
+        } else {
+            return "NegativeInt out of bounds"
+        }
+        
+    case let .unsignedInt(value):
+        // Handle unsigned integer safely
+        if let intValue = Int(exactly: value) {
+            return intValue
+        } else {
+            return value // return UInt64 if it's too large for Int
+        }
+
+    case let .utf8String(value):
+        return value
+        
+    case let .byteString(data):
+        return Data(data).base64EncodedString()  // Convert byteString to base64 for readability
+        
+    case let .map(map):
+        return convertCBORToHumanReadable(.map(map))
+        
+    default:
+        return "UnsupportedType"
+    }
+}
+    
+    func convertCBORtoJson(credential: String) -> String? {
+        if let data = Data(base64URLEncoded: credential) {
+            do {
+                let decodedCBOR = try CBOR.decode([UInt8](data))
+                if let dictionary = decodedCBOR {
+                    
+                    if let nameSpacesValue = dictionary[CBOR.utf8String("nameSpaces")],
+                       case let CBOR.map(nameSpaces) = nameSpacesValue {
+                        
+                        var resultDict: [String: [String: String]] = [:]
+                        for (key, namespaceValue) in nameSpaces {
+                            var valuesDict: [String: String] = [:]
+                            if case let CBOR.array(orgValues) = namespaceValue {
+                                for value in orgValues {
+                                    if case let CBOR.tagged(tag, taggedValue) = value, tag.rawValue == 24 {
+                                        if case let CBOR.byteString(byteString) = taggedValue {
+                                            let data = Data(byteString)
+                                            
+                                            if let decodedInnerCBOR = try? CBOR.decode([UInt8](data)),
+                                               case let CBOR.map(decodedMap) = decodedInnerCBOR {
+                                                if let identifier = decodedMap[CBOR.utf8String("elementIdentifier")],
+                                                   let value = decodedMap[CBOR.utf8String("elementValue")],
+                                                   case let CBOR.utf8String(identifierString) = identifier {
+                                                    
+                                                    valuesDict[identifierString] = cborToString(value)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            resultDict[cborToString(key)] = valuesDict
+                        }
+                        
+                        // Convert the result dictionary to JSON
+                        let jsonData = try JSONSerialization.data(withJSONObject: resultDict, options: .prettyPrinted)
+                        let jsonString = String(data: jsonData, encoding: .utf8)
+                        return jsonString?.replacingOccurrences(of: "\n", with: "")
+                    } else {
+                        print("Key 'nameSpaces' not found or not a valid map.")
+                    }
+                }
+            } catch {
+                print("Error decoding CBOR: \(error)")
+            }
+        }
+        return nil
+    }
+
+
+    func cborToString(_ cbor: CBOR) -> String {
+    switch cbor {
+    case .utf8String(let stringValue):
+        return stringValue
+    case .unsignedInt(let uintValue):
+        return String(uintValue)
+    case .negativeInt(let intValue):
+        return String(intValue)
+    case .boolean(let boolValue):
+        return String(boolValue)
+    case .null:
+        return "null"
+    case .float(let floatValue):
+        return String(floatValue)
+    case .double(let doubleValue):
+        return String(doubleValue)
+    default:
+        return "Unsupported CBOR type"
+    }
+}
+
+    func encodeToCBOR(_ dict: [String: Any]) -> CBOR? {
+    var cborMap: OrderedDictionary<CBOR, CBOR> = [:]
+    
+    for (key, value) in dict {
+        let cborKey = CBOR.utf8String(key)
+        
+        // Handle different value types
+        if let stringValue = value as? String {
+            if stringValue == "NULL" {
+                cborMap[cborKey] = CBOR.null
+            } else if stringValue.contains("ByteString") {
+                // Handle ByteString placeholder
+                cborMap[cborKey] = CBOR.byteString([0x01, 0x02, 0x03]) // Example ByteString, customize as needed
+            } else {
+                cborMap[cborKey] = CBOR.utf8String(stringValue)
+            }
+        } else if let intValue = value as? Int {
+            if intValue >= 0 {
+                cborMap[cborKey] = CBOR.unsignedInt(UInt64(intValue))
+            } else {
+                cborMap[cborKey] = CBOR.negativeInt(UInt64(-1 - intValue))
+            }
+        } else if let floatValue = value as? Float {
+            cborMap[cborKey] = CBOR.float(floatValue)
+        } else if let doubleValue = value as? Double {
+            cborMap[cborKey] = CBOR.double(doubleValue)
+        } else if let boolValue = value as? Bool {
+            cborMap[cborKey] = CBOR.boolean(boolValue)
+        } else if let arrayValue = value as? [Any] {
+            cborMap[cborKey] = encodeArrayToCBOR(arrayValue)
+        } else if let dictValue = value as? [String: Any] {
+            if let encodedDict = encodeToCBOR(dictValue) {
+                cborMap[cborKey] = encodedDict
+            }
+        } else if let cborValue = value as? SwiftCBOR.CBOR {
+            // Handle CBOR types directly
+            cborMap[cborKey] = cborValue
+        } else if let customObject = value as? CustomCborConvertible {
+            // Handle custom objects that conform to CustomCborConvertible
+            cborMap[cborKey] = customObject.toCBOR()
+        } else {
+            print("Unsupported type for key: \(key)")
+            return nil
+        }
+    }
+
+    return CBOR.map(cborMap)
+}
+
+    func encodeArrayToCBOR(_ array: [Any]) -> CBOR {
+    var cborArray: [CBOR] = []
+    
+    for value in array {
+        if let stringValue = value as? String {
+            if stringValue == "NULL" {
+                cborArray.append(CBOR.null)
+            } else if stringValue.contains("ByteString") {
+                cborArray.append(CBOR.byteString([0x01, 0x02, 0x03])) // Example ByteString
+            } else {
+                cborArray.append(CBOR.utf8String(stringValue))
+            }
+        } else if let intValue = value as? Int {
+            if intValue >= 0 {
+                cborArray.append(CBOR.unsignedInt(UInt64(intValue)))
+            } else {
+                cborArray.append(CBOR.negativeInt(UInt64(-1 - intValue)))
+            }
+        } else if let floatValue = value as? Float {
+            cborArray.append(CBOR.float(floatValue))
+        } else if let boolValue = value as? Bool {
+            cborArray.append(CBOR.boolean(boolValue))
+        } else if let dictValue = value as? [String: Any], let encodedDict = encodeToCBOR(dictValue) {
+            cborArray.append(encodedDict)
+        } else if let subArray = value as? [Any] {
+            cborArray.append(encodeArrayToCBOR(subArray))
+        } else if let cborValue = value as? SwiftCBOR.CBOR {
+            // Handle CBOR values directly
+            cborArray.append(cborValue)
+        } else if let customObject = value as? CustomCborConvertible {
+            // Handle custom objects
+            cborArray.append(customObject.toCBOR())
+        } else {
+            print("Unsupported type in array")
+            return CBOR.null
+        }
+    }
+    
+    return CBOR.array(cborArray)
+}
+
+    func sample() {
+
+        let dataToEncode: [String: Any] = [
+      "version": 1.0,
+      "documents": [
+        [
+          "docType": "eu.europa.ec.eudi.pid.1",
+          "issuerSigned": [
+            "nameSpaces": [
+              "eu.europa.ec.eudi.pid.1": [
+                "co.nstant.in.cbor.model.ByteString@3d1629c9",
+                "co.nstant.in.cbor.model.ByteString@257ff3de",
+                "co.nstant.in.cbor.model.ByteString@6c3d9b4a",
+                "co.nstant.in.cbor.model.ByteString@1fa16c0e",
+                "co.nstant.in.cbor.model.ByteString@97ab30de",
+                "co.nstant.in.cbor.model.ByteString@cd5ee3ea",
+                "co.nstant.in.cbor.model.ByteString@a66e7ef3",
+                "co.nstant.in.cbor.model.ByteString@1efddce"
+              ]
+            ],
+            "issuerAuth": [
+              "co.nstant.in.cbor.model.ByteString@2e86f342",
+              [
+                "33": "co.nstant.in.cbor.model.ByteString@e9a6a3e5"
+              ],
+              "co.nstant.in.cbor.model.ByteString@fcdfe913",
+              "co.nstant.in.cbor.model.ByteString@6316f4"
+            ]
+          ],
+          "deviceSigned": [
+            "nameSpaces": "co.nstant.in.cbor.model.ByteString@158a8b25",
+            "deviceAuth": [
+              "deviceSignature": [
+                "co.nstant.in.cbor.model.ByteString@2e86f342",
+                [:], // Empty dictionary
+                "NULL", // Special NULL value
+                "co.nstant.in.cbor.model.ByteString@d95bfc90"
+              ]
+            ]
+          ]
+        ]
+      ],
+      "status": 0
+    ]
+    // Encode the data into CBOR format
+    if let cborData = encodeToCBOR(dataToEncode) {
+      // CBOR-encoded data as byte array
+//      let encodedBytes = CBOR.encode(cborData)
+      // Print encoded CBOR bytes in hex format
+      print(Data(cborData.encode()).base64EncodedString())
+    } else {
+      print("Failed to encode data")
+    }
     }
     
     private func processCredentialsToJsonString(credentialList: [String?]) -> [String] {
@@ -404,4 +903,265 @@ extension VerificationService: URLSessionDelegate, URLSessionTaskDelegate {
         // Stops the redirection, and returns (internally) the response body.
         completionHandler(nil)
     }
+}
+
+protocol CustomCborConvertible {
+    func toCBOR() -> CBOR
+}
+
+public struct DeviceResponse :CustomCborConvertible{
+    let version: String
+    let documents: [Document]?
+    let status: Int
+    
+    enum Keys: String {
+        case version
+        case documents
+        case status
+    }
+
+    init(version: String? = nil, documents: [Document]? = nil, status: Int) {
+        self.version = version ?? "1.0"
+        self.documents = documents
+        self.status = status
+    }
+
+         func toDictionary() -> [String: Any] {
+        var dict: [String: Any] = [:]
+        dict["version"] = version
+        dict["documents"] = documents
+        dict["status"] = status
+        return dict
+    }
+
+    func encodeToCBOR(_ dict: [String: Any]) -> CBOR? {
+    var cborMap: OrderedDictionary<CBOR, CBOR> = [:]
+    
+    for (key, value) in dict {
+        let cborKey = CBOR.utf8String(key)
+        
+        // Handle different value types
+        if let stringValue = value as? String {
+            if stringValue == "NULL" {
+                cborMap[cborKey] = CBOR.null
+            } else if stringValue.contains("ByteString") {
+                // Handle ByteString placeholder
+                cborMap[cborKey] = CBOR.byteString([0x01, 0x02, 0x03]) // Example ByteString, customize as needed
+            } else {
+                cborMap[cborKey] = CBOR.utf8String(stringValue)
+            }
+        } else if let intValue = value as? Int {
+            if intValue >= 0 {
+                cborMap[cborKey] = CBOR.unsignedInt(UInt64(intValue))
+            } else {
+                cborMap[cborKey] = CBOR.negativeInt(UInt64(-1 - intValue))
+            }
+        } else if let floatValue = value as? Float {
+            cborMap[cborKey] = CBOR.float(floatValue)
+        } else if let doubleValue = value as? Double {
+            cborMap[cborKey] = CBOR.double(doubleValue)
+        } else if let boolValue = value as? Bool {
+            cborMap[cborKey] = CBOR.boolean(boolValue)
+        } else if let arrayValue = value as? [Any] {
+            cborMap[cborKey] = encodeArrayToCBOR(arrayValue)
+        } else if let dictValue = value as? [String: Any] {
+            if let encodedDict = encodeToCBOR(dictValue) {
+                cborMap[cborKey] = encodedDict
+            }
+        } else if let cborValue = value as? SwiftCBOR.CBOR {
+            // Handle CBOR types directly
+            cborMap[cborKey] = cborValue
+        } else if let customObject = value as? CustomCborConvertible {
+            // Handle custom objects that conform to CustomCborConvertible
+            cborMap[cborKey] = customObject.toCBOR()
+        } else {
+            print("Unsupported type for key: \(key)")
+            return nil
+        }
+    }
+
+    return CBOR.map(cborMap)
+}
+
+    func encodeArrayToCBOR(_ array: [Any]) -> CBOR {
+    var cborArray: [CBOR] = []
+    
+    for value in array {
+        if let stringValue = value as? String {
+            if stringValue == "NULL" {
+                cborArray.append(CBOR.null)
+            } else if stringValue.contains("ByteString") {
+                cborArray.append(CBOR.byteString([0x01, 0x02, 0x03])) // Example ByteString
+            } else {
+                cborArray.append(CBOR.utf8String(stringValue))
+            }
+        } else if let intValue = value as? Int {
+            if intValue >= 0 {
+                cborArray.append(CBOR.unsignedInt(UInt64(intValue)))
+            } else {
+                cborArray.append(CBOR.negativeInt(UInt64(-1 - intValue)))
+            }
+        } else if let floatValue = value as? Float {
+            cborArray.append(CBOR.float(floatValue))
+        } else if let boolValue = value as? Bool {
+            cborArray.append(CBOR.boolean(boolValue))
+        } else if let dictValue = value as? [String: Any], let encodedDict = encodeToCBOR(dictValue) {
+            cborArray.append(encodedDict)
+        } else if let subArray = value as? [Any] {
+            cborArray.append(encodeArrayToCBOR(subArray))
+        } else if let cborValue = value as? SwiftCBOR.CBOR {
+            // Handle CBOR values directly
+            cborArray.append(cborValue)
+        } else if let customObject = value as? CustomCborConvertible {
+            // Handle custom objects
+            cborArray.append(customObject.toCBOR())
+        } else {
+            print("Unsupported type in array")
+            return CBOR.null
+        }
+    }
+    
+    return CBOR.array(cborArray)
+}
+    
+    func toCBOR() -> CBOR {
+            var cborMap: OrderedDictionary<CBOR, CBOR> = [:]
+            cborMap[CBOR.utf8String("version")] = CBOR.utf8String(version)
+            
+            if let documents = documents {
+                cborMap[CBOR.utf8String("documents")] = encodeArrayToCBOR(documents.map { $0.toCBOR() })
+            }
+            
+            cborMap[CBOR.utf8String("status")] = CBOR.unsignedInt(UInt64(status))
+            
+            return CBOR.map(cborMap)
+        }
+}
+
+public struct Document : CustomCborConvertible{
+    
+    let docType: String
+    let issuerSigned: IssuerSigned
+    let deviceSigned: DeviceSigned?
+    
+    enum Keys:String {
+        case docType
+        case issuerSigned
+        case deviceSigned
+    }
+    
+    init(docType: String, issuerSigned: IssuerSigned, deviceSigned: DeviceSigned? = nil) {
+        self.docType = docType
+        self.issuerSigned = issuerSigned
+        self.deviceSigned = deviceSigned
+    }
+    
+    func toCBOR() -> CBOR {
+            var cborMap: OrderedDictionary<CBOR, CBOR> = [:]
+            cborMap[CBOR.utf8String("docType")] = CBOR.utf8String(docType)
+            
+            cborMap[CBOR.utf8String("issuerSigned")] = issuerSigned.toCBOR()
+            
+            if let deviceSigned = deviceSigned {
+                cborMap[CBOR.utf8String("deviceSigned")] = deviceSigned.toCBOR()
+            }
+            
+            return CBOR.map(cborMap)
+        }
+}
+
+// Model for IssuerSigned part
+struct IssuerSigned : CustomCborConvertible{
+    let nameSpaces: SwiftCBOR.CBOR // Using ByteString struct here
+    let issuerAuth: SwiftCBOR.CBOR
+    
+    init(nameSpaces: SwiftCBOR.CBOR, issuerAuth: SwiftCBOR.CBOR) {
+        self.nameSpaces = nameSpaces
+        self.issuerAuth = issuerAuth
+    }
+    
+    func toCBOR() -> CBOR {
+            var cborMap: OrderedDictionary<CBOR, CBOR> = [:]
+            cborMap[CBOR.utf8String("nameSpaces")] = nameSpaces
+            cborMap[CBOR.utf8String("issuerAuth")] = issuerAuth
+            
+            return CBOR.map(cborMap)
+        }
+}
+
+// Model for DeviceSigned part
+struct DeviceSigned: Codable, CustomCborConvertible {
+    let nameSpaces: String
+    let deviceAuth: DeviceAuth
+    
+    func toCBOR() -> CBOR {
+            var cborMap: OrderedDictionary<CBOR, CBOR> = [:]
+            cborMap[CBOR.utf8String("nameSpaces")] = CBOR.utf8String(nameSpaces)
+            cborMap[CBOR.utf8String("deviceAuth")] = deviceAuth.toCBOR()
+            
+            return CBOR.map(cborMap)
+        }
+}
+
+//struct IssuerAuth: Codable {
+//    let byteString: ByteString?
+//    let dictionary: [String: ByteString]?
+//}
+
+struct DeviceAuth: Codable, CustomCborConvertible {
+    let deviceSignature: [DeviceSignature]
+    
+    func toCBOR() -> CBOR {
+            var cborArray: [CBOR] = []
+            for signature in deviceSignature {
+                cborArray.append(signature.toCBOR())
+            }
+            return CBOR.array(cborArray)
+        }
+}
+
+enum DeviceSignature: Codable, CustomCborConvertible {
+    case byteString(String)
+    case dictionary([String: String])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let byteString = try? container.decode(String.self) {
+            self = .byteString(byteString)
+        } else if let dict = try? container.decode([String: String].self) {
+            self = .dictionary(dict)
+        } else if container.decodeNil() {
+            self = .null
+        } else {
+            throw DecodingError.typeMismatch(DeviceSignature.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Type mismatch"))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .byteString(let byteString):
+            try container.encode(byteString)
+        case .dictionary(let dict):
+            try container.encode(dict)
+        case .null:
+            try container.encodeNil()
+        }
+    }
+    
+    func toCBOR() -> CBOR {
+            switch self {
+            case .byteString(let byteString):
+                return CBOR.byteString(Array(byteString.utf8))
+            case .dictionary(let dict):
+                var cborMap: OrderedDictionary<CBOR, CBOR> = [:]
+                for (key, value) in dict {
+                    cborMap[CBOR.utf8String(key)] = CBOR.utf8String(value)
+                }
+                return CBOR.map(cborMap)
+            case .null:
+                return CBOR.null
+            }
+        }
 }

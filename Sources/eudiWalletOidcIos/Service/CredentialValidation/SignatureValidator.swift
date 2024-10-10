@@ -12,10 +12,13 @@ import CryptoKit
 
 class SignatureValidator {
     
-    static func validateSign(jwt: String?, jwksURI: String?) async -> Bool? {
+    static func validateSign(jwt: String?, jwksURI: String?, format: String) async -> Bool? {
         var jwk: [String: Any] = [:]
-        guard let split = jwt?.split(separator: "."),
-              let jsonString = "\(split[0])".decodeBase64(),
+    if format == "mso_mdoc" {
+         return true
+        } else {
+            guard let split = jwt?.split(separator: "."), split.count > 1 else { return true}
+            guard let jsonString = "\(split[0])".decodeBase64(),
               let jsonObject = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) else { return false }
         if let kid = jsonObject["kid"] as? String {
             if kid.hasPrefix("did:key:z") {
@@ -31,6 +34,7 @@ class SignatureValidator {
         }
         return validateSignature(jwt: jwt, jwk: jwk)
     }
+}
     
     
     static func processJWKfromKid(did: String?) -> [String: Any] {

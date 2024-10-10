@@ -105,6 +105,7 @@ struct DataSharingResponse: Codable {
     var cryptographicBindingMethodsSupported, cryptographicSuitesSupported: [String]?
     var display: [DisplayResponse]?
     var credentialDefinition: IssuerCredentialDefinitionResponse?
+    var docType: String?
     
     enum CodingKeys: String, CodingKey {
         case format, scope
@@ -112,6 +113,7 @@ struct DataSharingResponse: Codable {
         case cryptographicSuitesSupported = "cryptographic_suites_supported"
         case display
         case credentialDefinition = "credential_definition"
+    case docType = "doctype"
     }
 }
 
