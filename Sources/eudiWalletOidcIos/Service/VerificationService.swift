@@ -821,7 +821,7 @@ public func filterNameSpaces(nameSpacesValue: CBOR, requestedParams: [String]) -
             
             let jsonString: String
             if (cred.split(separator: "~").count) > 0 {
-                jsonString = SDJWTService.shared.updateIssuerJwtWithDisclosures(credential: cred) ?? ""
+                jsonString = SDJWTService.shared.updateIssuerJwtWithDisclosuresForFiltering(credential: cred) ?? ""
             } else if split.count > 1,
                       let base64Data = Data(base64Encoded: String(split[1]), options: .ignoreUnknownCharacters),
                       let decodedString = String(data: base64Data, encoding: .utf8) {
