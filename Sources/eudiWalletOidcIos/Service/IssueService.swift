@@ -11,7 +11,7 @@ import CryptoKit
 import CryptoSwift
 
 public class IssueService: NSObject, IssueServiceProtocol {
-
+    
     var session: URLSession?
     var keyHandler: SecureKeyProtocol!
     
@@ -44,12 +44,36 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let (data, _) = try await URLSession.shared.data(for: request)
             
             do {
-                let model = try? jsonDecoder.decode(CredentialOfferResponse.self, from: data)
-                if model?.credentialIssuer == nil {
-                    let error = EUDIError(from: ErrorResponse(message:"Invalid DID", code: nil))
+                guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+                    return nil
+                    //throw EUDIError(from: ErrorResponse(message: "Invalid JSON format", code: nil))
+                }
+                
+                // Check for specific keys to determine the model type
+                if jsonObject["credentials"] != nil {
+                    // If the key 'credentialIssuer' is present, decode as CredentialOfferResponse
+                    let model = try jsonDecoder.decode(CredentialOfferResponse.self, from: data)
+                    
+                    if model.credentialIssuer == nil {
+                        let error = EUDIError(from: ErrorResponse(message: "Invalid DID", code: nil))
+                        return CredentialOffer(fromError: error)
+                    }
+                    return CredentialOffer(from: model)
+                    
+                } else if jsonObject["credential_configuration_ids"] != nil {
+                    // If the key 'issuer' is present, decode as CredentialOfferV2
+                    let modelV2 = try jsonDecoder.decode(CredentialOfferV2.self, from: data)
+                    
+                    if modelV2.credentialIssuer == nil {
+                        let error = EUDIError(from: ErrorResponse(message: "Invalid DID", code: nil))
+                        return CredentialOffer(fromError: error)
+                    }
+                    return CredentialOffer(from: modelV2)
+                } else {
+                    // If neither key is present, return an error
+                    let error = EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil))
                     return CredentialOffer(fromError: error)
                 }
-                return (model == nil ? nil : CredentialOffer(from: model!))
             }
         } else {
             guard let credentialOffer = credentialOfferUrl?.queryParameters?["credential_offer"] else { return nil }
@@ -57,12 +81,26 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             if credentialOffer != "" {
                 do {
-                    let model = try? jsonDecoder.decode(CredentialOfferResponse.self, from: jsonData)
-                    if model?.credentialIssuer == nil {
-                        let error = EUDIError(from: ErrorResponse(message:"Invalid DID", code: nil))
+                    if let model = try? jsonDecoder.decode(CredentialOfferResponse.self, from: jsonData) {
+                        if model.credentialIssuer == nil {
+                            let error = EUDIError(from: ErrorResponse(message: "Invalid DID", code: nil))
+                            return CredentialOffer(fromError: error)
+                        }
+                        return CredentialOffer(from: model)
+                    }
+                    
+                    else if let modelV2 = try? jsonDecoder.decode(CredentialOfferV2.self, from: jsonData) {
+                        if modelV2.credentialIssuer == nil {
+                            let error = EUDIError(from: ErrorResponse(message: "Invalid DID", code: nil))
+                            return CredentialOffer(fromError: error)
+                        }
+                        return CredentialOffer(from: modelV2)
+                    }
+                    
+                    else {
+                        let error = EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil))
                         return CredentialOffer(fromError: error)
                     }
-                    return (model == nil ? nil : CredentialOffer(from: model!))
                 }
             } else {
                 return nil
@@ -70,21 +108,21 @@ public class IssueService: NSObject, IssueServiceProtocol {
         }
     }
     
-    private func buildAuthorizationRequest(credentialOffer: CredentialOffer?, docType: String, format: String) -> String {
+    private func buildAuthorizationRequestV1(credentialOffer: CredentialOffer?, docType: String, format: String) -> String {
         var authorizationDetails =  if format == "mso_mdoc" {
             "[" + (([
-        "format": format,
+                "format": format,
                 "doctype": docType,
                 "locations": [credentialOffer?.credentialIssuer ?? ""]
             ] as [String : Any]).toString() ?? "") + "]"
         } else if credentialOffer?.credentials?[0].trustFramework == nil {
-        "[" + (([
+            "[" + (([
                 "type": "openid_credential",
                 "format": "jwt_vc_json",
                 "credential_definition": ["type":credentialOffer?.credentials?[0].types ?? []],
                 "locations": [credentialOffer?.credentialIssuer ?? ""]
             ] as [String : Any]).toString() ?? "") + "]"
-    } else {
+        } else {
             "[" + (([
                 "type": "openid_credential",
                 "format": "jwt_vc",
@@ -94,6 +132,48 @@ public class IssueService: NSObject, IssueServiceProtocol {
         }
         
         return authorizationDetails
+    }
+    
+    private func buildAuthorizationRequestV2(credentialOffer: CredentialOffer?, docType: String, format: String, issuerConfig: IssuerWellKnownConfiguration?) -> String {
+        let credentialConfigID = credentialOffer?.credentials?.first?.types?.first ?? nil
+        var authorizationDetails =  if format == "mso_mdoc" {
+            "[" + (([
+                "format": format,
+                "doctype": docType,
+                "credential_configuration_id": credentialConfigID,
+                "locations": [credentialOffer?.credentialIssuer ?? ""]
+                
+            ] as [String : Any]).toString() ?? "") + "]"
+        } else if format.contains("sd-jwt"){
+            
+            
+            "[" + (([
+                "type": "openid_credential",
+                "format": format,
+                "credential_configuration_id": credentialConfigID,
+                //pass issur config
+                "vct": getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialConfigID)
+            ] as [String : Any]).toString() ?? "") + "]"
+        }
+        else {
+            "[" + (([
+                "type": "openid_credential",
+                "format": format,
+                "credential_definition": ["type": getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialConfigID)]
+            ] as [String : Any]).toString() ?? "") + "]"
+        }
+        
+        return authorizationDetails
+    }
+    
+    
+    private func buildAuthorizationRequest(credentialOffer: CredentialOffer?, docType: String, format: String, issuerConfig: IssuerWellKnownConfiguration?) -> String {
+        if credentialOffer?.version == "v1" {
+            return buildAuthorizationRequestV1(credentialOffer: credentialOffer, docType: docType, format: format)
+            
+        } else {
+            return buildAuthorizationRequestV2(credentialOffer: credentialOffer, docType: docType, format: format, issuerConfig: issuerConfig)
+        }
     }
     
     // MARK: - To process the authorisation request, The authorisation request is to grant access to the credential endpoint.
@@ -108,7 +188,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                             secureKey: SecureKeyData,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,
-                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String) async -> String? {
+                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?) async -> String? {
         
         guard let authorizationEndpoint = authServer.authorizationEndpoint else { return nil }
         let redirectUri = "http://localhost:8080"
@@ -118,41 +198,88 @@ public class IssueService: NSObject, IssueServiceProtocol {
         let scope = credentialFormat == "mso_mdoc" ? credentialFormat + "openid" : "openid"
         let state = UUID().uuidString
         let docType = credentialFormat == "mso_mdoc" ? docType : ""
-       let authorizationDetails = buildAuthorizationRequest(credentialOffer: credentialOffer, docType: docType, format: credentialFormat)
+        let authorizationDetails = buildAuthorizationRequest(credentialOffer: credentialOffer, docType: docType, format: credentialFormat, issuerConfig: issuerConfig)
         
         let nonce = UUID().uuidString
         let codeChallenge = CodeVerifierService.shared.generateCodeChallenge(codeVerifier: codeVerifier)
         let codeChallengeMethod = "S256"
         let clientMetadata = credentialFormat == "mso_mdoc" ? "" :
         ([
-          "vp_formats_supported": [
-            "jwt_vp": [ "alg": ["ES256"] ],
-            "jwt_vc": [ "alg": ["ES256"] ]
-          ],
-          "response_types_supported": ["vp_token", "id_token"],
-          "authorization_endpoint": "\(redirectUri)"
+            "vp_formats_supported": [
+                "jwt_vp": [ "alg": ["ES256"] ],
+                "jwt_vc": [ "alg": ["ES256"] ]
+            ],
+            "response_types_supported": ["vp_token", "id_token"],
+            "authorization_endpoint": "\(redirectUri)"
         ] as [String : Any]).toString()
         
         // Validate required parameters
         if responseType == "", did == "" {
             return nil
         }
-        
-        // Construct the authorization URL
-        var authorizationURLComponents = URLComponents(string: authorizationEndpoint)
-        authorizationURLComponents?.queryItems = [
-            URLQueryItem(name: "response_type", value: responseType),
-            URLQueryItem(name: "scope", value: scope),
-            URLQueryItem(name: "state", value: state),
-            URLQueryItem(name: "client_id", value: did),
-            URLQueryItem(name: "authorization_details", value: authorizationDetails),
-            URLQueryItem(name: "redirect_uri", value: redirectUri),
-            URLQueryItem(name: "nonce", value: nonce),
-            URLQueryItem(name: "code_challenge", value: codeChallenge),
-            URLQueryItem(name: "code_challenge_method", value: codeChallengeMethod),
-            URLQueryItem(name: "client_metadata", value: clientMetadata),
-            URLQueryItem(name: "issuer_state", value: credentialOffer.grants?.authorizationCode?.issuerState)
-        ]
+        var authorizationURLComponents: URLComponents?
+        if authServer.requirePushedAuthorizationRequests == true {
+            let parEndpoint = authServer.pushedAuthorizationRequestEndpoint ?? ""
+            var request = URLRequest(url: URL(string: parEndpoint)!)
+            request.httpMethod = "POST"
+            
+            let bodyParameters = [
+                "response_type": responseType,
+                "client_id": did,
+                "code_challenge": codeChallenge ?? "",
+                "code_challenge_method": codeChallengeMethod,
+                "redirect_uri": redirectUri,
+                "authorization_details": authorizationDetails,
+                "scope": scope,
+                "state": state,
+                "nonce": nonce,
+                "client_metadata": clientMetadata ?? "",
+                "issuer_state": credentialOffer.grants?.authorizationCode?.issuerState ?? ""
+            ] as [String: Any]
+            
+            let postString = UIApplicationUtils.shared.getPostString(params: bodyParameters)
+            let parameter = postString.replacingOccurrences(of: "+", with: "%2B")
+            request.httpBody =  parameter.data(using: .utf8)
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            
+            do {
+                let (data, response) = try await session!.data(for: request)
+                guard let authorization_response = String.init(data: data, encoding: .utf8) else { return nil }
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+                    if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []),
+                       let jsonDict = jsonResponse as? [String: Any],
+                       let requestURI = jsonDict["request_uri"] as? String {
+                        
+                        authorizationURLComponents = URLComponents(string: authorizationEndpoint)
+                        authorizationURLComponents?.queryItems = [
+                            URLQueryItem(name: "client_id", value: did),
+                            URLQueryItem(name: "request_uri", value: requestURI)
+                        ]
+                    }
+                } else {
+                    debugPrint("Failed to get request_uri from the PAR response.")
+                }
+            } catch {
+                debugPrint("Error in making PAR request: \(error.localizedDescription)")
+            }
+            
+        } else {
+            // Construct the authorization URL
+            authorizationURLComponents = URLComponents(string: authorizationEndpoint)
+            authorizationURLComponents?.queryItems = [
+                URLQueryItem(name: "response_type", value: responseType),
+                URLQueryItem(name: "scope", value: scope),
+                URLQueryItem(name: "state", value: state),
+                URLQueryItem(name: "client_id", value: did),
+                URLQueryItem(name: "authorization_details", value: authorizationDetails),
+                URLQueryItem(name: "redirect_uri", value: redirectUri),
+                URLQueryItem(name: "nonce", value: nonce),
+                URLQueryItem(name: "code_challenge", value: codeChallenge),
+                URLQueryItem(name: "code_challenge_method", value: codeChallengeMethod),
+                URLQueryItem(name: "client_metadata", value: clientMetadata),
+                URLQueryItem(name: "issuer_state", value: credentialOffer.grants?.authorizationCode?.issuerState)
+            ]
+        }
         
         // Validate the constructed authorization URL
         guard let authorizationURL = authorizationURLComponents?.url else {
@@ -196,17 +323,17 @@ public class IssueService: NSObject, IssueServiceProtocol {
             (responseUrl.contains("request_uri=") && !responseUrl.contains("response_type=") && !responseUrl.contains("state=")){
             return responseUrl
         } else {
-           // if 'code' is not present
+            // if 'code' is not present
             let url = URL(string: responseUrl)
             let state = url?.queryParameters?["state"]
             let nonce = url?.queryParameters?["nonce"]
             let redirectUri = url?.queryParameters?["redirect_uri"]
-            
+            let uri = redirectUri?.replacingOccurrences(of: "\n", with: "") ?? ""
             let code =  await processAuthorisationRequestUsingIdToken(
                 did: did,
                 secureKey: secureKey,
                 authServerWellKnownConfig: authServer,
-                redirectURI: redirectUri ?? "",
+                redirectURI:  uri.trimmingCharacters(in: .whitespaces) ,
                 nonce: nonce ?? "",
                 state: state ?? "")
             return code
@@ -227,36 +354,36 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             let header =
             ([
-              "typ": "JWT",
-              "alg": "ES256",
-              "kid": "\(did)#\(did.replacingOccurrences(of: "did:key:", with: ""))"
+                "typ": "JWT",
+                "alg": "ES256",
+                "kid": "\(did)#\(did.replacingOccurrences(of: "did:key:", with: ""))"
             ]).toString() ?? ""
-
+            
             // Generate JWT payload
             let currentTime = Int(Date().timeIntervalSince1970)
             let payload =
             ([
-              "iss": "\(did)",
-              "sub": "\(did)",
-              "aud": "\(authorizationEndpoint)",
-              "exp": currentTime + 3600,
-              "iat": currentTime,
-              "nonce": "\(nonce)"
+                "iss": "\(did)",
+                "sub": "\(did)",
+                "aud": "\(authorizationEndpoint)",
+                "exp": currentTime + 3600,
+                "iat": currentTime,
+                "nonce": "\(nonce)"
             ] as [String : Any]).toString() ?? ""
             
             // Create JWT token
             let headerData = Data(header.utf8)
-
+            
             //let payloadData = Data(payload.utf8)
             //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-
+            
             
             guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return nil}
             //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
             //let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
             print(idToken)
             guard let urlComponents = URLComponents(string: redirectURI) else { return nil }
-    
+            
             // Create the URL with the added query parameters
             guard let url = urlComponents.url else { return nil }
             
@@ -268,7 +395,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 "id_token" : idToken,
                 "state" : state
             ] as [String: Any]
-
+            
             
             let postString = UIApplicationUtils.shared.getPostString(params: params)
             request.httpBody = postString.data(using: .utf8)
@@ -291,8 +418,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
                     
                     responseUrl = authorization_response
                 }
-//                let authorization_response = String.init(data: data, encoding: .utf8) ?? ""
-//                guard let authorisation_url = URL(string: authorization_response) else { return nil }
+                //                let authorization_response = String.init(data: data, encoding: .utf8) ?? ""
+                //                guard let authorisation_url = URL(string: authorization_response) else { return nil }
                 guard let authorisation_url = URL(string: responseUrl) else { return nil }
                 if let components = URLComponents(url: authorisation_url, resolvingAgainstBaseURL: false),
                    let auth_code = components.queryItems?.first(where: { $0.name == "code" })?.value {
@@ -310,13 +437,13 @@ public class IssueService: NSObject, IssueServiceProtocol {
     
     // MARK: -  Processes the token request to obtain the access token.
     /** - Parameters
-        - authServerWellKnownConfig: The well-known configuration of the authorization server.
-        - code:  If the credential offer is pre authorised, then use the pre authorised code from the credential offer
-          else use the code from the previous function - processAuthorisationRequest
-        - did: The identifier for the DID key.
-        - isPreAuthorisedCodeFlow: A boolean indicating if it's a pre-authorized code flow.
-        - preAuthCode: The pre-authorization code for the token request.
-        - userPin: The user's PIN, if required.
+     - authServerWellKnownConfig: The well-known configuration of the authorization server.
+     - code:  If the credential offer is pre authorised, then use the pre authorised code from the credential offer
+     else use the code from the previous function - processAuthorisationRequest
+     - did: The identifier for the DID key.
+     - isPreAuthorisedCodeFlow: A boolean indicating if it's a pre-authorized code flow.
+     - preAuthCode: The pre-authorization code for the token request.
+     - userPin: The user's PIN, if required.
      
      - Returns: A `TokenResponse` object if the request is successful, otherwise `nil`.
      */
@@ -326,28 +453,28 @@ public class IssueService: NSObject, IssueServiceProtocol {
         code: String,
         codeVerifier: String,
         isPreAuthorisedCodeFlow: Bool = false,
-        userPin: String?) async -> TokenResponse? {
-        
+        userPin: String?, version: String?) async -> TokenResponse? {
+            
             if isPreAuthorisedCodeFlow {
-                let tokenResponse = await getAccessTokenForPreAuthCredential(preAuthCode: code, otpVal: userPin ?? "", tokenEndpoint: tokenEndPoint ?? "")
+                let tokenResponse = await getAccessTokenForPreAuthCredential(preAuthCode: code, otpVal: userPin ?? "", tokenEndpoint: tokenEndPoint ?? "", version: version)
                 return tokenResponse
             } else {
                 let codeVal = code.removingPercentEncoding ?? ""
                 let tokenResponse = await getAccessToken(didKeyIdentifier: did, codeVerifier: codeVerifier, authCode: codeVal, tokenEndpoint: tokenEndPoint ?? "")
                 return tokenResponse
             }
-    }
+        }
     
     // MARK:  Processes a credential request to the specified credential endpoint.
     
     /** - Parameters
-        - did: The identifier for the DID key.
-        - secureKey: A wrapper object containing the public and private encryption keys
-        - credentialOffer: The credential offer object containing offer details.
-        - credentialEndpointUrlString: The URL string of the credential endpoint.
-        - c_nonce: The nonce value for the credential request.
-        - accessToken: The access token for authentication.
-
+     - did: The identifier for the DID key.
+     - secureKey: A wrapper object containing the public and private encryption keys
+     - credentialOffer: The credential offer object containing offer details.
+     - credentialEndpointUrlString: The URL string of the credential endpoint.
+     - c_nonce: The nonce value for the credential request.
+     - accessToken: The access token for authentication.
+     
      - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
      */
     public func processCredentialRequest(
@@ -358,26 +485,26 @@ public class IssueService: NSObject, IssueServiceProtocol {
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
         format: String) async -> CredentialResponse? {
-        
+            
             let jsonDecoder = JSONDecoder()
             let methodSpecificId = did.replacingOccurrences(of: "did:key:", with: "")
-                
-                
+            
+            
             // Generate JWT header
             let header = ([
-                    "typ": "openid4vci-proof+jwt",
-                    "alg": "ES256",
-                    "kid": "\(did)#\(methodSpecificId)"
+                "typ": "openid4vci-proof+jwt",
+                "alg": "ES256",
+                "kid": "\(did)#\(methodSpecificId)"
             ]).toString() ?? ""
             
             // Generate JWT payload
             let currentTime = Int(Date().epochTime) ?? 0
             let payload = ([
-                    "iss": "\(did)",
-                    "iat": currentTime,
-                    "aud": "\(credentialOffer.credentialIssuer ?? "")",
-                    "exp": currentTime + 86400,
-                    "nonce": "\(nonce)"
+                "iss": "\(did)",
+                "iat": currentTime,
+                "aud": "\(credentialOffer.credentialIssuer ?? "")",
+                "exp": currentTime + 86400,
+                "nonce": "\(nonce)"
             ] as [String : Any]).toString() ?? ""
             
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
@@ -388,22 +515,22 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Create JWT token
             let headerData = Data(header.utf8)
-
+            
             //let payloadData = Data(payload.utf8)
             //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
             // sign the data to be encrypted and exchanged
             guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return nil}
             //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
             //let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
-
+            
             
             let credentialTypes = credentialOffer.credentials?[0].types ?? []
             let types = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")
             let formatT = getFormatFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
-        let doctType = getDocTypeFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
+            let doctType = getDocTypeFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
             var params: [String: Any] = [:]
-        if formatT == "mso_mdoc" {
-            params = [
+            if formatT == "mso_mdoc" {
+                params = [
                     "doctype": doctType,
                     "format": formatT,
                     "proof": [
@@ -411,65 +538,65 @@ public class IssueService: NSObject, IssueServiceProtocol {
                         "jwt": idToken
                     ]
                 ]
-        } else {
-            if types is String {
-                params = [
-                    "vct": types ?? "",
-                    "format": format ?? "jwt_vc",
-                    "proof": [
-                        "proof_type": "jwt",
-                        "jwt": idToken
-                    ]
-                ]
-            }else{
-                params = [
-                    "credential_definition": [
-                        "type": types
-                    ],
-                    "format": format ?? "jwt_vc",
-                    "proof": [
-                        "proof_type": "jwt",
-                        "jwt": idToken
-                    ]
-                ]
-            }
-            if credentialOffer.credentials?[0].trustFramework != nil {
-                params = [
-                    "types": credentialTypes,
-                    "format": formatT,
-                    "proof": [
-                        "proof_type": "jwt",
-                        "jwt": idToken
-                    ]
-                ]
             } else {
-                
-                if let data = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "") {
-                    if let dataArray = data as? [String] {
-                        params = [
-                            "credential_definition": [
-                                "type": dataArray
-                            ],
-                            "format": formatT,
-                            "proof": [
-                                "proof_type": "jwt",
-                                "jwt": idToken
-                            ]
+                if types is String {
+                    params = [
+                        "vct": types ?? "",
+                        "format": format ?? "jwt_vc",
+                        "proof": [
+                            "proof_type": "jwt",
+                            "jwt": idToken
                         ]
-                    } else if let dataString = data as? String {
-                        params = [
-                            "vct": dataString,
-                            "format": formatT,
-                            "proof": [
-                                "proof_type": "jwt",
-                                "jwt": idToken
-                            ]
+                    ]
+                }else{
+                    params = [
+                        "credential_definition": [
+                            "type": types
+                        ],
+                        "format": format ?? "jwt_vc",
+                        "proof": [
+                            "proof_type": "jwt",
+                            "jwt": idToken
                         ]
+                    ]
+                }
+                if credentialOffer.credentials?[0].trustFramework != nil {
+                    params = [
+                        "types": credentialTypes,
+                        "format": formatT,
+                        "proof": [
+                            "proof_type": "jwt",
+                            "jwt": idToken
+                        ]
+                    ]
+                } else {
+                    
+                    if let data = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "") {
+                        if let dataArray = data as? [String] {
+                            params = [
+                                "credential_definition": [
+                                    "type": dataArray
+                                ],
+                                "format": formatT,
+                                "proof": [
+                                    "proof_type": "jwt",
+                                    "jwt": idToken
+                                ]
+                            ]
+                        } else if let dataString = data as? String {
+                            params = [
+                                "vct": dataString,
+                                "format": formatT,
+                                "proof": [
+                                    "proof_type": "jwt",
+                                    "jwt": idToken
+                                ]
+                            ]
+                        }
                     }
                 }
             }
-    }
-        
+            
             // Create URL for the credential endpoint
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
             
@@ -478,7 +605,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             request.httpMethod = "POST"
-
+            
             // Convert the parameters to JSON data and set it as the request body
             let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
             request.httpBody =  requestBodyData
@@ -486,53 +613,93 @@ public class IssueService: NSObject, IssueServiceProtocol {
             // Perform the request and handle the response
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
-                let model = try jsonDecoder.decode(CredentialResponse.self, from: data)
-                return model
+                guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return nil }
+                if jsonObject["acceptance_token"] != nil {
+                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: data)
+                    return CredentialResponse(from: model)
+                    
+                } else if jsonObject["transaction_id"] != nil {
+                    let modelV2 = try jsonDecoder.decode(CredentialResponseV2.self, from: data)
+                    return CredentialResponse(from: modelV2)
+                } else if jsonObject["acceptance_token"] == nil && jsonObject["transaction_id"] == nil {
+                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: data)
+                    return CredentialResponse(from: model)
+                }
+                else {
+                    let error = EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil))
+                    return CredentialResponse(fromError: error)
+                }
             } catch {
                 debugPrint("Process credential request failed: \(error)")
                 let nsError = error as NSError
                 let errorCode = nsError.code
                 let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
-                return CredentialResponse(error: error)
+                return CredentialResponse(fromError: error)
             }
-    }
+        }
     
     
-// MARK: - Processes a deferred credential request to obtain the credential response in deffered manner.
-
+    // MARK: - Processes a deferred credential request to obtain the credential response in deffered manner.
+    
     /** - Parameters
-        - acceptanceToken - token which we got from credential request
-        - deferredCredentialEndPoint - end point to call the deferred credential
-    **/
-//    - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
-
+     - acceptanceToken - token which we got from credential request
+     - deferredCredentialEndPoint - end point to call the deferred credential
+     **/
+    //    - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
+    
     public func processDeferredCredentialRequest(
         acceptanceToken: String,
-        deferredCredentialEndPoint: String) async -> CredentialResponse? {
+        deferredCredentialEndPoint: String, version: String?, accessToken: String?) async -> CredentialResponse? {
             
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: deferredCredentialEndPoint) else { return nil }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue( "Bearer \(acceptanceToken)", forHTTPHeaderField: "Authorization")
-            let params = "{}"
-            let data = params.data(using: .utf8)
-            request.httpBody = data
             
-        // Perform the request and handle the response
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let model = try jsonDecoder.decode(CredentialResponse.self, from: data)
-            return model
-        } catch {
-            debugPrint("Process deferred credential request failed: \(error)")
-            let nsError = error as NSError
-            let errorCode = nsError.code
-            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
-            return CredentialResponse(error: error)
+            if version == "v1" {
+                request.setValue( "Bearer \(acceptanceToken)", forHTTPHeaderField: "Authorization")
+                let params = "{}"
+                let data = params.data(using: .utf8)
+                request.httpBody = data
+            } else if version == "v2" {
+                var params: [String: Any] = [:]
+                request.setValue( "Bearer \(accessToken ?? "")", forHTTPHeaderField: "Authorization")
+                params = ["transaction_id": acceptanceToken ?? ""]
+                let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
+                request.httpBody =  requestBodyData
+            }
+            
+            
+            // Perform the request and handle the response
+            do {
+                let (data, _) = try await URLSession.shared.data(for: request)
+                guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+                    return nil
+                }
+                if jsonObject["acceptance_token"] != nil {
+                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: data)
+                    return CredentialResponse(from: model)
+                    
+                } else if jsonObject["transaction_id"] != nil {
+                    let modelV2 = try jsonDecoder.decode(CredentialResponseV2.self, from: data)
+                    return CredentialResponse(from: modelV2)
+                } else if jsonObject["acceptance_token"] == nil && jsonObject["transaction_id"] == nil {
+                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: data)
+                    return CredentialResponse(from: model)
+                }
+                else {
+                    let error = EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil))
+                    return CredentialResponse(fromError: error)
+                }
+            } catch {
+                debugPrint("Process deferred credential request failed: \(error)")
+                let nsError = error as NSError
+                let errorCode = nsError.code
+                let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
+                return CredentialResponse(fromError: error)
+            }
         }
-    }
     
     // MARK: - Private methods
     
@@ -540,34 +707,40 @@ public class IssueService: NSObject, IssueServiceProtocol {
     private func getAccessTokenForPreAuthCredential(
         preAuthCode: String,
         otpVal: String ,
-        tokenEndpoint: String) async -> TokenResponse? {
+        tokenEndpoint: String, version: String?) async -> TokenResponse? {
             
-        let jsonDecoder = JSONDecoder()
-        let grantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
-        
-        // Constructing parameters for the token request
-        let params = ["grant_type": grantType, "pre-authorized_code":preAuthCode, "user_pin": otpVal] as [String: Any]
+            let jsonDecoder = JSONDecoder()
+            let grantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+            
+            // Constructing parameters for the token request
+            var params: [String: Any] = [:]
+            // Constructing parameters for the token request
+            if version == "v1" {
+                params = ["grant_type": grantType, "pre-authorized_code":preAuthCode, "user_pin": otpVal] as [String: Any]
+            } else if version == "v2" {
+                params = ["grant_type": grantType, "pre-authorized_code":preAuthCode, "tx_code": otpVal] as [String: Any]
+            }
             let postString = UIApplicationUtils.shared.getPostString(params: params)
-
-        // Creating the request
-        var request = URLRequest(url: URL(string: tokenEndpoint)!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = postString.data(using: .utf8)
-        
-        // Performing the token request
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let model = try jsonDecoder.decode(TokenResponse.self, from: data)
-            return model
-        } catch {
-            debugPrint("Get access token for preauth credential failed: \(error)")
-            let nsError = error as NSError
-            let errorCode = nsError.code
-            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
-            return TokenResponse(error: error)
+            
+            // Creating the request
+            var request = URLRequest(url: URL(string: tokenEndpoint)!)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.httpBody = postString.data(using: .utf8)
+            
+            // Performing the token request
+            do {
+                let (data, _) = try await URLSession.shared.data(for: request)
+                let model = try jsonDecoder.decode(TokenResponse.self, from: data)
+                return model
+            } catch {
+                debugPrint("Get access token for preauth credential failed: \(error)")
+                let nsError = error as NSError
+                let errorCode = nsError.code
+                let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
+                return TokenResponse(error: error)
+            }
         }
-    }
     
     // Retrieves the access token using the provided parameters.
     private func getAccessToken(
@@ -576,33 +749,33 @@ public class IssueService: NSObject, IssueServiceProtocol {
         authCode: String,
         tokenEndpoint: String) async -> TokenResponse? {
             
-        let jsonDecoder = JSONDecoder()
-        let grantType = "authorization_code"
-        
-        // Constructing parameters for the token request
-        let params = ["grant_type": grantType, "code":authCode, "client_id": didKeyIdentifier, "code_verifier": codeVerifier] as [String: Any]
+            let jsonDecoder = JSONDecoder()
+            let grantType = "authorization_code"
+            
+            // Constructing parameters for the token request
+            let params = ["grant_type": grantType, "code":authCode, "client_id": didKeyIdentifier, "code_verifier": codeVerifier] as [String: Any]
             let postString = UIApplicationUtils.shared.getPostString(params: params)
             
-        // Creating the request
-        var request = URLRequest(url: URL(string: tokenEndpoint)!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = postString.data(using: .utf8)
-        
-        // Performing the token request
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            debugPrint(response)
-            let model = try jsonDecoder.decode(TokenResponse.self, from: data)
-            return model
-        } catch {
-            debugPrint("Get access token for preauth credential failed: \(error)")
-            let nsError = error as NSError
-            let errorCode = nsError.code
-            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
-            return TokenResponse(error: error)
+            // Creating the request
+            var request = URLRequest(url: URL(string: tokenEndpoint)!)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.httpBody = postString.data(using: .utf8)
+            
+            // Performing the token request
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                debugPrint(response)
+                let model = try jsonDecoder.decode(TokenResponse.self, from: data)
+                return model
+            } catch {
+                debugPrint("Get access token for preauth credential failed: \(error)")
+                let nsError = error as NSError
+                let errorCode = nsError.code
+                let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
+                return TokenResponse(error: error)
+            }
         }
-    }
     
     public func getFormatFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> String? {
         guard let issuerConfig = issuerConfig else { return nil }
@@ -629,7 +802,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         
         if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
             if credentialSupported.format == "vc+sd-jwt" {
-                return credentialSupported.credentialDefinition?.vct
+                return credentialSupported.credentialDefinition?.vct ?? credentialSupported.vct
             } else {
                 return credentialSupported.credentialDefinition?.type
             }
@@ -657,9 +830,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
             return nil
         }
     }
-
+    
     public func getDocTypeFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> String? {
-         guard let issuerConfig = issuerConfig else { return nil }
+        guard let issuerConfig = issuerConfig else { return nil }
         
         if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
             return credentialSupported.docType ?? nil
@@ -672,7 +845,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
 
 extension IssueService: URLSessionDelegate, URLSessionTaskDelegate {
     public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-            // Stops the redirection, and returns (internally) the response body.
-            completionHandler(nil)
-        }
+        // Stops the redirection, and returns (internally) the response body.
+        completionHandler(nil)
     }
+}

@@ -4,21 +4,39 @@
 //
 //  Created by Mumthasir mohammed on 07/03/24.
 //
-
 import Foundation
-
 // MARK: - CredentialOffer model
 public struct CredentialOffer {
     public var credentialIssuer: String?
     public var credentials: [Credential]?
     public var grants: Grants?
     public var error: EUDIError?
+        public var version: String?
     
     public init(from: CredentialOfferResponse) {
         credentialIssuer = from.credentialIssuer
         
         if let credentialList = from.credentials, credentialList.count > 0{
-
+            if let strCredentialList = credentialList as? [String]{
+                credentials = [Credential(fromTypes: strCredentialList)]
+            } else if let objCredentialList = credentialList as? [CredentialDataResponse]{
+                credentials = credentialList.map({
+                    let obj = $0 as! CredentialDataResponse
+                    return Credential(from: obj)
+                })
+            }
+        }
+        grants = from.grants == nil ? nil : Grants(from: from.grants!)
+        grants?.urnIETFParamsOauthGrantTypePreAuthorizedCode?.txCode = from.grants?.urnIETFParamsOauthGrantTypePreAuthorizedCode?.userPinRequired ?? false ? TransactionCode(length: 4, inputMode: "numeric", description: "") : nil
+        grants?.authorizationCode?.authorizationServer = nil
+        error = from.error == nil ? nil : EUDIError(from: from.error!)
+    version = "v1"
+    }
+    
+    public init(from: CredentialOfferV2) {
+        credentialIssuer = from.credentialIssuer
+        
+        if let credentialList = from.credentialConfigurationIds, credentialList.count > 0{
             if let strCredentialList = credentialList as? [String]{
                 credentials = [Credential(fromTypes: strCredentialList)]
             } else if let objCredentialList = credentialList as? [CredentialDataResponse]{
@@ -30,6 +48,7 @@ public struct CredentialOffer {
         }
         grants = from.grants == nil ? nil : Grants(from: from.grants!)
         error = from.error == nil ? nil : EUDIError(from: from.error!)
+    version = "v2"
     }
     
     public init(fromError: EUDIError) {
@@ -37,7 +56,6 @@ public struct CredentialOffer {
     }
     
 }
-
 // MARK: - Credential
 public struct Credential {
     public let format: String?
@@ -59,7 +77,6 @@ public struct Credential {
         credentialDefinition = nil
     }
 }
-
 // MARK: - CredentialDefinition
 public struct CredentialDefinition {
     public var context: [String]?
@@ -70,7 +87,6 @@ public struct CredentialDefinition {
         types = from.types
     }
 }
-
 // MARK: - TrustFramework
 public struct TrustFramework {
     public let name, type, uri: String?
@@ -81,33 +97,35 @@ public struct TrustFramework {
         uri = from.uri
     }
 }
-
 public struct Grants {
-    public let authorizationCode: AuthorizationCode?
-    public let urnIETFParamsOauthGrantTypePreAuthorizedCode: UrnIETFParamsOauthGrantTypePreAuthorizedCode?
+    public var authorizationCode: AuthorizationCode?
+    public var urnIETFParamsOauthGrantTypePreAuthorizedCode: UrnIETFParamsOauthGrantTypePreAuthorizedCode?
     
     init(from: GrantsResponse) {
         authorizationCode = from.authorizationCode == nil ? nil : AuthorizationCode(from: from.authorizationCode!)
         urnIETFParamsOauthGrantTypePreAuthorizedCode = from.urnIETFParamsOauthGrantTypePreAuthorizedCode == nil ? nil : UrnIETFParamsOauthGrantTypePreAuthorizedCode(from: from.urnIETFParamsOauthGrantTypePreAuthorizedCode!)
     }
 }
-
 // MARK: - AuthorizationCode
 public struct AuthorizationCode  {
     public let issuerState: String?
-    
+    public var authorizationServer: String?
     init(from: AuthorizationCodeResponse) {
         issuerState = from.issuerState
+        authorizationServer = from.authorizationServer
     }
 }
-
 // MARK: - UrnIETFParamsOauthGrantTypePreAuthorizedCode
 public struct UrnIETFParamsOauthGrantTypePreAuthorizedCode {
     public let preAuthorizedCode: String?
     public let userPinRequired: Bool?
+    public var txCode: TransactionCode?
+    public let authorizationServer: String?
     
     init(from: UrnIETFParamsOauthGrantTypePreAuthorizedCodeResponse) {
         preAuthorizedCode = from.preAuthorizedCode
         userPinRequired = from.userPinRequired
+        txCode = from.txCode
+        authorizationServer = from.authorizationServer
     }
 }

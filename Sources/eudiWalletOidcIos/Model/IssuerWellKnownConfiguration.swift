@@ -62,6 +62,13 @@ public struct CredentialSupportedObject {
         })
         
     }
+    init(from: [String:DataSharingResponseV2]) {
+        
+        dataSharing = from.mapValues({
+            DataSharing(from: $0)
+        })
+        
+    }
     
     init(from: [DataSharingOldFormatResponse]) {
         var ldataSharing = [String:DataSharing]()
@@ -106,6 +113,7 @@ public struct DataSharing {
     public var trustFramework: TrustFramework?
     public var credentialDefinition: IssuerCredentialDefinition?
     public var docType: String?
+    public var vct: String?
     
     init(from: DataSharingResponse) {
         format = from.format
@@ -117,6 +125,18 @@ public struct DataSharing {
         }
         credentialDefinition = from.credentialDefinition == nil ? nil : IssuerCredentialDefinition(from: from.credentialDefinition!)
     docType = from.docType
+    }
+    init(from: DataSharingResponseV2) {
+        format = from.format
+        scope = from.scope
+        cryptographicBindingMethodsSupported = from.cryptographicBindingMethodsSupported
+        cryptographicSuitesSupported = from.cryptographicSuitesSupported
+        if let dataSharingDisplayList = from.display, dataSharingDisplayList.count > 0{
+            display = dataSharingDisplayList.map({ Display(from: $0) })
+        }
+        credentialDefinition = from.credentialDefinition == nil ? nil : IssuerCredentialDefinition(from: from.credentialDefinition!)
+        vct = from.vct
+        docType = from.docType
     }
     
     init(from: DataSharingOldFormatResponse) {
@@ -175,6 +195,30 @@ public struct IssuerWellKnownConfiguration {
         }
         
         if let credentialsSupportList = from.credentialsSupported as? [[String:DataSharingResponse]], let firstObj = credentialsSupportList.first{
+            credentialsSupported = CredentialSupportedObject(from: firstObj)
+        } else if let credentialsSupportListOldFormat = from.credentialsSupported as? [DataSharingOldFormatResponse]{
+            credentialsSupported = CredentialSupportedObject(from: credentialsSupportListOldFormat)
+        } else{
+            credentialsSupported = nil
+        }
+        
+        error = nil
+  
+    }
+public init(from: IssuerWellKnownConfigurationResponseV2) {
+        credentialIssuer = from.credentialIssuer
+        authorizationServer = from.authorizationServer ?? from.authorizationServers?[0] ?? ""
+        credentialEndpoint = from.credentialEndpoint
+        deferredCredentialEndpoint = from.deferredCredentialEndpoint
+        
+        if let displayList = from.display as? [DisplayResponse]
+        {
+            display = displayList.map({ Display(from: $0) })
+        } else{
+            display = nil
+        }
+        
+        if let credentialsSupportList = from.credentialsSupported as? [[String:DataSharingResponseV2]], let firstObj = credentialsSupportList.first{
             credentialsSupported = CredentialSupportedObject(from: firstObj)
         } else if let credentialsSupportListOldFormat = from.credentialsSupported as? [DataSharingOldFormatResponse]{
             credentialsSupported = CredentialSupportedObject(from: credentialsSupportListOldFormat)

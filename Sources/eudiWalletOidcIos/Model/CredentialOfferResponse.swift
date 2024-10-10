@@ -90,9 +90,11 @@ struct GrantsResponse: Codable {
 // MARK: - AuthorizationCode
 struct AuthorizationCodeResponse: Codable {
     let issuerState: String?
+    let authorizationServer: String?
     
     enum CodingKeys: String, CodingKey {
         case issuerState = "issuer_state"
+        case authorizationServer = "authorization_server"
     }
 }
 
@@ -100,9 +102,14 @@ struct AuthorizationCodeResponse: Codable {
 struct UrnIETFParamsOauthGrantTypePreAuthorizedCodeResponse: Codable {
     let preAuthorizedCode: String?
     let userPinRequired: Bool?
+    let txCode: TransactionCode?
+    let authorizationServer: String?
     
     enum CodingKeys: String, CodingKey {
         case preAuthorizedCode = "pre-authorized_code"
         case userPinRequired = "user_pin_required"
+        case txCode = "tx_code"
+        case authorizationServer = "authorization_server"
     }
 }
+
