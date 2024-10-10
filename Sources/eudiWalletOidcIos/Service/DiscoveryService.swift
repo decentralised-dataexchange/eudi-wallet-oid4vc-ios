@@ -4,10 +4,8 @@
 //
 //  Created by Mumthasir mohammed on 08/03/24.
 //
-
 import Foundation
 import CryptoKit
-
 public class DiscoveryService: DiscoveryServiceProtocol {
     
     public static var shared = DiscoveryService()
@@ -32,8 +30,19 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         let (data, _) = try await URLSession.shared.data(for: request)
         
         do {
-            let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponse.self, from: data)
-            return IssuerWellKnownConfiguration(from: model)
+            guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+                return nil
+                
+            }
+            if jsonObject["credentials_supported"] != nil {
+                let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponse.self, from: data)
+                return IssuerWellKnownConfiguration(from: model)
+            } else if jsonObject["credential_configurations_supported"] != nil {
+                let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponseV2.self, from: data)
+                return IssuerWellKnownConfiguration(from: model)
+            } else {
+                return nil
+            }
         } catch {
             debugPrint("Get Issuer config failed: \(error)")
             let nsError = error as NSError
@@ -61,6 +70,10 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         let (data, _) = try await URLSession.shared.data(for: request)
         
         do {
+            guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+                return nil
+                
+            }
             let model = try jsonDecoder.decode(AuthorisationServerWellKnownConfiguration.self, from: data)
             return model
         } catch {

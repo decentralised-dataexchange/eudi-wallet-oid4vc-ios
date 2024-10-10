@@ -130,6 +130,25 @@ struct DataSharingOldFormatResponse: Codable {
     }
 }
 
+
+struct DataSharingResponseV2: Codable {
+    var format, scope: String?
+    var cryptographicBindingMethodsSupported, cryptographicSuitesSupported: [String]?
+    var display: [DisplayResponse]?
+    var credentialDefinition: IssuerCredentialDefinitionResponse?
+    var vct: String?
+        var docType: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case format, scope, vct
+        case cryptographicBindingMethodsSupported = "cryptographic_binding_methods_supported"
+        case cryptographicSuitesSupported = "credential_signing_alg_values_supported"
+    case credentialDefinition = "credential_definition"
+        case display
+        case docType = "doctype"
+    }
+}
+
 // MARK: - DataSharingDisplay
 struct DataSharingDisplayResponse: Codable {
     var name, locale, backgroundColor, textColor: String?

@@ -38,8 +38,14 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             // Generate JWT payload
             let payload = generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "")
             debugPrint("payload:\(payload)")
+        var presentationDefinition :PresentationDefinitionModel? = nil
+        do {
+            presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
+        } catch {
+            presentationDefinition = nil
+        }
             
-            let vpToken =  format == "mso_mdoc" ? generateVPTokenForMdoc(credential: credentialsList ?? []) :generateVPToken(header: header, payload: payload, secureKey: secureKey)
+            let vpToken =  format == "mso_mdoc" ? generateVPTokenForMdoc(credential: credentialsList ?? [], presentationDefinition: presentationDefinition) :generateVPToken(header: header, payload: payload, secureKey: secureKey)
             
             // Presentation Submission model
             guard let presentationSubmission = preparePresentationSubmission(presentationRequest: presentationRequest) else { return nil }
@@ -180,14 +186,37 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         return idToken//"\(unsignedToken).\(signature.base64URLEncodedString() ?? "")"
     }
 
-    private func generateVPTokenForMdoc(credential: [String]) -> String {
+    private func generateVPTokenForMdoc(credential: [String], presentationDefinition: PresentationDefinitionModel?) -> String {
         var cborString: String = ""
     var base64StringWithoutPadding = ""
+        var requestedParams: [String] = []
+        var limitDisclosure: Bool = false
+        if let fields = presentationDefinition?.inputDescriptors?.first?.constraints?.fields {
+            for field in fields {
+        let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
+
+            let filteredComponents = components?.filter { !$0.isEmpty }
+
+            if let identifier = filteredComponents?.last {
+                    requestedParams.append(String(identifier))
+            }
+            }
+        }
+        if presentationDefinition?.inputDescriptors?.first?.constraints?.limitDisclosure == nil {
+        limitDisclosure = false
+    } else {
+        limitDisclosure = true
+    }
         for cred in credential {
-            if let issuerAuthData = getIssuerAuth(credential: cred), let nameSpaceData = getNameSpaces(credential: cred) {
-        let dummy = getLimitDisclosureCBOR(index: 0, cborData: nameSpaceData)
+            if let issuerAuthData = getIssuerAuth(credential: cred), let cborNameSpace = getNameSpaces(credential: cred, presentationDefinition: presentationDefinition) {
+        var nameSpaceData: CBOR? = nil
+        if limitDisclosure {
+            nameSpaceData = filterNameSpaces(nameSpacesValue: cborNameSpace, requestedParams: requestedParams)
+        } else {
+            nameSpaceData = cborNameSpace
+        }
         let docType = getDocTypeFromIssuerAuth(cborData: issuerAuthData)
-                let docFiltered = [Document(docType: docType ?? "", issuerSigned: IssuerSigned(nameSpaces: nameSpaceData, issuerAuth: issuerAuthData))]
+                let docFiltered = [Document(docType: docType ?? "", issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))]
                 
                 let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
                 let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
@@ -487,7 +516,19 @@ func extractDocType(cborData: CBOR) -> String? {
         return nil // Return nil if "issuerAuth" is not found
     }
 
-    func getNameSpaces(credential: String) -> CBOR? {
+    func getNameSpaces(credential: String, presentationDefinition: PresentationDefinitionModel?) -> CBOR? {
+    var requestedParams: [String] = []
+        if let fields = presentationDefinition?.inputDescriptors?.first?.constraints?.fields {
+            for field in fields {
+        let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
+
+            let filteredComponents = components?.filter { !$0.isEmpty }
+
+            if let identifier = filteredComponents?.last {
+                    requestedParams.append(String(identifier))
+            }
+            }
+        }
         // Convert the base64 URL encoded credential to Data
         if let data = Data(base64URLEncoded: credential) {
             do {
@@ -514,54 +555,36 @@ func extractDocType(cborData: CBOR) -> String? {
 
 
 
-func getLimitDisclosureCBOR(index: Int, cborData: CBOR) -> CBOR? {
-    // Ensure the input is a map type
-    guard case let CBOR.map(map) = cborData else {
-        print("Input data is not a CBOR map.")
-        return nil
-    }
-
-    // Iterate over the map to locate the target key
-    var modifiedMap = map
-    for (key, value) in map {
-        // Check if the key is the target key and its value is an array
-        if case let CBOR.utf8String(keyString) = key, keyString == "org.iso.18013.5.1.pID" {
-            if case let CBOR.array(array) = value {
-                // Validate the index
-                guard index >= 0 && index < array.count else {
-                    print("Index is out of bounds.")
-                    return nil
-                }
-
-                // Extract the element at the given index
-                let selectedElement = array[index]
-
-                // Replace the original array with the new one containing only the selected element
-                modifiedMap[key] = CBOR.array([selectedElement])
-            } else {
-                print("Value associated with key is not an array.")
-                return nil
+        public func getFilteredCbor(credential: String, presentationDefinition: PresentationDefinitionModel?) -> CBOR? {
+    var requestedParams: [String] = []
+    var limitDisclosure: Bool = false
+    if let fields = presentationDefinition?.inputDescriptors?.first?.constraints?.fields {
+        for field in fields {
+            let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
+            let filteredComponents = components?.filter { !$0.isEmpty }
+            if let identifier = filteredComponents?.last {
+                requestedParams.append(String(identifier))
             }
         }
     }
 
-    // Return the modified CBOR object
-    return CBOR.map(modifiedMap)
-}
-
-
-    func extractIssuerAuth(credential: String) -> Any? {
-    // Convert the base64 URL encoded credential to Data
+    if presentationDefinition?.inputDescriptors?.first?.constraints?.limitDisclosure == nil {
+        limitDisclosure = false
+    } else {
+        limitDisclosure = true
+    }
+    
     if let data = Data(base64URLEncoded: credential) {
         do {
-            // Decode the CBOR data into a dictionary
             let decodedCBOR = try CBOR.decode([UInt8](data))
-            
             if let dictionary = decodedCBOR {
-                // Check for the presence of "issuerAuth" in the dictionary
-                if let issuerAuthValue = dictionary[CBOR.utf8String("issuerAuth")] {
-                    return issuerAuthValue // Return the issuerAuth value directly
-                }
+                //if let nameSpacesValue = dictionary[CBOR.utf8String("nameSpaces")] {
+                    if limitDisclosure {
+                        return filterCBORWithRequestedParams(cborData: dictionary, requestedParams: requestedParams)
+                    } else {
+                        return dictionary
+                    }
+               // }
             }
         } catch {
             print("Error decoding CBOR: \(error)")
@@ -572,60 +595,62 @@ func getLimitDisclosureCBOR(index: Int, cborData: CBOR) -> CBOR? {
         return nil
     }
     
-    return nil // Return nil if "issuerAuth" is not found
+    return nil
 }
 
 
+public func filterCBORWithRequestedParams(cborData: CBOR, requestedParams: [String]) -> CBOR? {
+    guard case let CBOR.map(cborMap) = cborData else { return nil }
 
-        func convertCBORToHumanReadable(_ cbor: CBOR) -> [String: Any] {
-    var result: [String: Any] = [:]
-    
-    switch cbor {
-    case let .map(map):
-        for (key, value) in map {
-            let keyString = cborToString(key)
-            let valueReadable = cborToHumanReadable(value)
-            result[keyString] = valueReadable
+    var modifiedCBORMap = cborMap
+
+    if let namespacesValue = modifiedCBORMap[CBOR.utf8String("nameSpaces")] {
+        if let filteredNameSpaces = filterNameSpaces(nameSpacesValue: namespacesValue, requestedParams: requestedParams) {
+            modifiedCBORMap[CBOR.utf8String("nameSpaces")] = filteredNameSpaces
         }
-    default:
-        print("Unhandled CBOR type")
+    }
+
+    return CBOR.map(modifiedCBORMap)
+}
+
+public func filterNameSpaces(nameSpacesValue: CBOR, requestedParams: [String]) -> CBOR? {
+    if case let CBOR.map(nameSpaces) = nameSpacesValue {
+        var filteredNameSpaces: OrderedDictionary<CBOR, CBOR> = [:]
+        
+        for (key, namespaceValue) in nameSpaces {
+            var valuesArray: [CBOR] = []
+            
+            if case let CBOR.array(orgValues) = namespaceValue {
+                for value in orgValues {
+                    if case let CBOR.tagged(tag, taggedValue) = value, tag.rawValue == 24 {
+                        if case let CBOR.byteString(byteString) = taggedValue {
+                            let data = Data(byteString)
+                            if let decodedInnerCBOR = try? CBOR.decode([UInt8](data)),
+                               case let CBOR.map(decodedMap) = decodedInnerCBOR {
+                                if let identifier = decodedMap[CBOR.utf8String("elementIdentifier")],
+                                   let value = decodedMap[CBOR.utf8String("elementValue")],
+                                   case let CBOR.utf8String(identifierString) = identifier {
+                                    if requestedParams.contains(identifierString) {
+                                        valuesArray.append(CBOR.tagged(tag, CBOR.byteString(byteString)))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if !valuesArray.isEmpty {
+                filteredNameSpaces[key] = CBOR.array(valuesArray)
+            }
+        }
+        
+        return CBOR.map(filteredNameSpaces)
     }
     
-    return result
+    return nil
 }
 
-func cborToHumanReadable(_ cborValue: CBOR) -> Any {
-    switch cborValue {
-    case let .negativeInt(value):
-        // Convert the UInt64 negative integer to an Int safely
-        if let intValue = Int(exactly: value) {
-            return -(intValue + 1)
-        } else {
-            return "NegativeInt out of bounds"
-        }
-        
-    case let .unsignedInt(value):
-        // Handle unsigned integer safely
-        if let intValue = Int(exactly: value) {
-            return intValue
-        } else {
-            return value // return UInt64 if it's too large for Int
-        }
-
-    case let .utf8String(value):
-        return value
-        
-    case let .byteString(data):
-        return Data(data).base64EncodedString()  // Convert byteString to base64 for readability
-        
-    case let .map(map):
-        return convertCBORToHumanReadable(.map(map))
-        
-    default:
-        return "UnsupportedType"
-    }
-}
-    
     func convertCBORtoJson(credential: String) -> String? {
         if let data = Data(base64URLEncoded: credential) {
             do {
@@ -787,60 +812,6 @@ func cborToHumanReadable(_ cborValue: CBOR) -> Any {
     return CBOR.array(cborArray)
 }
 
-    func sample() {
-
-        let dataToEncode: [String: Any] = [
-      "version": 1.0,
-      "documents": [
-        [
-          "docType": "eu.europa.ec.eudi.pid.1",
-          "issuerSigned": [
-            "nameSpaces": [
-              "eu.europa.ec.eudi.pid.1": [
-                "co.nstant.in.cbor.model.ByteString@3d1629c9",
-                "co.nstant.in.cbor.model.ByteString@257ff3de",
-                "co.nstant.in.cbor.model.ByteString@6c3d9b4a",
-                "co.nstant.in.cbor.model.ByteString@1fa16c0e",
-                "co.nstant.in.cbor.model.ByteString@97ab30de",
-                "co.nstant.in.cbor.model.ByteString@cd5ee3ea",
-                "co.nstant.in.cbor.model.ByteString@a66e7ef3",
-                "co.nstant.in.cbor.model.ByteString@1efddce"
-              ]
-            ],
-            "issuerAuth": [
-              "co.nstant.in.cbor.model.ByteString@2e86f342",
-              [
-                "33": "co.nstant.in.cbor.model.ByteString@e9a6a3e5"
-              ],
-              "co.nstant.in.cbor.model.ByteString@fcdfe913",
-              "co.nstant.in.cbor.model.ByteString@6316f4"
-            ]
-          ],
-          "deviceSigned": [
-            "nameSpaces": "co.nstant.in.cbor.model.ByteString@158a8b25",
-            "deviceAuth": [
-              "deviceSignature": [
-                "co.nstant.in.cbor.model.ByteString@2e86f342",
-                [:], // Empty dictionary
-                "NULL", // Special NULL value
-                "co.nstant.in.cbor.model.ByteString@d95bfc90"
-              ]
-            ]
-          ]
-        ]
-      ],
-      "status": 0
-    ]
-    // Encode the data into CBOR format
-    if let cborData = encodeToCBOR(dataToEncode) {
-      // CBOR-encoded data as byte array
-//      let encodedBytes = CBOR.encode(cborData)
-      // Print encoded CBOR bytes in hex format
-      print(Data(cborData.encode()).base64EncodedString())
-    } else {
-      print("Failed to encode data")
-    }
-    }
     
     private func processCredentialsToJsonString(credentialList: [String?]) -> [String] {
         var processedCredentials = [String]()
