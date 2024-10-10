@@ -14,107 +14,40 @@ class SignatureValidator {
     
     static func validateSign(jwt: String?, jwksURI: String?, format: String) async -> Bool? {
         var jwk: [String: Any] = [:]
-    if format == "mso_mdoc" {
-         return true
+        if format == "mso_mdoc" {
+            return true
         } else {
             guard let split = jwt?.split(separator: "."), split.count > 1 else { return true}
             guard let jsonString = "\(split[0])".decodeBase64(),
-              let jsonObject = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) else { return false }
-        if let kid = jsonObject["kid"] as? String {
-            if kid.hasPrefix("did:key:z") {
-                jwk = processJWKfromKid(did: kid)
-            } else if kid.hasPrefix("did:ebsi:z") {
-                jwk = await processJWKforEBSI(did: kid)
+                  let jsonObject = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) else { return false }
+            if var kid = jsonObject["kid"] as? String {
+                if kid.hasPrefix("did:jwk:") {
+                    if let parsedJWK = ProcessJWKFromKID.parseDIDJWK(kid) {
+                        jwk = parsedJWK
+                    }
+                } else if kid.hasPrefix("did:key:z") {
+                    jwk = ProcessKeyJWKFromKID.processJWKfromKid(did: kid)
+                } else if kid.hasPrefix("did:ebsi:z") {
+                    jwk = await ProcessEbsiJWKFromKID.processJWKforEBSI(did: kid)
+                } else if kid.hasPrefix("did:web:") {
+                    if let didDocument = try? await ProcessWebJWKFromKID.fetchDIDDocument(did: kid),
+                       let verificationMethod = didDocument["verificationMethod"] as? [[String: Any]],
+                       let publicKeyJwk = verificationMethod.first?["publicKeyJwk"] as? [String: Any] {
+                        jwk = publicKeyJwk
+                    } else {
+                        print("Failed to fetch or parse DID document for did:web")
+                        return false
+                    }
+                    
+                } else {
+                    jwk = await ProcessJWKFromJwksUri.processJWKFromJwksURI2(kid: kid, jwksURI: jwksURI)
+                }
             } else {
-                jwk = await processJWKFromJwksURI2(kid: kid, jwksURI: jwksURI)
+                let kid = jsonObject["kid"] as? String
+                jwk = await ProcessJWKFromJwksUri.processJWKFromJwksURI2(kid: kid, jwksURI: jwksURI)
             }
-        } else {
-            let kid = jsonObject["kid"] as? String
-            jwk = await processJWKFromJwksURI2(kid: kid, jwksURI: jwksURI)
+            return validateSignature(jwt: jwt, jwk: jwk)
         }
-        return validateSignature(jwt: jwt, jwk: jwk)
-    }
-}
-    
-    
-    static func processJWKfromKid(did: String?) -> [String: Any] {
-        guard let did = did else { return [:]}
-        let components = did.split(separator: "#")
-        guard let didPart = components.first else {
-            return [:]
-        }
-        return DidService.shared.createJWKfromDID(did: String(didPart))
-    }
-    
-    static func processJWKforEBSI(did: String?) async -> [String: Any]{
-        guard let did = did else { return [:]}
-        let ebsiEndPoint = "https://api-conformance.ebsi.eu/did-registry/v5/identifiers/\(did)"
-        let pilotEndpoint = "https://api-pilot.ebsi.eu/did-registry/v5/identifiers/\(did)"
-        
-        do {
-            guard let url = URL(string: ebsiEndPoint) else { return [:] }
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let httpResponse = response as? HTTPURLResponse else { return [:] }
-            
-            if httpResponse.statusCode == 200 {
-                // Process the response from the first URL
-                return try processPublicKeyFromJWKList(data)
-            } else {
-                // Call the fallback URL if the status is not 200
-                return try await fetchJWKListFromUrl(pilotEndpoint)
-            }
-        } catch {
-            print("Error fetching from primary URL: \(error)")
-        }
-        return [:]
-    }
-
-    private static func processPublicKeyFromJWKList(_ data: Data) throws -> [String: Any] {
-        guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-              let verificationMethods = jsonObject["verificationMethod"] as? [[String: Any]] else { return [:] }
-        
-        for method in verificationMethods {
-            if let publicKeyJwk = method["publicKeyJwk"] as? [String: Any],
-               let crv = publicKeyJwk["crv"] as? String, crv == "P-256" {
-                return publicKeyJwk
-            }
-        }
-        return [:]
-    }
-    
-    private static func fetchJWKListFromUrl(_ fallbackURL: String) async throws -> [String: Any] {
-        guard let url = URL(string: fallbackURL) else { return [:] }
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return [:] }
-        
-        return try processPublicKeyFromJWKList(data)
-    }
-    
-    static func processJWKFromJwksURI2(kid: String?, jwksURI: String?) async -> [String: Any] {
-        guard let jwksURI = jwksURI else {return [:]}
-        return await fetchJwkData(kid: kid, jwksUri: jwksURI)
-    }
-    
-    static func fetchJwkData(kid: String?, jwksUri: String)async -> [String: Any] {
-        guard let url = URL(string: jwksUri) else {
-            return [:]
-        }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return [:]}
-            guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any], let keys = jsonObject["keys"] as? [[String: Any]] else { return [:]}
-             
-             var jwkKey: [String: Any]? = keys.first { $0["use"] as? String == "sig" }
-             
-             if jwkKey == nil, let kid = kid {
-                 jwkKey = keys.first { $0["kid"] as? String == kid }
-             }
-            return jwkKey ?? [:]
-            
-        } catch {
-            print("error")
-        }
-        return [:]
     }
     
     static private func validateSignature(jwt: String?, jwk: [String: Any]) -> Bool? {
@@ -219,5 +152,4 @@ class SignatureValidator {
             return false
         }
     }
-    
 }
