@@ -5,7 +5,6 @@
 //  Created by Mumthasir mohammed on 08/03/24.
 //
 import Foundation
-
 // MARK: - IssuerWellKnownConfiguration
 public struct Display: Codable{
     public let name: String?
@@ -38,7 +37,6 @@ public struct Display: Codable{
            textColor = mTextColor
        }
 }
-
 public struct TrustFrameworkInIssuer {
     public let name: String?
     public let type: String?
@@ -52,7 +50,6 @@ public struct TrustFrameworkInIssuer {
         display = from.display == nil ? nil : Display(from: from.display!)
     }
 }
-
 // MARK: - CredentialObj
 public struct CredentialSupportedObject {
     
@@ -82,7 +79,6 @@ public struct CredentialSupportedObject {
         }
     }
 }
-
 public struct DisplayElement {
     public var name: String?
     public var locale: Locale?
@@ -92,7 +88,6 @@ public struct DisplayElement {
         locale = from.locale
     }
 }
-
 public struct IssuerCredentialDefinition {
     public var type: [String]?
     public var vct: String?
@@ -102,7 +97,6 @@ public struct IssuerCredentialDefinition {
         vct = from.vct
     }
 }
-
 // MARK: - DataSharing
 public struct DataSharing {
     public var format, scope: String?
@@ -111,6 +105,7 @@ public struct DataSharing {
     public var types: [String]?
     public var trustFramework: TrustFramework?
     public var credentialDefinition: IssuerCredentialDefinition?
+    public var docType: String?
     
     init(from: DataSharingResponse) {
         format = from.format
@@ -121,6 +116,7 @@ public struct DataSharing {
             display = dataSharingDisplayList.map({ Display(from: $0) })
         }
         credentialDefinition = from.credentialDefinition == nil ? nil : IssuerCredentialDefinition(from: from.credentialDefinition!)
+    docType = from.docType
     }
     
     init(from: DataSharingOldFormatResponse) {
@@ -132,14 +128,12 @@ public struct DataSharing {
         }
     }
 }
-
 // MARK: - CredentialsSupportedObjectDisplay
 public struct CredentialsSupportedObjectDisplay {
     public var name, location, locale: String?
     public var cover, logo: DisplayCover?
     public var description: String?
 }
-
 // MARK: - Cover
 public struct DisplayCover: Codable {
     public var uri: String?
@@ -158,7 +152,6 @@ public struct DisplayCover: Codable {
         url = mUrl
     }
 }
-
 public struct IssuerWellKnownConfiguration {
     public let credentialIssuer: String?
     public let authorizationServer: String?

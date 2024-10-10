@@ -25,7 +25,7 @@ public struct InputDescriptor: Codable {
     public let name: String?
     public let purpose: String?
     public var constraints: Constraints?
-    public let format: InputDescriptorFormat?
+    public let format: [String: JwtVp?]?//InputDescriptorFormat?
 }
 // MARK: - Constraints
 public struct Constraints: Codable {

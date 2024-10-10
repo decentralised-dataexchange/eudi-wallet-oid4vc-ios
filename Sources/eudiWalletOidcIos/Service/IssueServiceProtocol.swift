@@ -1,13 +1,11 @@
 //
 //  IssueServiceProtocol.swift
-//  
+//
 //
 //  Created by Mumthasir mohammed on 18/03/24.
 //
-
 import Foundation
 import CryptoKit
-
 protocol IssueServiceProtocol {
     // Retrieves credential issuer asynchronously based on the provided credential_offer / credential_offer_uri.
     ///
@@ -25,7 +23,7 @@ protocol IssueServiceProtocol {
     ///   - authServer: The authorization server configuration.
     ///   - codeVerifier - to build the authorisation request
     /// - Returns: code if successful; otherwise, nil.
-    func processAuthorisationRequest(did: String, secureKey: SecureKeyData, credentialOffer: CredentialOffer, codeVerifier: String, authServer: AuthorisationServerWellKnownConfiguration) async -> String?
+    func processAuthorisationRequest(did: String, secureKey: SecureKeyData, credentialOffer: CredentialOffer, codeVerifier: String, authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String) async -> String?
     
     // Processes the token request to obtain the access token.
     /** - Parameters
@@ -69,11 +67,11 @@ protocol IssueServiceProtocol {
             type: String?) -> String?
     
     func getTypesFromCredentialOffer(credentialOffer: CredentialOffer?) -> [String]?
-
     func getTypesFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Any?
     
     func getCryptoFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> [String]?
     
     func getCredentialDisplayFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Display?
+    func getDocTypeFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> String?
     
 }

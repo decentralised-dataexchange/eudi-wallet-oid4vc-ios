@@ -4,10 +4,8 @@
 //
 //  Created by Mumthasir mohammed on 26/04/24.
 //
-
 import Foundation
 import CryptoKit
-
 public class SDJWTService {
     
     public static var shared = SDJWTService()
@@ -37,7 +35,6 @@ public class SDJWTService {
         
         return base64urlEncodedHash
     }
-
     public func createSDJWTR(
         credential: String?,
         presentationRequest: PresentationRequest,
@@ -82,7 +79,6 @@ public class SDJWTService {
             return nil
         }
     }
-
     public func processDisclosuresWithPresentationDefinition(
         credential: String?,
         presentationDefinition: PresentationDefinitionModel
@@ -120,7 +116,7 @@ public class SDJWTService {
     }
     
     public func updateIssuerJwtWithDisclosures(credential: String?) -> String? {
-        guard let split = credential?.split(separator: "."),
+        guard let split = credential?.split(separator: "."), split.count > 1,
               let jsonString = "\(split[1])".decodeBase64(),
               let jsonObject = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) else { return nil }
         
@@ -169,7 +165,6 @@ public class SDJWTService {
         
         return modifiedJsonElement
     }
-
     
     private func isStringPresentInJSONArray(jsonArray: [String], searchString: String) -> Bool {
         for element in jsonArray {
@@ -179,7 +174,6 @@ public class SDJWTService {
         }
         return false
     }
-
     private func extractKeyValue(from decodedString: String) -> (String, Any)? {
         guard let jsonArray = try? JSONSerialization.jsonObject(with: Data(decodedString.utf8)) as? [Any],
               jsonArray.count >= 3,
@@ -189,14 +183,12 @@ public class SDJWTService {
         }
         return (key, value)
     }
-
     private func getDisclosuresFromSDJWT(_ credential: String?) -> [String]? {
         guard let split = credential?.split(separator: "~"), split.count > 1 else {
             return []
         }
         return split.dropFirst().map { String($0) }
     }
-
     private func getIssuerJwtFromSDJWT(_ credential: String?) -> String? {
         guard let split = credential?.split(separator: "~"), let first = split.first else {
             return nil
@@ -204,4 +196,3 @@ public class SDJWTService {
         return String(first)
     }
 }
-
