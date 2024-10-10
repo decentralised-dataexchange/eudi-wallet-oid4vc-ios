@@ -18,12 +18,13 @@ let package = Package(
         .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", from: "1.8.1"),
         .package(url: "https://github.com/decentralised-dataexchange/PresentationExchangeSdkiOS.git", .upToNextMajor(from: "2024.8.1")),
         .package(url: "https://github.com/airsidemobile/JOSESwift.git", from: "2.3.0"),
-        .package(url: "https://github.com/apple/swift-crypto.git", from:"3.5.2")
+        .package(url: "https://github.com/apple/swift-crypto.git", from:"3.5.2"),
+        .package(url: "https://github.com/niscy-eudiw/SwiftCBOR.git", from: "0.5.7")
     ],
     targets: [
         .target(
             name: "eudiWalletOidcIos",
-            dependencies: ["Base58Swift", "CryptoSwift", "PresentationExchangeSdkiOS", "JOSESwift", .product(name: "Crypto", package: "swift-crypto")],
+            dependencies: ["Base58Swift", "CryptoSwift", "PresentationExchangeSdkiOS", "JOSESwift", "SwiftCBOR", .product(name: "Crypto", package: "swift-crypto")],
             path: "Sources"),
         .testTarget(
             name: "eudi-wallet-oidc-iosTests",

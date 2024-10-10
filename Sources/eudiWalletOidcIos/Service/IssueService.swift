@@ -70,15 +70,21 @@ public class IssueService: NSObject, IssueServiceProtocol {
         }
     }
     
-    private func buildAuthorizationRequest(credentialOffer: CredentialOffer?) -> String {
-        var authorizationDetails =  if credentialOffer?.credentials?[0].trustFramework == nil {
+    private func buildAuthorizationRequest(credentialOffer: CredentialOffer?, docType: String, format: String) -> String {
+        var authorizationDetails =  if format == "mso_mdoc" {
             "[" + (([
+        "format": format,
+                "doctype": docType,
+                "locations": [credentialOffer?.credentialIssuer ?? ""]
+            ] as [String : Any]).toString() ?? "") + "]"
+        } else if credentialOffer?.credentials?[0].trustFramework == nil {
+        "[" + (([
                 "type": "openid_credential",
                 "format": "jwt_vc_json",
                 "credential_definition": ["type":credentialOffer?.credentials?[0].types ?? []],
                 "locations": [credentialOffer?.credentialIssuer ?? ""]
             ] as [String : Any]).toString() ?? "") + "]"
-        } else {
+    } else {
             "[" + (([
                 "type": "openid_credential",
                 "format": "jwt_vc",
@@ -102,21 +108,22 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                             secureKey: SecureKeyData,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,
-                                            authServer: AuthorisationServerWellKnownConfiguration) async -> String? {
+                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String) async -> String? {
         
         guard let authorizationEndpoint = authServer.authorizationEndpoint else { return nil }
         let redirectUri = "http://localhost:8080"
         
         // Gather query parameters
         let responseType = "code"
-        let scope = "openid"
+        let scope = credentialFormat == "mso_mdoc" ? credentialFormat + "openid" : "openid"
         let state = UUID().uuidString
-        let authorizationDetails = buildAuthorizationRequest(credentialOffer: credentialOffer)
+        let docType = credentialFormat == "mso_mdoc" ? docType : ""
+       let authorizationDetails = buildAuthorizationRequest(credentialOffer: credentialOffer, docType: docType, format: credentialFormat)
         
         let nonce = UUID().uuidString
         let codeChallenge = CodeVerifierService.shared.generateCodeChallenge(codeVerifier: codeVerifier)
         let codeChallengeMethod = "S256"
-        let clientMetadata =
+        let clientMetadata = credentialFormat == "mso_mdoc" ? "" :
         ([
           "vp_formats_supported": [
             "jwt_vp": [ "alg": ["ES256"] ],
@@ -393,7 +400,18 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let credentialTypes = credentialOffer.credentials?[0].types ?? []
             let types = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")
             let formatT = getFormatFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
+        let doctType = getDocTypeFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
             var params: [String: Any] = [:]
+        if formatT == "mso_mdoc" {
+            params = [
+                    "doctype": doctType,
+                    "format": formatT,
+                    "proof": [
+                        "proof_type": "jwt",
+                        "jwt": idToken
+                    ]
+                ]
+        } else {
             if types is String {
                 params = [
                     "vct": types ?? "",
@@ -450,6 +468,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                     }
                 }
             }
+    }
         
             // Create URL for the credential endpoint
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
@@ -634,6 +653,16 @@ public class IssueService: NSObject, IssueServiceProtocol {
         
         if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
             return credentialSupported.display?[0] ?? nil
+        } else {
+            return nil
+        }
+    }
+
+    public func getDocTypeFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> String? {
+         guard let issuerConfig = issuerConfig else { return nil }
+        
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
+            return credentialSupported.docType ?? nil
         } else {
             return nil
         }

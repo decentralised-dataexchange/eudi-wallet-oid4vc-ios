@@ -4,10 +4,8 @@
 //
 //  Created by Mumthasir mohammed on 18/03/24.
 //
-
 import Foundation
 import CryptoKit
-
 protocol VerificationServiceProtocol {
     /**
      Sends a verifiable presentation token (VP token) asynchronously.
@@ -23,16 +21,14 @@ protocol VerificationServiceProtocol {
         did: String,
         secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
-        credentialsList: [String]?
+        credentialsList: [String]?, format: String
     ) async -> WrappedVerificationResponse?
-
     /**
      Processes an authorization request and extracts a PresentationRequest object asynchronously.
      - Parameter data: The authorization request data.
      - Returns: The extracted PresentationRequest object, or nil if the input data is invalid or cannot be processed.
      */
     func processAuthorisationRequest(data: String?) async -> PresentationRequest?
-
     /**
      Processes the provided presentation definition data and returns a PresentationDefinitionModel object.
      - Parameter presentationDefinition: The presentation definition data.
@@ -40,7 +36,6 @@ protocol VerificationServiceProtocol {
      - Returns: The PresentationDefinitionModel object representing the presentation definition.
      */
     static func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel
-
     /**
      Filters the provided list of credentials based on the given presentation definition.
      - Parameters:
