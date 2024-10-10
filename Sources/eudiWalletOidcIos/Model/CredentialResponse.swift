@@ -4,11 +4,9 @@
 //
 //  Created by Mumthasir mohammed on 11/03/24.
 //
-
 import Foundation
-
 // MARK: - CredentialResponse
-public struct CredentialResponse: Codable {
+public struct CredentialResponse {
     public var format, credential, acceptanceToken: String?
     public var isDeferred, isPinRequired: Bool?
     public var issuerConfig: IssuerWellKnownConfiguration?
@@ -16,9 +14,33 @@ public struct CredentialResponse: Codable {
     public var credentialOffer: CredentialOffer?
     public var error: EUDIError?
     
-    enum CodingKeys: String, CodingKey {
-        case acceptanceToken = "acceptance_token"
-        case format = "format"
-        case credential = "credential"
+    
+    public init(from: CredentialResponseV1) {
+        format = from.format
+        credential = from.credential
+        acceptanceToken = from.acceptanceToken
+        isDeferred = from.isDeferred
+        isPinRequired = from.isPinRequired
+        issuerConfig = from.issuerConfig
+        authorizationConfig = from.authorizationConfig
+        credentialOffer = from.credentialOffer
+        error = from.error
+    }
+    
+    
+    public init(from: CredentialResponseV2) {
+        format = from.format
+        credential = from.credential
+        acceptanceToken = from.acceptanceToken
+        isDeferred = from.isDeferred
+        isPinRequired = from.isPinRequired
+        issuerConfig = from.issuerConfig
+        authorizationConfig = from.authorizationConfig
+        credentialOffer = from.credentialOffer
+        error = from.error
+    }
+    
+    public init(fromError: EUDIError) {
+        error = fromError
     }
 }
