@@ -10,6 +10,8 @@ public struct PresentationRequest: Codable {
     public var responseUri: String?
     public var presentationDefinition: String?
     public var clientMetaData: String?
+    public var presentationDefinitionUri: String?
+    public var clientMetaDataUri: String?
     enum CodingKeys: String, CodingKey {
         case state = "state"
         case clientId = "client_id"
@@ -22,8 +24,10 @@ public struct PresentationRequest: Codable {
         case requestUri = "request_uri"
         case presentationDefinition = "presentation_definition"
         case clientMetaData = "client_metadata"
+        case presentationDefinitionUri = "presentation_definition_uri"
+        case clientMetaDataUri = "client_metadata_uri"
     }
-    public init(state: String?, clientId: String?, redirectUri: String?, responseUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: String?, clientMetaData:  String?) {
+    public init(state: String?, clientId: String?, redirectUri: String?, responseUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: String?, clientMetaData:  String?, presentationDefinitionUri: String?, clientMetaDataUri: String?) {
         self.state = state
         self.clientId = clientId
         self.redirectUri = redirectUri
@@ -35,6 +39,8 @@ public struct PresentationRequest: Codable {
         self.requestUri = requestUri
         self.presentationDefinition = presentationDefinition
         self.clientMetaData = clientMetaData
+        self.presentationDefinitionUri = presentationDefinitionUri
+        self.clientMetaDataUri = clientMetaDataUri
     }
     
     public init(from decoder: Decoder) throws {
@@ -59,6 +65,8 @@ public struct PresentationRequest: Codable {
         if let clientMetaDataModel = try? container.decode(ClientMetaData.self, forKey: . clientMetaData) {
             clientMetaData = clientMetaDataModel.toJSONString()
         }
+        presentationDefinitionUri = try container.decodeIfPresent(String.self, forKey: .presentationDefinitionUri)
+        clientMetaDataUri = try container.decodeIfPresent(String.self, forKey: .clientMetaDataUri)
     }
 }
 public struct ClientMetaData: Codable {

@@ -319,7 +319,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         
         if responseUrl.contains("code=") ||
             responseUrl.contains("error=") ||
-            responseUrl.contains("presentation_definition=") ||
+            responseUrl.contains("presentation_definition=") || responseUrl.contains("presentation_definition_uri=") ||
             (responseUrl.contains("request_uri=") && !responseUrl.contains("response_type=") && !responseUrl.contains("state=")){
             return responseUrl
         } else {
@@ -542,7 +542,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 if types is String {
                     params = [
                         "vct": types ?? "",
-                        "format": format ?? "jwt_vc",
+                        "format": formatT ?? "jwt_vc",
                         "proof": [
                             "proof_type": "jwt",
                             "jwt": idToken
@@ -551,9 +551,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 }else{
                     params = [
                         "credential_definition": [
-                            "type": types
+                            "type": types ?? []
                         ],
-                        "format": format ?? "jwt_vc",
+                        "format": formatT ?? "jwt_vc",
                         "proof": [
                             "proof_type": "jwt",
                             "jwt": idToken
@@ -563,7 +563,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 if credentialOffer.credentials?[0].trustFramework != nil {
                     params = [
                         "types": credentialTypes,
-                        "format": formatT,
+                        "format": formatT ?? "jwt_vc",
                         "proof": [
                             "proof_type": "jwt",
                             "jwt": idToken
@@ -575,9 +575,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
                         if let dataArray = data as? [String] {
                             params = [
                                 "credential_definition": [
-                                    "type": dataArray
+                                    "type": dataArray ?? []
                                 ],
-                                "format": formatT,
+                                "format": formatT ?? "jwt_vc",
                                 "proof": [
                                     "proof_type": "jwt",
                                     "jwt": idToken
@@ -586,7 +586,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                         } else if let dataString = data as? String {
                             params = [
                                 "vct": dataString,
-                                "format": formatT,
+                                "format": formatT ?? "jwt_vc",
                                 "proof": [
                                     "proof_type": "jwt",
                                     "jwt": idToken

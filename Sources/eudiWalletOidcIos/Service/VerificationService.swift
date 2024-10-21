@@ -72,21 +72,22 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         if let code = data {
             let state = URL(string: code)?.queryParameters?["state"] ?? ""
             let nonce = URL(string: code)?.queryParameters?["nonce"] ?? ""
-            let redirectUri = URL(string: code)?.queryParameters?["redirect_uri"] ?? ""
+            let responseUri = URL(string: code)?.queryParameters?["response_uri"] ?? ""
+            let redirectUri = URL(string: code)?.queryParameters?["redirect_uri"] ?? responseUri
             let clientID = URL(string: code)?.queryParameters?["client_id"] ?? ""
             let responseType = URL(string: code)?.queryParameters?["response_type"] ?? ""
             let scope = URL(string: code)?.queryParameters?["scope"] ?? ""
             let requestUri = URL(string: code)?.queryParameters?["request_uri"] ?? ""
-            let responseUri = URL(string: code)?.queryParameters?["response_uri"] ?? ""
             let responseMode = URL(string: code)?.queryParameters?["response_mode"] ?? ""
             var presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
             var clientMetaData = URL(string: code)?.queryParameters?["client_metadata"] ?? ""
+            var presentationDefinitionUri = URL(string: code)?.queryParameters?["presentation_definition_uri"] ?? ""
+            var clientMetaDataUri = URL(string: code)?.queryParameters?["client_metadata_uri"] ?? ""
             
-            if presentationDefinition != "" {
-                
-                let presentationRequest =  PresentationRequest(state: state,
+            if presentationDefinition != "" || presentationDefinitionUri != "" {
+                var presentationRequest =  PresentationRequest(state: state,
                                                                clientId: clientID,
-                                                               redirectUri: redirectUri,
+                                                               redirectUri: redirectUri ?? responseUri,
                                                                responseUri: responseUri,
                                                                responseType: responseType,
                                                                responseMode: responseMode,
@@ -94,8 +95,17 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                                                                nonce: nonce,
                                                                requestUri: requestUri,
                                                                presentationDefinition: presentationDefinition,
-                                                               clientMetaData: clientMetaData
+                                                               clientMetaData: clientMetaData,
+                                                               presentationDefinitionUri: presentationDefinitionUri, clientMetaDataUri: clientMetaDataUri
                 )
+                if presentationDefinition == "" && presentationDefinitionUri != "" {
+                    let presentationDefinitionFromUri = await resolvePresentationDefinitionFromURI(url: presentationDefinitionUri)
+                    presentationRequest.presentationDefinition = presentationDefinitionFromUri
+                }
+                if clientMetaData == "" && clientMetaDataUri != "" {
+                    let clientMetaDataFromUri = await resolveClientMetaDataFromURI(url: clientMetaDataUri)
+                    presentationRequest.clientMetaData = clientMetaDataFromUri
+                }
                 return presentationRequest
                 
             } else if requestUri != "" {
@@ -105,7 +115,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 do {
                     let (data, _) = try await URLSession.shared.data(for: request)
                     let jsonDecoder = JSONDecoder()
-                    let model = try? jsonDecoder.decode(PresentationRequest.self, from: data)
+                    var model = try? jsonDecoder.decode(PresentationRequest.self, from: data)
                     if model == nil {
                         if let jwtString = String(data: data, encoding: .utf8) {
                             do {
@@ -126,6 +136,14 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                             return nil
                         }
                     }
+                    if model?.presentationDefinition == nil && model?.presentationDefinitionUri != "" {
+                        let presentationDefinitionFromUri = await resolvePresentationDefinitionFromURI(url: model?.presentationDefinitionUri)
+                        model?.presentationDefinition = presentationDefinitionFromUri
+                    }
+                    if model?.clientMetaData == nil && model?.clientMetaDataUri != "" {
+                        let clientMetaDataFromUri = await resolveClientMetaDataFromURI(url: model?.clientMetaDataUri)
+                        model?.clientMetaData = clientMetaDataFromUri
+                    }
                     return model
                 } catch {
                     debugPrint("Error:\(error)")
@@ -133,6 +151,46 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             }
         }
         
+        return nil
+    }
+    
+    func resolvePresentationDefinitionFromURI(url: String?) async -> String? {
+        if let uri = URL(string: url ?? "") {
+            var request = URLRequest(url: uri)
+            request.httpMethod = "GET"
+            do {
+                let (data, _) = try await URLSession.shared.data(for: request)
+                if let presentationDefinitionFromUri = String(data: data, encoding: .utf8) {
+                  return presentationDefinitionFromUri
+                } else {
+                    debugPrint("Error: Could not resolve presentation_definition from URI")
+                    return nil
+                }
+            } catch {
+                debugPrint("Error while fetching presentation_definition from URI: \(error)")
+                return nil
+            }
+        }
+        return nil
+    }
+    
+    func resolveClientMetaDataFromURI(url: String?) async -> String? {
+        if let uri = URL(string: url ?? "") {
+            var request = URLRequest(url: uri)
+            request.httpMethod = "GET"
+            do {
+                let (data, _) = try await URLSession.shared.data(for: request)
+                if let clientMetaDataFromUri = String(data: data, encoding: .utf8) {
+                  return clientMetaDataFromUri
+                } else {
+                    debugPrint("Error: Could not resolve presentation_definition from URI")
+                    return nil
+                }
+            } catch {
+                debugPrint("Error while fetching presentation_definition from URI: \(error)")
+                return nil
+            }
+        }
         return nil
     }
     
