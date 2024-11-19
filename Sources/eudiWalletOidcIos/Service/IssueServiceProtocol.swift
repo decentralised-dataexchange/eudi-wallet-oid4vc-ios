@@ -66,6 +66,8 @@ protocol IssueServiceProtocol {
         issuerConfig: IssuerWellKnownConfiguration?,
         type: String?) -> String?
     
+    func isCredentialMetaDataAvailable(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Bool?
+    
     func getTypesFromCredentialOffer(credentialOffer: CredentialOffer?) -> [String]?
     func getTypesFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Any?
     

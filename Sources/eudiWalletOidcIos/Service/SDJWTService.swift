@@ -6,6 +6,8 @@
 //
 import Foundation
 import CryptoKit
+import PresentationExchangeSdkiOS
+
 public class SDJWTService {
     
     public static var shared = SDJWTService()
@@ -90,7 +92,7 @@ public class SDJWTService {
               var issuedJwt = getIssuerJwtFromSDJWT(credential) else {
             return nil
         }
-        
+        var disclosureList: [String] = []
         // Extract requested parameters from the presentation definition
         var requestedParams: [String] = []
         if let fields = presentationDefinition.inputDescriptors?.first?.constraints?.fields {
@@ -105,13 +107,94 @@ public class SDJWTService {
         for disclosure in disclosures {
             if let decodedDisclosure = disclosure.decodeBase64(),
                let list = try? JSONSerialization.jsonObject(with: Data(decodedDisclosure.utf8), options: []) as? [Any],
-               list.count >= 2,
-               let paramName = list[1] as? String,
-               requestedParams.contains(paramName) {
-                issuedJwt += "~\(disclosure)"
+               list.count >= 2 {
+                if let paramName = list[1] as? String,
+                    requestedParams.contains(paramName){
+                        disclosureList.append(disclosure)
+                    }
+                if let secondParam = list[2] as? [String: Any] {
+                    let keys = Array(secondParam.keys)
+                    for key in keys {
+                        if requestedParams.contains(key) {
+                            disclosureList.append(disclosure)
+                        }
+                    }
+                }
             }
         }
-        
+        if let inputDescriptors = presentationDefinition.inputDescriptors {
+            for inputDescriptor in inputDescriptors {
+                if inputDescriptor.constraints?.limitDisclosure == nil {
+                    return issuedJwt.isEmpty ? nil : issuedJwt
+                } else {
+                    var verificationHandler : eudiWalletOidcIos.VerificationService?
+                    let keyHandler = CryptoKitHandler()
+                    verificationHandler = eudiWalletOidcIos.VerificationService(keyhandler: keyHandler)
+                    let updatedDescriptor = verificationHandler?.updatePath(in: inputDescriptor)
+                    var processedCredentials: [String] = []
+                    var tempCredentialList: [String?] = []
+                    var credentialList: [String] = []
+                    var sdList: [String] = []
+                    credentialList.append(credential)
+                    
+                    var credentialFormat: String = ""
+                    if let format = presentationDefinition.format ?? inputDescriptor.format {
+                        for (key, value) in format {
+                            credentialFormat = key
+                        }
+                    }
+                if credentialFormat == "mso_mdoc" {
+                    tempCredentialList = credentialList
+                    processedCredentials = verificationHandler?.processCborCredentialToJsonString(credentialList: tempCredentialList) ?? []
+                } else {
+                    tempCredentialList = verificationHandler?.splitCredentialsBySdJWT(allCredentials: credentialList, isSdJwt: inputDescriptor.constraints?.limitDisclosure != nil) ?? []
+                    
+                    processedCredentials = verificationHandler?.processCredentialsToJsonString(credentialList: tempCredentialList) ?? []
+                }
+                let jsonEncoder = JSONEncoder()
+                jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
+                guard let jsonData = try? jsonEncoder.encode(updatedDescriptor),
+                      let dictionary = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
+                    fatalError("Failed to convert Person to dictionary")
+                }
+                // Convert the dictionary to a string
+                guard let inputDescriptorString = String(data: try! JSONSerialization.data(withJSONObject: dictionary, options: .withoutEscapingSlashes), encoding: .utf8) else {
+                    fatalError("Failed to convert dictionary to string")
+                }
+                do {
+                    
+                    let matchesString = try matchCredentials(inputDescriptorJson: inputDescriptorString, credentials: processedCredentials)
+                    for item in matchesString {
+                        for data in item.fields {
+                            let value = data.path.value
+                            if let valueDict = value as? [String: Any], let sdArray = valueDict["_sd"] as? [Any] {
+                                for element in sdArray {
+                                    if let sdValue = element as? String {
+                                        sdList.append(sdValue)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for dis in disclosures {
+                        let sdData = calculateSHA256Hash(inputString: dis) ?? ""
+                        if sdList.contains(sdData) {
+                            if !(disclosureList.contains(sdData)) {
+                                disclosureList.append(dis)
+                            }
+                        }
+                    }
+                    print("")
+                    for data in disclosureList {
+                        issuedJwt += "~\(data)"
+                    }
+                    return issuedJwt.isEmpty ? nil : issuedJwt
+                } catch {
+                    print("error")
+                }
+            }
+            }
+        }
         return issuedJwt.isEmpty ? nil : issuedJwt
     }
     
