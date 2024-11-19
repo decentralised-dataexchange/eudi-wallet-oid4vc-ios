@@ -28,7 +28,7 @@ protocol VerificationServiceProtocol {
      - Parameter data: The authorization request data.
      - Returns: The extracted PresentationRequest object, or nil if the input data is invalid or cannot be processed.
      */
-    func processAuthorisationRequest(data: String?) async -> PresentationRequest?
+    func processAuthorisationRequest(data: String?) async -> (PresentationRequest?, EUDIError?)
     /**
      Processes the provided presentation definition data and returns a PresentationDefinitionModel object.
      - Parameter presentationDefinition: The presentation definition data.

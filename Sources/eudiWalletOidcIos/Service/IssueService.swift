@@ -134,37 +134,33 @@ public class IssueService: NSObject, IssueServiceProtocol {
         return authorizationDetails
     }
     
-    private func buildAuthorizationRequestV2(credentialOffer: CredentialOffer?, docType: String, format: String, issuerConfig: IssuerWellKnownConfiguration?) -> String {
-        let credentialConfigID = credentialOffer?.credentials?.first?.types?.first ?? nil
-        var authorizationDetails =  if format == "mso_mdoc" {
-            "[" + (([
-                "format": format,
-                "doctype": docType,
-                "credential_configuration_id": credentialConfigID,
-                "locations": [credentialOffer?.credentialIssuer ?? ""]
-                
-            ] as [String : Any]).toString() ?? "") + "]"
-        } else if format.contains("sd-jwt"){
+    func buildAuthorizationRequestV2(credentialOffer: CredentialOffer?, docType: String, format: String, issuerConfig: IssuerWellKnownConfiguration?) -> String {
+            let credentialConfigID = credentialOffer?.credentials?.first?.types?.first ?? nil
+            var authorizationDetails =  if format == "mso_mdoc" {
+                "[" + (([
+                    "type": "openid_credential",
+                    "doctype": docType,
+                    "credential_configuration_id": credentialConfigID,
+                    "locations": [credentialOffer?.credentialIssuer ?? ""]
+                    
+                ] as [String : Any]).toString() ?? "") + "]"
+            } else if format.contains("sd-jwt"){
+                "[" + (([
+                    "type": "openid_credential",
+                    "format": format,
+                    "vct": getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialConfigID)
+                ] as [String : Any]).toString() ?? "") + "]"
+            }
+            else {
+                "[" + (([
+                    "type": "openid_credential",
+                    "credential_configuration_id": credentialConfigID,
+                    "credential_definition": ["type": getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialConfigID)]
+                ] as [String : Any]).toString() ?? "") + "]"
+            }
             
-            
-            "[" + (([
-                "type": "openid_credential",
-                "format": format,
-                "credential_configuration_id": credentialConfigID,
-                //pass issur config
-                "vct": getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialConfigID)
-            ] as [String : Any]).toString() ?? "") + "]"
+            return authorizationDetails
         }
-        else {
-            "[" + (([
-                "type": "openid_credential",
-                "format": format,
-                "credential_definition": ["type": getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialConfigID)]
-            ] as [String : Any]).toString() ?? "") + "]"
-        }
-        
-        return authorizationDetails
-    }
     
     
     private func buildAuthorizationRequest(credentialOffer: CredentialOffer?, docType: String, format: String, issuerConfig: IssuerWellKnownConfiguration?) -> String {
@@ -786,6 +782,17 @@ public class IssueService: NSObject, IssueServiceProtocol {
             return "jwt_vc"
         }
     }
+    
+    public func isCredentialMetaDataAvailable(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Bool? {
+        guard let issuerConfig = issuerConfig else { return nil }
+        
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
+            return true
+        } else {
+            return false
+        }
+    }
+    
     
     public func getTypesFromCredentialOffer(credentialOffer: CredentialOffer?) -> [String]? {
         guard let credentialOffer = credentialOffer else { return nil }
