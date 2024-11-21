@@ -12,12 +12,13 @@ class ProcessWebJWKFromKID {
         guard did.hasPrefix("did:web:") else { return nil }
         
         let didWithoutPrefix = did.replacingOccurrences(of: "did:web:", with: "")
-        let didParts = didWithoutPrefix.split(separator: ":")
+        let pathAndFragment = didWithoutPrefix.split(separator: "#").first ?? ""
+        let didParts = pathAndFragment.split(separator: ":")
         
         guard didParts.count > 1 else { return nil }
         
         let host = didParts[0]
-        let path = didParts[1].split(separator: "#").first ?? ""
+        let path = didParts.dropFirst().joined(separator: "/")
         let didDocURLString = "https://\(host)/\(path)/did.json"
         
         guard let didDocURL = URL(string: didDocURLString) else { return nil }
