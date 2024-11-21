@@ -8,10 +8,12 @@ import Foundation
 // MARK: - PresentationDefinitionModel
 public struct PresentationDefinitionModel: Codable {
     public let id: String?
+    public let name: String?
+    public let purpose: String?
     public let format: [String: JwtVp]?
     public let inputDescriptors: [InputDescriptor]?
     enum CodingKeys: String, CodingKey {
-        case id, format
+        case id, format, name, purpose
         case inputDescriptors = "input_descriptors"
     }
 }
