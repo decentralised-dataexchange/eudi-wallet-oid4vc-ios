@@ -20,7 +20,7 @@ public struct DisplayResponse: Codable {
         case name = "name"
         case location = "location"
         case locale =  "locale"
-        case description = "display"
+        case description = "description"
         case cover = "cover"
         case logo = "logo"
         case bgImage =  "background_image"
