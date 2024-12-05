@@ -180,13 +180,13 @@ public class IssueService: NSObject, IssueServiceProtocol {
     ///   - codeVerifier - to build the authorisation request
     ///   - authServer: The authorization server configuration.
     /// - Returns: code if successful; otherwise, nil.
-    public func processAuthorisationRequest(did: String,
+        public func processAuthorisationRequest(did: String,
                                             secureKey: SecureKeyData,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,
-                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?) async -> String? {
+                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?) async -> WrappedResponse? {
         
-        guard let authorizationEndpoint = authServer.authorizationEndpoint else { return nil }
+        guard let authorizationEndpoint = authServer.authorizationEndpoint else { return WrappedResponse(data: nil, error: nil) }
         let redirectUri = "http://localhost:8080"
         
         // Gather query parameters
@@ -211,7 +211,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         
         // Validate required parameters
         if responseType == "", did == "" {
-            return nil
+            return WrappedResponse(data: nil, error: nil)
         }
         var authorizationURLComponents: URLComponents?
         if authServer.requirePushedAuthorizationRequests == true {
@@ -240,7 +240,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             do {
                 let (data, response) = try await session!.data(for: request)
-                guard let authorization_response = String.init(data: data, encoding: .utf8) else { return nil }
+                guard let authorization_response = String.init(data: data, encoding: .utf8) else { return WrappedResponse(data: nil, error: nil) }
                 if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
                     if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []),
                        let jsonDict = jsonResponse as? [String: Any],
@@ -252,7 +252,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
                             URLQueryItem(name: "request_uri", value: requestURI)
                         ]
                     }
-                } else {
+                } else if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
+                    return WrappedResponse(data: nil, error: ErrorHandler.processError(data: data))
+                }
+                else {
                     debugPrint("Failed to get request_uri from the PAR response.")
                 }
             } catch {
@@ -280,7 +283,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         // Validate the constructed authorization URL
         guard let authorizationURL = authorizationURLComponents?.url else {
             debugPrint("Failed to construct the authorization URL.")
-            return nil
+            return WrappedResponse(data: nil, error: nil)
         }
         debugPrint(authorizationURL)
         
@@ -317,7 +320,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             responseUrl.contains("error=") ||
             responseUrl.contains("presentation_definition=") || responseUrl.contains("presentation_definition_uri=") ||
             (responseUrl.contains("request_uri=") && !responseUrl.contains("response_type=") && !responseUrl.contains("state=")){
-            return responseUrl
+            return WrappedResponse(data: responseUrl, error: nil)
         } else {
             // if 'code' is not present
             let url = URL(string: responseUrl)
@@ -332,7 +335,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 redirectURI:  uri.trimmingCharacters(in: .whitespaces) ,
                 nonce: nonce ?? "",
                 state: state ?? "")
-            return code
+            return WrappedResponse(data: code, error: nil)
         }
     }
     
@@ -726,9 +729,28 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Performing the token request
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
-                let model = try jsonDecoder.decode(TokenResponse.self, from: data)
-                return model
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let httpres = response as? HTTPURLResponse
+                let dataString = String.init(data: data, encoding: .utf8)
+                if let dataResponse = response as? HTTPURLResponse, dataResponse.statusCode >= 400, let errorData =  dataString {
+                    let jsonData = errorData.data(using: .utf8)
+                    do {
+                        if let dictionary = try JSONSerialization.jsonObject(with: jsonData!, options: []) as? [String: Any] {
+                            let errorString = dictionary["error"] as? String
+                            let error = EUDIError(from: ErrorResponse(message: errorString))
+                            return TokenResponse(error: error)
+                        }
+                    } catch {
+                        print("Error decoding JSON: \(error)")
+                        let nsError = error as NSError
+                        let errorCode = nsError.code
+                        let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
+                        return TokenResponse(error: error)
+                    }
+                } else {
+                    let model = try jsonDecoder.decode(TokenResponse.self, from: data)
+                    return model
+                }
             } catch {
                 debugPrint("Get access token for preauth credential failed: \(error)")
                 let nsError = error as NSError
@@ -736,6 +758,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
                 return TokenResponse(error: error)
             }
+            
+            return nil
         }
     
     // Retrieves the access token using the provided parameters.
