@@ -12,7 +12,7 @@ import CryptoKit
 
 class SignatureValidator {
     
-    static func validateSign(jwt: String?, jwksURI: String?, format: String) async -> Bool? {
+    static func validateSign(jwt: String?, jwksURI: String?, format: String) async throws-> Bool? {
         var jwk: [String: Any] = [:]
         if format == "mso_mdoc" {
             return true
@@ -20,7 +20,15 @@ class SignatureValidator {
             guard let split = jwt?.split(separator: "."), split.count > 1 else { return true}
             guard let jsonString = "\(split[0])".decodeBase64(),
                   let jsonObject = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) else { return false }
-            if var kid = jsonObject["kid"] as? String {
+            if (jsonObject["kid"] as? String)?.isEmpty ?? true, let x5cList = jsonObject["x5c"] as? [String]{
+                if let x5cList = extractX5C(data: jsonObject) {
+                    if X509SanRequestVerifier.shared.validateSignatureWithCertificate(jwt: jwt ?? "", x5cChain: x5cList) {
+                        return true
+                    } else {
+                        throw ValidationError.invalidKID
+                    }
+                }
+            } else if var kid = jsonObject["kid"] as? String {
                 if kid.hasPrefix("did:jwk:") {
                     if let parsedJWK = ProcessJWKFromKID.parseDIDJWK(kid) {
                         jwk = parsedJWK
@@ -151,5 +159,13 @@ class SignatureValidator {
             print("Error during signature verification: \(error)")
             return false
         }
+    }
+
+    static func extractX5C(data: [String: Any]?) -> [String]?{
+        var x5cData: [String] = []
+        if let data = data, let x5cArray = data["x5c"] as? [String]{
+            x5cData = x5cArray
+        }
+        return x5cData
     }
 }
