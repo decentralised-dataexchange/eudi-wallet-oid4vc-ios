@@ -47,6 +47,7 @@ public struct Field: Codable {
 public struct Filter: Codable {
     public let type: String?
     public let contains: Contains?
+    public let const: String?
     public let pattern: String?
 }
 // MARK: - Contains

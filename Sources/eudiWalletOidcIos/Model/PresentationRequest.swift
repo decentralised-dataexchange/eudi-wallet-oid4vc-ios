@@ -12,6 +12,7 @@ public struct PresentationRequest: Codable {
     public var clientMetaData: String?
     public var presentationDefinitionUri: String?
     public var clientMetaDataUri: String?
+    public var transactionData: [String]?
     enum CodingKeys: String, CodingKey {
         case state = "state"
         case clientId = "client_id"
@@ -27,8 +28,9 @@ public struct PresentationRequest: Codable {
         case clientMetaData = "client_metadata"
         case presentationDefinitionUri = "presentation_definition_uri"
         case clientMetaDataUri = "client_metadata_uri"
+        case transactionData = "transaction_data"
     }
-    public init(state: String?, clientId: String?, redirectUri: String?, responseUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: String?, clientMetaData:  String?, presentationDefinitionUri: String?, clientMetaDataUri: String?, clientIDScheme: String?) {
+    public init(state: String?, clientId: String?, redirectUri: String?, responseUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: String?, clientMetaData:  String?, presentationDefinitionUri: String?, clientMetaDataUri: String?, clientIDScheme: String?, transactionData: [String]) {
         self.state = state
         self.clientId = clientId
         self.redirectUri = redirectUri
@@ -43,6 +45,7 @@ public struct PresentationRequest: Codable {
         self.presentationDefinitionUri = presentationDefinitionUri
         self.clientMetaDataUri = clientMetaDataUri
         self.clientIDScheme = clientIDScheme
+        self.transactionData = transactionData
     }
     
     public init(from decoder: Decoder) throws {
@@ -65,11 +68,15 @@ public struct PresentationRequest: Codable {
         } else {
             presentationDefinition = nil
         }
-        if let clientMetaDataModel = try? container.decode(ClientMetaData.self, forKey: . clientMetaData) {
+        if let clientMetaDataModel = try? container.decode(ClientMetaData.self, forKey: .clientMetaData) {
             clientMetaData = clientMetaDataModel.toJSONString()
         }
         presentationDefinitionUri = try container.decodeIfPresent(String.self, forKey: .presentationDefinitionUri)
         clientMetaDataUri = try container.decodeIfPresent(String.self, forKey: .clientMetaDataUri)
+        transactionData = try container.decodeIfPresent([String].self, forKey: .transactionData)
+//        if let transactionDataModel = try? container.decode(TransactionData.self, forKey: .transactionData) {
+//            transactionData = transactionDataModel.toJSONString()
+//        }
     }
 }
 public struct ClientMetaData: Codable {
@@ -98,4 +105,65 @@ public struct ClientMetaData: Codable {
         logoUri = try container.decodeIfPresent(String.self, forKey: .logoUri)
     }
     
+}
+public struct TransactionData: Codable {
+    public var type: String?
+    public var credentialIDs: [String]?
+    public var paymentData: PaymentData?
+    enum CodingKeys: String, CodingKey {
+        case type = "type"
+        case credentialIDs = "credential_ids"
+        case paymentData = "payment_data"
+    }
+    public init(type: String?, credentialIDs: [String]?, paymentData: PaymentData?) {
+        self.type = type
+        self.credentialIDs = credentialIDs
+        self.paymentData = paymentData
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decodeIfPresent(String.self, forKey: .type)
+        credentialIDs = try container.decodeIfPresent([String].self, forKey: .credentialIDs)
+        paymentData = try container.decodeIfPresent(PaymentData.self, forKey: .paymentData)
+    }
+    
+}
+public struct PaymentData: Codable {
+    public var payee: String?
+    public var currencyAmount: CurrencyAmount?
+    
+    enum CodingKeys: String, CodingKey {
+        case payee = "payee"
+        case currencyAmount = "currency_amount"
+    }
+    public init(payee: String?, currencyAmount: CurrencyAmount?) {
+        self.payee = payee
+        self.currencyAmount = currencyAmount
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        payee = try container.decodeIfPresent(String.self, forKey: .payee)
+        currencyAmount = try container.decodeIfPresent(CurrencyAmount.self, forKey: .currencyAmount)
+    }
+}
+public struct CurrencyAmount: Codable {
+    public var currency: String?
+    public var value: Double?
+    
+    enum CodingKeys: String, CodingKey {
+        case currency = "currency"
+        case value = "value"
+    }
+    public init(currency: String?, value: Double?) {
+        self.currency = currency
+        self.value = value
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        currency = try container.decodeIfPresent(String.self, forKey: .currency)
+        value = try container.decodeIfPresent(Double.self, forKey: .value)
+    }
 }
