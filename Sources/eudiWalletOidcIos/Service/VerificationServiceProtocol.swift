@@ -21,8 +21,11 @@ protocol VerificationServiceProtocol {
         did: String,
         secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
-        credentialsList: [String]?, format: String
-    ) async -> WrappedVerificationResponse?
+        credentialsList: [String]?, 
+        format: String,
+        wua: String, 
+        pop: String,
+        keyId: String) async -> WrappedVerificationResponse?
     /**
      Processes an authorization request and extracts a PresentationRequest object asynchronously.
      - Parameter data: The authorization request data.

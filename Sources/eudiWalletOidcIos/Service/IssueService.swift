@@ -180,11 +180,11 @@ public class IssueService: NSObject, IssueServiceProtocol {
     ///   - codeVerifier - to build the authorisation request
     ///   - authServer: The authorization server configuration.
     /// - Returns: code if successful; otherwise, nil.
-        public func processAuthorisationRequest(did: String,
+    public func processAuthorisationRequest(did: String,
                                             secureKey: SecureKeyData,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,
-                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?) async -> WrappedResponse? {
+                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?, keyId: String) async -> WrappedResponse? {
         
         guard let authorizationEndpoint = authServer.authorizationEndpoint else { return WrappedResponse(data: nil, error: nil) }
         let redirectUri = "http://localhost:8080"
@@ -303,6 +303,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let httpres = response as? HTTPURLResponse
             if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
                 responseUrl = location
+            } else if httpres?.statusCode ?? 0 >= 400 {
+                return WrappedResponse(data: nil, error: ErrorHandler.processError(data: data))
             } else{
                 guard let authorization_response = String.init(data: data, encoding: .utf8) else { return nil }
                 responseUrl = authorization_response
@@ -334,7 +336,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 authServerWellKnownConfig: authServer,
                 redirectURI:  uri.trimmingCharacters(in: .whitespaces) ,
                 nonce: nonce ?? "",
-                state: state ?? "")
+                state: state ?? "", keyId: keyId)
             return WrappedResponse(data: code, error: nil)
         }
     }
@@ -346,7 +348,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
         authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration,
         redirectURI: String,
         nonce: String,
-        state: String) async -> String? {
+        state: String,
+        keyId: String) async -> String? {
             
             // Retrieve the authorization endpoint from the server configuration.
             guard let authorizationEndpoint = authServerWellKnownConfig.authorizationEndpoint else { return nil }
@@ -373,14 +376,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
             // Create JWT token
             let headerData = Data(header.utf8)
             
-            //let payloadData = Data(payload.utf8)
-            //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
+            let keyHandler = SecureEnclaveHandler(organisationID: keyId)
+            let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
+            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.1.privateKey) else{return nil}
             
-            
-            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return nil}
-            //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
-            //let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
-            print(idToken)
             guard let urlComponents = URLComponents(string: redirectURI) else { return nil }
             
             // Create the URL with the added query parameters
@@ -402,8 +401,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
             var responseUrl = ""
             
             do {
-                // Perform the request to the redirect URI
-                //let (data, _) = try await URLSession.shared.data(for: request)
                 if session == nil{
                     session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
                 }
@@ -417,8 +414,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                     
                     responseUrl = authorization_response
                 }
-                //                let authorization_response = String.init(data: data, encoding: .utf8) ?? ""
-                //                guard let authorisation_url = URL(string: authorization_response) else { return nil }
+                
                 guard let authorisation_url = URL(string: responseUrl) else { return nil }
                 if let components = URLComponents(url: authorisation_url, resolvingAgainstBaseURL: false),
                    let auth_code = components.queryItems?.first(where: { $0.name == "code" })?.value {
@@ -452,14 +448,32 @@ public class IssueService: NSObject, IssueServiceProtocol {
         code: String,
         codeVerifier: String,
         isPreAuthorisedCodeFlow: Bool = false,
-        userPin: String?, version: String?) async -> TokenResponse? {
+        userPin: String?, 
+        version: String?,
+        clientIdAssertion: String = "",
+        wua: String,
+        pop: String) async -> TokenResponse? {
             
             if isPreAuthorisedCodeFlow {
-                let tokenResponse = await getAccessTokenForPreAuthCredential(preAuthCode: code, otpVal: userPin ?? "", tokenEndpoint: tokenEndPoint ?? "", version: version)
+                let tokenResponse =
+                await getAccessTokenForPreAuthCredential(preAuthCode: code, 
+                                                         otpVal: userPin ?? "",
+                                                         tokenEndpoint: tokenEndPoint ?? "",
+                                                         version: version,
+                                                         clientIdAssertion: clientIdAssertion,
+                                                         wua: wua,
+                                                         pop: pop)
                 return tokenResponse
             } else {
                 let codeVal = code.removingPercentEncoding ?? ""
-                let tokenResponse = await getAccessToken(didKeyIdentifier: did, codeVerifier: codeVerifier, authCode: codeVal, tokenEndpoint: tokenEndPoint ?? "")
+                let tokenResponse = 
+                await getAccessToken(didKeyIdentifier: did,
+                                     codeVerifier: codeVerifier,
+                                     authCode: codeVal,
+                                     tokenEndpoint: tokenEndPoint ?? "",
+                                     clientIdAssertion: clientIdAssertion,
+                                     wua: wua,
+                                     pop: pop)
                 return tokenResponse
             }
         }
@@ -478,16 +492,15 @@ public class IssueService: NSObject, IssueServiceProtocol {
      */
     public func processCredentialRequest(
         did: String,
-        secureKey: SecureKeyData,
         nonce: String,
         credentialOffer: CredentialOffer,
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
-        format: String) async -> CredentialResponse? {
+        format: String, 
+        keyID: String = "") async -> CredentialResponse? {
             
             let jsonDecoder = JSONDecoder()
             let methodSpecificId = did.replacingOccurrences(of: "did:key:", with: "")
-            
             
             // Generate JWT header
             let header = ([
@@ -515,13 +528,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
             // Create JWT token
             let headerData = Data(header.utf8)
             
-            //let payloadData = Data(payload.utf8)
-            //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-            // sign the data to be encrypted and exchanged
-            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return nil}
-            //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return nil}
-            //let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
-            
+            let keyHandler = SecureEnclaveHandler(organisationID: keyID ?? "")
+            let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
+            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.1.privateKey) else{return nil}
             
             let credentialTypes = credentialOffer.credentials?[0].types ?? []
             let types = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")
@@ -705,8 +714,12 @@ public class IssueService: NSObject, IssueServiceProtocol {
     // Retrieves the access token for Pre-Authorised credential using the provided parameters.
     private func getAccessTokenForPreAuthCredential(
         preAuthCode: String,
-        otpVal: String ,
-        tokenEndpoint: String, version: String?) async -> TokenResponse? {
+        otpVal: String,
+        tokenEndpoint: String,
+        version: String?,
+        clientIdAssertion: String? = "",
+        wua: String,
+        pop: String) async -> TokenResponse? {
             
             let jsonDecoder = JSONDecoder()
             let grantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
@@ -725,6 +738,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
             var request = URLRequest(url: URL(string: tokenEndpoint)!)
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+            request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
             request.httpBody = postString.data(using: .utf8)
             
             // Performing the token request
@@ -767,19 +782,37 @@ public class IssueService: NSObject, IssueServiceProtocol {
         didKeyIdentifier: String,
         codeVerifier: String,
         authCode: String,
-        tokenEndpoint: String) async -> TokenResponse? {
+        tokenEndpoint: String,
+        clientIdAssertion: String = "",
+        wua: String,
+        pop: String) async -> TokenResponse? {
             
             let jsonDecoder = JSONDecoder()
             let grantType = "authorization_code"
             
             // Constructing parameters for the token request
-            let params = ["grant_type": grantType, "code":authCode, "client_id": didKeyIdentifier, "code_verifier": codeVerifier] as [String: Any]
+            //let clientAssertion = !clientIdAssertion.isEmpty ? clientIdAssertion : nil
+            var params: [String: Any] = [
+                "grant_type": grantType,
+                "code": authCode,
+                "client_id": didKeyIdentifier,
+                "code_verifier": codeVerifier,
+                "redirect_uri": "http://localhost:8080"
+            ]
+            
+            if !clientIdAssertion.isEmpty {
+                params["client_assertion"] = clientIdAssertion
+                params["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            }
             let postString = UIApplicationUtils.shared.getPostString(params: params)
             
             // Creating the request
             var request = URLRequest(url: URL(string: tokenEndpoint)!)
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+            request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
+            
             request.httpBody = postString.data(using: .utf8)
             
             // Performing the token request

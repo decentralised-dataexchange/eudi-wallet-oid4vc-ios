@@ -31,7 +31,11 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         did: String,
         secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
-        credentialsList: [String]?, format: String) async -> WrappedVerificationResponse? {
+        credentialsList: [String]?, 
+        format: String,
+        wua: String,
+        pop: String,
+        keyId: String) async -> WrappedVerificationResponse? {
             
             let jwk = generateJWKFromPrivateKey(secureKey: secureKey, did: did)
             
@@ -39,7 +43,11 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             let header = generateJWTHeader(jwk: jwk, did: did)
             
             // Generate JWT payload
-            let payload = generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "")
+            var transactionData: String? = nil
+            if !(presentationRequest?.transactionData?.isEmpty ?? true) {
+                transactionData = presentationRequest?.transactionData?.first
+            }
+            let payload = await generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "", transactionData: transactionData, keyId: keyId)
             debugPrint("payload:\(payload)")
             var presentationDefinition :PresentationDefinitionModel? = nil
             do {
@@ -48,13 +56,13 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 presentationDefinition = nil
             }
             
-            let vpToken =  format == "mso_mdoc" ? generateVPTokenForMdoc(credential: credentialsList ?? [], presentationDefinition: presentationDefinition) :generateVPToken(header: header, payload: payload, secureKey: secureKey)
+            let vpToken =  format == "mso_mdoc" ? generateVPTokenForMdoc(credential: credentialsList ?? [], presentationDefinition: presentationDefinition) : await generateVPToken(header: header, payload: payload, keyId: keyId)
             
             // Presentation Submission model
             guard let presentationSubmission = preparePresentationSubmission(presentationRequest: presentationRequest) else { return nil }
             print("presentation submission  format:  \(presentationSubmission.descriptorMap.first?.format)")
             guard let redirectURL = presentationRequest?.redirectUri else {return nil}
-            return await sendVPRequest(vpToken: vpToken, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "")
+            return await sendVPRequest(vpToken: vpToken, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "", wua: wua, pop: pop)
         }
     
     private func generateJWKFromPrivateKey(secureKey: SecureKeyData, did: String) -> [String: Any] {
@@ -100,7 +108,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                                                                requestUri: requestUri,
                                                                presentationDefinition: presentationDefinition,
                                                                clientMetaData: clientMetaData,
-                                                               presentationDefinitionUri: presentationDefinitionUri, clientMetaDataUri: clientMetaDataUri, clientIDScheme: clientIDScheme
+                                                               presentationDefinitionUri: presentationDefinitionUri, clientMetaDataUri: clientMetaDataUri, clientIDScheme: clientIDScheme, transactionData: [""]
                 )
                 if presentationDefinition == "" && presentationDefinitionUri != "" {
                     let presentationDefinitionFromUri = await resolvePresentationDefinitionFromURI(url: presentationDefinitionUri)
@@ -433,7 +441,20 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         ] as [String : Any]).toString() ?? ""
     }
     
-    private func generateJWTPayload(did: String, nonce: String, credentialsList: [String], state: String, clientID: String) -> String {
+    private func generateJWTPayload(did: String, nonce: String, credentialsList: [String], state: String, clientID: String, transactionData: String? = nil, keyId:String) async -> String {
+        var updatedCredentialList: [String] = []
+        for item in credentialsList {
+                var claims: [String: Any] = [:]
+            if let transactionData = transactionData, !transactionData.isEmpty {
+                claims["transaction_data_hashes"] = [SDJWTService.shared.calculateSHA256Hash(inputString: transactionData)]
+                claims["transaction_data_hashes_alg"] = "sha-256"
+            }
+            claims["aud"] = clientID
+            if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(issuerSignedJwt: item, claims: claims, keyId: keyId) {
+                let updatedCred = "\(item)~\(keyBindingJwt)"
+                updatedCredentialList.append(updatedCred)
+            }
+        }
         let uuid4 = UUID().uuidString
         let vp =
         ([
@@ -443,7 +464,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             "type": [
                 "VerifiablePresentation"
             ],
-            "verifiableCredential": credentialsList
+            "verifiableCredential": updatedCredentialList
         ] as [String : Any])
         
         let currentTime = Int(Date().timeIntervalSince1970)
@@ -461,15 +482,14 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         ] as [String : Any]).toString() ?? ""
     }
     
-    private func generateVPToken(header: String, payload: String, secureKey: SecureKeyData) -> String {
+    private func generateVPToken(header: String, payload: String, keyId: String) async -> String {
         let headerData = Data(header.utf8)
-        //let payloadData = Data(payload.utf8)
-        //let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-        //let signatureData = try? privateKey.signature(for: unsignedToken.data(using: .utf8)!)
-        //let signature = signatureData?.rawRepresentation
-        guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureKey.privateKey) else{return ""}
-        //guard let signature = keyHandler.sign(data: unsignedToken.data(using: .utf8)!, withKey: secureKey.privateKey) else{return ""}
-        return idToken//"\(unsignedToken).\(signature.base64URLEncodedString() ?? "")"
+       
+        let keyHandler = SecureEnclaveHandler(organisationID: keyId)
+        let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
+        guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.1.privateKey) else{return ""}
+       
+        return idToken
     }
     
     private func generateVPTokenForMdoc(credential: [String], presentationDefinition: PresentationDefinitionModel?) -> String {
@@ -576,7 +596,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         return PresentationSubmissionModel(id: UUID().uuidString, definitionID: presentationDefinition?.id ?? "", descriptorMap: descMap)
     }
     
-    private func sendVPRequest(vpToken: String, presentationSubmission: PresentationSubmissionModel, redirectURI: String, state: String) async -> WrappedVerificationResponse? {
+    private func sendVPRequest(vpToken: String, presentationSubmission: PresentationSubmissionModel, redirectURI: String, state: String, wua: String, pop: String) async -> WrappedVerificationResponse? {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let data = try? encoder.encode(presentationSubmission)
@@ -596,6 +616,8 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         var request = URLRequest(url: URL(string: redirectURI)!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+        request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
         request.httpBody = paramsData
         
         // Performing the token request

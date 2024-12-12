@@ -57,31 +57,52 @@ public class DiscoveryService: DiscoveryServiceProtocol {
     ///   - authorisationServerWellKnownURI: The URI for the credential issuer well-known configuration.
     ///   - Returns - AuthorisationServerWellKnownConfiguration
     public func getAuthConfig(authorisationServerWellKnownURI: String?) async throws -> AuthorisationServerWellKnownConfiguration? {
-        let jsonDecoder = JSONDecoder()
         
         guard let uri = authorisationServerWellKnownURI else { return nil }
-        let authUrl = uri +  "/.well-known/openid-configuration"
-        debugPrint("###authServerUrl url:\(authUrl)")
+        let authURL = uri + "/.well-known/oauth-authorization-server"
+        let authUrl = uri + "/.well-known/openid-configuration"
         
-        guard let url = URL.init(string: authUrl) else { return nil }
+        debugPrint("### Attempting with authServerUrl url:\(authURL)")
+        
+        do {
+            let (config, response) = try await fetchConfig2(from: authURL)
+            if let config = config {
+                return config
+            } else if let response = response, response.statusCode >= 400 {
+                do {
+                    let (config, _) = try await fetchConfig2(from: authUrl)
+                    if let config = config {
+                        return config
+                    }
+                } catch {
+                    debugPrint("### authUrl also failed: \(error.localizedDescription). Throwing final error.")
+                    let nsError = error as NSError
+                    let errorCode = nsError.code
+                    let finalError = EUDIError(from: ErrorResponse(message: error.localizedDescription, code: errorCode))
+                    return AuthorisationServerWellKnownConfiguration(error: finalError)
+                }
+            }
+        } catch {
+            debugPrint("### authURL failed: \(error.localizedDescription). Attempting with authUrl.")
+        }
+        
+        return nil
+    }
+    
+    func fetchConfig2(from urlString: String) async throws -> (AuthorisationServerWellKnownConfiguration?, HTTPURLResponse?) {
+        let jsonDecoder = JSONDecoder()
+        guard let url = URL(string: urlString) else { return (nil, nil) }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else { return (nil, nil) }
         
-        do {
-            guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
-                return nil
-                
-            }
-            let model = try jsonDecoder.decode(AuthorisationServerWellKnownConfiguration.self, from: data)
-            return model
-        } catch {
-            debugPrint("Get Auth config failed: \(error)")
-            let nsError = error as NSError
-            let errorCode = nsError.code
-            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
-            return AuthorisationServerWellKnownConfiguration(error: error)
+        if httpResponse.statusCode >= 400 {
+            return (nil, httpResponse)
         }
+        
+        let model = try jsonDecoder.decode(AuthorisationServerWellKnownConfiguration.self, from: data)
+        return (model, httpResponse)
     }
 }
