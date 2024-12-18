@@ -11,7 +11,7 @@ import CryptoKit
 public class WalletUnitAttestationService {
     
     public init() {}
-    let baseURL = "https://staging-oid4vc.igrant.io/organisation/4264f05a-e0cd-49cb-bb32-b664e1d0f448/service"
+    let baseURL = "https://oid4vc.igrant.io/organisation/445f2b74-cc27-44ef-bed7-4809c13699cf/service"
     
     public func initiateWalletUnitAttestation() async throws -> (String, String){
             let service = DCAppAttestService.shared
