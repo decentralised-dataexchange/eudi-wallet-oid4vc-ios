@@ -11,7 +11,7 @@ import CryptoKit
 public class WalletUnitAttestationService {
     
     public init() {}
-    let baseURL = "https://oid4vc.igrant.io/organisation/445f2b74-cc27-44ef-bed7-4809c13699cf/service"
+    let baseURL = "https://staging-oid4vc.igrant.io/organisation/4264f05a-e0cd-49cb-bb32-b664e1d0f448/service"
     
     public func initiateWalletUnitAttestation() async throws -> (String, String){
             let service = DCAppAttestService.shared
@@ -117,7 +117,7 @@ public class WalletUnitAttestationService {
         return did
     }
     
-    public func createClientAssertion(keyId: String) async -> String {
+    public func createClientAssertion(keyId: String, aud: String = "") async -> String {
         let keyHandler = SecureEnclaveHandler(organisationID: keyId)
         let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
         let jwk = secureData?.0 ?? [:]
@@ -132,7 +132,7 @@ public class WalletUnitAttestationService {
         let exp = now + 3600
         let jti = UUID().uuidString
         let payload = ([
-            "aud": "https://staging-oid4vc.igrant.io/organisation/4264f05a-e0cd-49cb-bb32-b664e1d0f448/service",
+            "aud": aud ?? baseURL,
             "client_id": did,
             "cnf": ["jwk": jwk],
             "exp": exp,
@@ -205,7 +205,7 @@ public class WalletUnitAttestationService {
         return credentialOfferUri
     }
     
-    public func generateWUAProofOfPossession(keyId: String) async -> String {
+    public func generateWUAProofOfPossession(keyId: String, aud: String? = nil) async -> String {
         let keyHandler = SecureEnclaveHandler(organisationID: keyId)
         let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
         let keyId = retrieveKeyIdFromKeychain()
@@ -217,7 +217,7 @@ public class WalletUnitAttestationService {
         let exp = now + 3600
         let jti = UUID().uuidString
         let payload = ([
-            "aud": "https://staging-oid4vc.igrant.io/organisation/4264f05a-e0cd-49cb-bb32-b664e1d0f448/service",
+            "aud": aud ?? baseURL,
             "exp": exp,
             "iss": did,
             "jti": "urn:uuid:\(jti)",

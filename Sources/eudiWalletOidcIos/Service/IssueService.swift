@@ -295,10 +295,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
         var responseUrl = ""
         do {
             // Try to fetch data from the URL session
-            if session == nil{
-                session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-            }
-            let (data, response) = try await session!.data(for: request)
+//            if session == nil{
+//                session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+//            }
+            let (data, response) = try await URLSession.shared.data(for: request)
             
             let httpres = response as? HTTPURLResponse
             if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
@@ -448,7 +448,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         code: String,
         codeVerifier: String,
         isPreAuthorisedCodeFlow: Bool = false,
-        userPin: String?, 
+        userPin: String?,
         version: String?,
         clientIdAssertion: String = "",
         wua: String,
@@ -456,7 +456,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             if isPreAuthorisedCodeFlow {
                 let tokenResponse =
-                await getAccessTokenForPreAuthCredential(preAuthCode: code, 
+                await getAccessTokenForPreAuthCredential(preAuthCode: code,
                                                          otpVal: userPin ?? "",
                                                          tokenEndpoint: tokenEndPoint ?? "",
                                                          version: version,
@@ -466,7 +466,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 return tokenResponse
             } else {
                 let codeVal = code.removingPercentEncoding ?? ""
-                let tokenResponse = 
+                let tokenResponse =
                 await getAccessToken(didKeyIdentifier: did,
                                      codeVerifier: codeVerifier,
                                      authCode: codeVal,
@@ -496,7 +496,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         credentialOffer: CredentialOffer,
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
-        format: String, 
+        format: String,
         keyID: String = "") async -> CredentialResponse? {
             
             let jsonDecoder = JSONDecoder()
@@ -621,6 +621,12 @@ public class IssueService: NSObject, IssueServiceProtocol {
             // Perform the request and handle the response
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
+                let httpRes = response as? HTTPURLResponse
+                if httpRes?.statusCode ?? 0 >= 400 {
+                    let errorString = String(data: data, encoding: .utf8)
+                    let error = EUDIError(from: ErrorResponse(message: errorString))
+                    return CredentialResponse(fromError: error)
+                }
                 guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return nil }
                 if jsonObject["acceptance_token"] != nil {
                     let model = try jsonDecoder.decode(CredentialResponseV1.self, from: data)
@@ -715,9 +721,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
     private func getAccessTokenForPreAuthCredential(
         preAuthCode: String,
         otpVal: String,
-        tokenEndpoint: String,
+        tokenEndpoint: String?,
         version: String?,
-        clientIdAssertion: String? = "",
+        clientIdAssertion: String = "",
         wua: String,
         pop: String) async -> TokenResponse? {
             
@@ -732,10 +738,15 @@ public class IssueService: NSObject, IssueServiceProtocol {
             } else if version == "v2" {
                 params = ["grant_type": grantType, "pre-authorized_code":preAuthCode, "tx_code": otpVal] as [String: Any]
             }
+            if !clientIdAssertion.isEmpty {
+                params["client_assertion"] = clientIdAssertion
+                params["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            }
             let postString = UIApplicationUtils.shared.getPostString(params: params)
             
+            guard let urlString = tokenEndpoint, let url =  URL(string: urlString) else { return TokenResponse(error: EUDIError(from: ErrorResponse(message: "Invalid url")))}
             // Creating the request
-            var request = URLRequest(url: URL(string: tokenEndpoint)!)
+            var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
@@ -782,7 +793,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         didKeyIdentifier: String,
         codeVerifier: String,
         authCode: String,
-        tokenEndpoint: String,
+        tokenEndpoint: String?,
         clientIdAssertion: String = "",
         wua: String,
         pop: String) async -> TokenResponse? {
@@ -807,7 +818,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let postString = UIApplicationUtils.shared.getPostString(params: params)
             
             // Creating the request
-            var request = URLRequest(url: URL(string: tokenEndpoint)!)
+            guard let urlString = tokenEndpoint, let url =  URL(string: urlString) else { return TokenResponse(error: EUDIError(from: ErrorResponse(message: "Invalid url")))}
+            var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
@@ -818,9 +830,15 @@ public class IssueService: NSObject, IssueServiceProtocol {
             // Performing the token request
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
-                debugPrint(response)
-                let model = try jsonDecoder.decode(TokenResponse.self, from: data)
-                return model
+                let httpsResponse = response as? HTTPURLResponse
+                if httpsResponse?.statusCode ?? 0 >= 400 {
+                    let dataString = String(data: data, encoding: .utf8)
+                    let error = EUDIError(from: ErrorResponse(message: dataString))
+                    return TokenResponse(error: error)
+                } else {
+                    let model = try jsonDecoder.decode(TokenResponse.self, from: data)
+                    return model
+                }
             } catch {
                 debugPrint("Get access token for preauth credential failed: \(error)")
                 let nsError = error as NSError
