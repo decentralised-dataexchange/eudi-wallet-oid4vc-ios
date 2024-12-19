@@ -509,7 +509,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         for item in credentialsList {
                 var claims: [String: Any] = [:]
             if let transactionData = transactionData, !transactionData.isEmpty {
-                claims["transaction_data_hashes"] = [SDJWTService.shared.calculateSHA256Hash(inputString: transactionData)]
+                claims["transaction_data_hashes"] = [self.generateHash(input: transactionData)]
                 claims["transaction_data_hashes_alg"] = "sha-256"
             }
             claims["aud"] = clientID
@@ -1288,6 +1288,13 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         return processedCredentials
     }
     
+    func generateHash(input: String) -> String? {
+        guard let data = input.data(using: .utf8) else { return nil }
+        
+        let hash = Data(SHA256.hash(data: data))
+        
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
     func updatePath(in descriptor: InputDescriptor) -> InputDescriptor {
         var updatedDescriptor = descriptor
         guard var constraints = updatedDescriptor.constraints else { return updatedDescriptor }
