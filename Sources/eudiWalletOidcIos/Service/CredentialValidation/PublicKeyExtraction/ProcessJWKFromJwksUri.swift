@@ -27,6 +27,8 @@ class ProcessJWKFromJwksUri {
             
             if jwkKey == nil, let kid = kid {
                 jwkKey = keys.first { $0["kid"] as? String == kid }
+            } else {
+                jwkKey = keys.first
             }
             return jwkKey ?? [:]
             
