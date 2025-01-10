@@ -12,7 +12,7 @@ let package = Package(
             targets: ["eudiWalletOidcIos"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/keefertaylor/Base58Swift.git", branch: "master"),
+        .package(url: "https://github.com/keefertaylor/Base58Swift.git", from: "2.1.11"),
         .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", from: "1.8.1"),
         .package(url: "https://github.com/decentralised-dataexchange/PresentationExchangeSdkiOS.git", .upToNextMajor(from: "2024.11.1")),
         .package(url: "https://github.com/airsidemobile/JOSESwift.git", from: "2.3.0"),
