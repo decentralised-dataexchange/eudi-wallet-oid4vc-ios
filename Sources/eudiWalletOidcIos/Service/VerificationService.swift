@@ -33,13 +33,11 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         credentialsList: [String]?,
         format: String,
         wua: String,
-        pop: String,
-        keyId: String) async -> WrappedVerificationResponse? {
+        pop: String) async -> WrappedVerificationResponse? {
                 
-                
-                let keyHandler = SecureEnclaveHandler(organisationID: keyId)
-                guard let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler) else { return nil }
-                let jwk = generateJWKFromPrivateKey(secureKey: secureData.1, did: did)
+                guard let secureData = keyHandler.generateSecureKey() else { return nil }
+        // let jwk = keyHandler.getJWK(publicKey: secureData.publicKey)
+                let jwk = generateJWKFromPrivateKey(secureKey: secureData, did: did)
                 
                 // Generate JWT header
                 let header = generateJWTHeader(jwk: jwk, did: did)
@@ -49,7 +47,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 transactionData = presentationRequest?.transactionData?.first
             }
                 // Generate JWT payload
-                let payload = await generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "",transactionData: transactionData, keyId: keyId)
+                let payload = await generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "",transactionData: transactionData)
                 debugPrint("payload:\(payload)")
                 var presentationDefinition :PresentationDefinitionModel? = nil
                 do {
@@ -57,7 +55,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 } catch {
                     presentationDefinition = nil
                 }
-            var vpToken = await createVPToken(presentationRequest: presentationRequest, format: format, credentialsList: credentialsList, presentationDefinition: presentationDefinition, secureKey: secureData.1, did: did, header: header, payload: payload, keyId: keyId)
+            var vpToken = await createVPToken(presentationRequest: presentationRequest, format: format, credentialsList: credentialsList, presentationDefinition: presentationDefinition, did: did, header: header, payload: payload)
             
     //            let vpToken =  format == "mso_mdoc" ? generateVPTokenForMdoc(credential: credentialsList ?? [], presentationDefinition: presentationDefinition) :generateVPToken(header: header, payload: payload, secureKey: secureKey)
                 
@@ -69,60 +67,19 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             }
         
         
-    func createVPToken(presentationRequest: PresentationRequest?, format: String, credentialsList: [String]?, presentationDefinition :PresentationDefinitionModel?, secureKey: SecureKeyData, did: String, header: String, payload: String, keyId: String) async -> (String, String) {
+    func createVPToken(presentationRequest: PresentationRequest?, format: String, credentialsList: [String]?, presentationDefinition :PresentationDefinitionModel?, did: String, header: String, payload: String) async -> (String, String) {
             var vpToken: String = ""
             var idToken: String = ""
             if format == "mso_mdoc" {
                 vpToken = generateVPTokenForMdoc(credential: credentialsList ?? [], presentationDefinition: presentationDefinition)
             } else {
                 if presentationRequest?.responseType == "vp_token" {
-                    vpToken = await generateVPToken(header: header, payload: payload, keyId: keyId)
+                    vpToken = await generateVPToken(header: header, payload: payload)
                 } else if presentationRequest?.responseType == "id_token" {
-                    idToken =  await generateJWTokenForIDtokenRequest(didKeyIdentifier: did, authorizationEndpoint: presentationRequest?.clientId ?? "", nonce: presentationRequest?.nonce ?? "", secureKey: secureKey, keyId: keyId)
+                    idToken =  await generateJWTokenForIDtokenRequest(didKeyIdentifier: did, authorizationEndpoint: presentationRequest?.clientId ?? "", nonce: presentationRequest?.nonce ?? "")
                 }
             }
             return (vpToken, idToken)
-        }
-    
-    // MARK: - Sends a Verifiable Presentation (VP) token asynchronously.
-    public func sendVPToken(
-        did: String,
-        secureKey: SecureKeyData,
-        presentationRequest: PresentationRequest?,
-        credentialsList: [String]?,
-        format: String,
-        wua: String,
-        pop: String,
-        keyId: String) async -> WrappedVerificationResponse? {
-            
-            let keyHandler = SecureEnclaveHandler(organisationID: keyId)
-            guard let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler) else { return nil }
-            let jwk = generateJWKFromPrivateKey(secureKey: secureData.1, did: did)
-            
-            // Generate JWT header
-            let header = generateJWTHeader(jwk: jwk, did: did)
-            
-            // Generate JWT payload
-            var transactionData: String? = nil
-            if !(presentationRequest?.transactionData?.isEmpty ?? true) {
-                transactionData = presentationRequest?.transactionData?.first
-            }
-            let payload = await generateJWTPayload(did: did, nonce: presentationRequest?.nonce ?? "", credentialsList: credentialsList ?? [], state: presentationRequest?.state ?? "", clientID: presentationRequest?.clientId ?? "", transactionData: transactionData, keyId: keyId)
-            debugPrint("payload:\(payload)")
-            var presentationDefinition :PresentationDefinitionModel? = nil
-            do {
-                presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
-            } catch {
-                presentationDefinition = nil
-            }
-            
-            let vpToken =  format == "mso_mdoc" ? generateVPTokenForMdoc(credential: credentialsList ?? [], presentationDefinition: presentationDefinition) : await generateVPToken(header: header, payload: payload, keyId: keyId)
-            
-            // Presentation Submission model
-            guard let presentationSubmission = preparePresentationSubmission(presentationRequest: presentationRequest) else { return nil }
-            print("presentation submission  format:  \(presentationSubmission.descriptorMap.first?.format)")
-            guard let redirectURL = presentationRequest?.redirectUri else {return nil}
-            return await sendVPRequest(vpToken: vpToken, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "", wua: wua, pop: pop)
         }
     
     private func generateJWKFromPrivateKey(secureKey: SecureKeyData, did: String) -> [String: Any] {
@@ -504,7 +461,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         ] as [String : Any]).toString() ?? ""
     }
     
-    private func generateJWTPayload(did: String, nonce: String, credentialsList: [String], state: String, clientID: String, transactionData: String? = nil, keyId:String) async -> String {
+    private func generateJWTPayload(did: String, nonce: String, credentialsList: [String], state: String, clientID: String, transactionData: String? = nil) async -> String {
         var updatedCredentialList: [String] = []
         for item in credentialsList {
                 var claims: [String: Any] = [:]
@@ -520,7 +477,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 dict = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) ?? [:]
             }
             
-            if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(issuerSignedJwt: item, claims: claims, keyId: keyId), let vct = dict["vct"] as? String, !vct.isEmpty{
+            if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(issuerSignedJwt: item, claims: claims, keyHandler: keyHandler), let vct = dict["vct"] as? String, !vct.isEmpty{
                 var updatedCred = String()
                 if item.hasSuffix("~") {
                     updatedCred = "\(item)\(keyBindingJwt)"
@@ -559,12 +516,11 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         ] as [String : Any]).toString() ?? ""
     }
     
-    private func generateVPToken(header: String, payload: String, keyId: String) async -> String {
+    private func generateVPToken(header: String, payload: String) async -> String {
         let headerData = Data(header.utf8)
        
-        let keyHandler = SecureEnclaveHandler(organisationID: keyId)
-        let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
-        guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.1.privateKey) else{return ""}
+        let secureData = await keyHandler.generateSecureKey()
+        guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.privateKey) else{return ""}
        
         return idToken
     }
@@ -572,9 +528,8 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     public func generateJWTokenForIDtokenRequest(
             didKeyIdentifier: String,
             authorizationEndpoint: String,
-            nonce: String,
-            secureKey: SecureKeyData
-            , keyId: String) async -> String{
+            nonce: String
+           ) async -> String{
             // Generate JWT header
             let header =
             ([
@@ -598,9 +553,9 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             // Create JWT token
             let headerData = Data(header.utf8)
             let payloadData = Data(payload.utf8)
-            let keyHandler = SecureEnclaveHandler(organisationID: keyId)
-            let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
-                guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.1.privateKey) else{return ""}
+            
+            let secureData = await keyHandler.generateSecureKey()
+                guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.privateKey) else{return ""}
             return idToken
         }
     
