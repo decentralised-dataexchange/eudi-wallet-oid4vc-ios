@@ -11,21 +11,21 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
     
     var privateKeyLabel = ""
     var publicKeyLabel = ""
-    var organisationID = ""
+    var keyID = ""
     var secureEnclaveHandler: SecureEnclave?
     public var keyStorageType: SecureKeyTypes = .cryptoKit
     
-    public init(organisationID: String) {
+    public init(keyID: String) {
         super.init()
-        self.organisationID = organisationID
+        self.keyID = keyID
         self.keyStorageType = .secureEnclave
     }
     
     //Creating secure enclave instance with unique identifer for the keys
     private func createSecureEnclaveHandlerFor() -> Bool{
-        if !organisationID.isEmpty{
+        if !keyID.isEmpty{
             secureEnclaveHandler = nil
-            privateKeyLabel = "com.EudiWallet.\(organisationID).PrivateKey"
+            privateKeyLabel = "com.EudiWallet.\(keyID).PrivateKey"
             secureEnclaveHandler = SecureEnclave(privateKeyApplicationTag: privateKeyLabel)
             return true
             } else{

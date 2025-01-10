@@ -181,10 +181,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
     ///   - authServer: The authorization server configuration.
     /// - Returns: code if successful; otherwise, nil.
     public func processAuthorisationRequest(did: String,
-                                            secureKey: SecureKeyData,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,
-                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?, keyId: String) async -> WrappedResponse? {
+                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?) async -> WrappedResponse? {
         
         guard let authorizationEndpoint = authServer.authorizationEndpoint else { return WrappedResponse(data: nil, error: nil) }
         let redirectUri = "http://localhost:8080"
@@ -332,11 +331,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let uri = redirectUri?.replacingOccurrences(of: "\n", with: "") ?? ""
             let code =  await processAuthorisationRequestUsingIdToken(
                 did: did,
-                secureKey: secureKey,
                 authServerWellKnownConfig: authServer,
                 redirectURI:  uri.trimmingCharacters(in: .whitespaces) ,
                 nonce: nonce ?? "",
-                state: state ?? "", keyId: keyId)
+                state: state ?? "")
             return WrappedResponse(data: code, error: nil)
         }
     }
@@ -344,12 +342,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
     
     private func processAuthorisationRequestUsingIdToken(
         did: String,
-        secureKey: SecureKeyData,
         authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration,
         redirectURI: String,
         nonce: String,
-        state: String,
-        keyId: String) async -> String? {
+        state: String) async -> String? {
             
             // Retrieve the authorization endpoint from the server configuration.
             guard let authorizationEndpoint = authServerWellKnownConfig.authorizationEndpoint else { return nil }
@@ -376,9 +372,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
             // Create JWT token
             let headerData = Data(header.utf8)
             
-            let keyHandler = SecureEnclaveHandler(organisationID: keyId)
-            let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
-            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.1.privateKey) else{return nil}
+//            let keyHandler = SecureEnclaveHandler(organisationID: keyId)
+            let secureData = await keyHandler.generateSecureKey()
+            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.privateKey) else{return nil}
             
             guard let urlComponents = URLComponents(string: redirectURI) else { return nil }
             
@@ -496,8 +492,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         credentialOffer: CredentialOffer,
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
-        format: String,
-        keyID: String = "") async -> CredentialResponse? {
+        format: String) async -> CredentialResponse? {
             
             let jsonDecoder = JSONDecoder()
             let methodSpecificId = did.replacingOccurrences(of: "did:key:", with: "")
@@ -528,9 +523,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
             // Create JWT token
             let headerData = Data(header.utf8)
             
-            let keyHandler = SecureEnclaveHandler(organisationID: keyID ?? "")
-            let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
-            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.1.privateKey) else{return nil}
+//            let keyHandler = SecureEnclaveHandler(organisationID: keyID ?? "")
+            let secureData = await keyHandler.generateSecureKey()
+            guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.privateKey) else{return nil}
             
             let credentialTypes = credentialOffer.credentials?[0].types ?? []
             let types = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")
@@ -738,10 +733,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
             } else if version == "v2" {
                 params = ["grant_type": grantType, "pre-authorized_code":preAuthCode, "tx_code": otpVal] as [String: Any]
             }
-            if !clientIdAssertion.isEmpty {
-                params["client_assertion"] = clientIdAssertion
-                params["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-            }
+//            if !clientIdAssertion.isEmpty {
+//                params["client_assertion"] = clientIdAssertion
+//                params["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+//            }
             let postString = UIApplicationUtils.shared.getPostString(params: params)
             
             guard let urlString = tokenEndpoint, let url =  URL(string: urlString) else { return TokenResponse(error: EUDIError(from: ErrorResponse(message: "Invalid url")))}

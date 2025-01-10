@@ -11,9 +11,10 @@ import CryptoKit
 public class WalletUnitAttestationService {
     
     public init() {}
-    let baseURL = "https://oid4vc.igrant.io/organisation/445f2b74-cc27-44ef-bed7-4809c13699cf/service"
+    var baseURL = ""
     
-    public func initiateWalletUnitAttestation() async throws -> (String, String){
+    public func initiateWalletUnitAttestation(walletProviderUrl: String) async throws -> (String, String){
+            baseURL = walletProviderUrl
             let service = DCAppAttestService.shared
             let inputString = await fetchNonceForDeviceIntegrityToken(nonceEndPoint:  "\(baseURL)/nonce")
             let inputData = Data(inputString.utf8)
@@ -26,9 +27,11 @@ public class WalletUnitAttestationService {
             } else {
                 keyId = keyIDfromKeyChain ?? ""
             }
+            
+        var keyHandler = SecureEnclaveHandler(keyID: keyId)
             do {
                 let attest = try await generateDeviceIntegrityToken(keyId: keyId, hash: hash)
-                let clientAssertion = await createClientAssertion(keyId: keyId)
+                let clientAssertion = await createClientAssertion(keyHandler: keyHandler)
                 let credentialOffer = await processWalletUnitAttestationRequest(
                     attestation: attest,
                     nonce: inputString,
@@ -40,10 +43,10 @@ public class WalletUnitAttestationService {
                 print("Error during attestation with keyId: \(keyId), regenerating key ID...")
                 keyId = try await generateKeyId()
                 storeKeyIdInKeychain(keyId) // Update Keychain with the new key ID
-                
+                keyHandler = SecureEnclaveHandler(keyID: keyId)
                 // Retry the attestation process
                 let attestRetry = try await generateDeviceIntegrityToken(keyId: keyId, hash: hash)
-                let clientAssertionRetry = await createClientAssertion(keyId: keyId)
+                let clientAssertionRetry = await createClientAssertion(keyHandler: keyHandler)
                 let credentialOfferRetry = await processWalletUnitAttestationRequest(
                     attestation: attestRetry,
                     nonce: inputString,
@@ -92,8 +95,7 @@ public class WalletUnitAttestationService {
         }
     }
     
-    // this will be modified once api avaliable
-    func fetchNonceForDeviceIntegrityToken(nonceEndPoint: String) async -> String {
+    private func fetchNonceForDeviceIntegrityToken(nonceEndPoint: String) async -> String {
         var nonce: String = ""
         var request = URLRequest(url: URL(string: nonceEndPoint)!)
         request.httpMethod = "GET"
@@ -109,19 +111,15 @@ public class WalletUnitAttestationService {
         return nonce
     }
     
-    public func createDIDforWUA(keyId: String) async -> String {
-        let keyHandler = SecureEnclaveHandler(organisationID: keyId)
-        let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
-        let jwk = secureData?.0 ?? [:]
-        let did = await DidService.shared.createDID(jwk: jwk) ?? ""
-        return did
-    }
+    public func createDIDforWUA(keyHandler: SecureKeyProtocol) async -> String {
+           guard let jwk = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data()) else { return ""}
+           let did = await DidService.shared.createDID(jwk: jwk) ?? ""
+           return did
+       }
     
-    public func createClientAssertion(keyId: String, aud: String = "") async -> String {
-        let keyHandler = SecureEnclaveHandler(organisationID: keyId)
-        let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
-        let jwk = secureData?.0 ?? [:]
-        let did = await DidService.shared.createDID(jwk: jwk) ?? ""
+    public func createClientAssertion(aud: String = "", keyHandler: SecureKeyProtocol) async -> String {
+        let jwk = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
+        let did = await createDIDforWUA(keyHandler: keyHandler)
         print("")
         let header = ([
             "alg": "ES256",
@@ -142,7 +140,7 @@ public class WalletUnitAttestationService {
             "sub": did
         ] as [String: Any]).toString() ?? ""
         let headerData = Data(header.utf8)
-        guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.1.privateKey) else { return ""}
+        guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: keyHandler.generateSecureKey()?.privateKey) else { return ""}
        return idToken
     }
     
@@ -205,11 +203,9 @@ public class WalletUnitAttestationService {
         return credentialOfferUri
     }
     
-    public func generateWUAProofOfPossession(keyId: String, aud: String? = nil) async -> String {
-        let keyHandler = SecureEnclaveHandler(organisationID: keyId)
-        let secureData = await DidService.shared.createSecureEnclaveJWK(keyHandler: keyHandler)
-        let keyId = retrieveKeyIdFromKeychain()
-        let did = await createDIDforWUA(keyId: keyId ?? "")
+    public func generateWUAProofOfPossession(keyHandler: SecureKeyProtocol, aud: String? = nil) async -> String {
+        let secureData = keyHandler.generateSecureKey()
+        let did = await createDIDforWUA(keyHandler: keyHandler)
         let header = ([
             "alg": "ES256",
         ] as [String: Any]).toString() ?? ""
@@ -225,7 +221,7 @@ public class WalletUnitAttestationService {
         ] as [String: Any]).toString() ?? ""
         
         let headerData = Data(header.utf8)
-        guard let popToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.1.privateKey) else { return ""}
+        guard let popToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.privateKey) else { return ""}
         return popToken
     }
     
