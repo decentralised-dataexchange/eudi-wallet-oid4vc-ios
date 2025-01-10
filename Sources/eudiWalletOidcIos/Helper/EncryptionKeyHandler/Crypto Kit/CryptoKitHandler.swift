@@ -11,17 +11,26 @@ import CryptoKit
 public class CryptoKitHandler:NSObject, SecureKeyProtocol{
     
     public var keyStorageType: SecureKeyTypes = .cryptoKit
+    var secureKeyData: SecureKeyData? = nil
     
-    public func generateSecureKey() -> SecureKeyData?{
-        let privateKey =  P256.Signing.PrivateKey()
-        return SecureKeyData(publicKey: privateKey.publicKey.rawRepresentation, privateKey: privateKey.rawRepresentation)
+    public init(secureKeyData: SecureKeyData? = nil) {
+        super.init()
+        self.secureKeyData = secureKeyData
+        self.keyStorageType = .cryptoKit
     }
     
-
+    public func generateSecureKey() -> SecureKeyData?{
+        if let keys = secureKeyData{
+          return keys
+        } else {
+          let privateKey = P256.Signing.PrivateKey()
+          return SecureKeyData(publicKey: privateKey.publicKey.rawRepresentation, privateKey: privateKey.rawRepresentation)
+        }
+      }
+    
     public func sign(payload: String, header: Data, withKey privateKey: Data?) -> String?{
         if let privateKeyData = privateKey{
             do{
-
                 let payloadData = Data(payload.utf8)
                 let unsignedToken = "\(header.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
                 if let data = unsignedToken.data(using: .utf8){
@@ -30,7 +39,6 @@ public class CryptoKitHandler:NSObject, SecureKeyProtocol{
                     let idToken = "\(unsignedToken).\(signedData.rawRepresentation.base64URLEncodedString())"
                     return idToken
                 }
-
             }
             catch{
                 return nil

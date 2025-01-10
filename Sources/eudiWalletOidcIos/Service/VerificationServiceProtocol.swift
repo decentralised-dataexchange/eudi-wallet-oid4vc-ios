@@ -17,12 +17,13 @@ protocol VerificationServiceProtocol {
        - credentialsList: The list of credentials to be included in the token, or nil if not applicable.
      - Returns: The serialized VP token data, or nil if the input parameters are invalid or if an error occurs during token creation.
      */
-    func sendVPToken(
+    func processOrSendAuthorizationResponse(
         did: String,
-        secureKey: SecureKeyData,
         presentationRequest: PresentationRequest?,
-        credentialsList: [String]?, format: String
-    ) async -> WrappedVerificationResponse?
+        credentialsList: [String]?,
+        format: String,
+        wua: String,
+        pop: String) async -> WrappedVerificationResponse?
     /**
      Processes an authorization request and extracts a PresentationRequest object asynchronously.
      - Parameter data: The authorization request data.
