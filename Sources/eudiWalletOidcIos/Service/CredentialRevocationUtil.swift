@@ -59,6 +59,7 @@ public class CredentialRevocationUtil {
                 let (data, _) = try await URLSession.shared.data(for: request)
                 let stringData = String.init(data: data, encoding: .utf8)
                 let split = stringData?.split(separator: ".")
+                guard split?.count ?? 0 > 1 else { return [] }
                 let jsonString = "\(split?[1] ?? "")".decodeBase64() ?? ""
                 let statusDict = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString)
                 let statusListDict = statusDict?["status_list"] as? [String: Any]
