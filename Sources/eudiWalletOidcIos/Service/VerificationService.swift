@@ -31,7 +31,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         did: String,
         presentationRequest: PresentationRequest?,
         credentialsList: [String]?,
-        format: String,
         wua: String,
         pop: String) async -> WrappedVerificationResponse? {
                 
@@ -55,16 +54,225 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 } catch {
                     presentationDefinition = nil
                 }
-            var vpToken = await createVPToken(presentationRequest: presentationRequest, format: format, credentialsList: credentialsList, presentationDefinition: presentationDefinition, did: did, header: header, payload: payload)
-            
-    //            let vpToken =  format == "mso_mdoc" ? generateVPTokenForMdoc(credential: credentialsList ?? [], presentationDefinition: presentationDefinition) :generateVPToken(header: header, payload: payload, secureKey: secureKey)
-                
-                // Presentation Submission model
-                guard let presentationSubmission = preparePresentationSubmission(presentationRequest: presentationRequest) else { return nil }
-                print("presentation submission  format:  \(presentationSubmission.descriptorMap.first?.format)")
+            var token = await createVPTokenAndPresentationSubmission(credentialsList: credentialsList, clientID: presentationRequest?.clientId ?? "", transactionData: transactionData, did: did, nonce: presentationRequest?.nonce ?? "", jwtHeader: header, presentationRequest: presentationRequest, presentationDefinition: presentationDefinition)
                 guard let redirectURL = presentationRequest?.redirectUri else {return nil}
-                return await sendVPRequest(vpToken: vpToken.0, idToken: vpToken.1, presentationSubmission: presentationSubmission, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "", responseType: presentationRequest?.responseType ?? "", wua: wua, pop: pop)
+                return await sendVPRequest(vpToken: token.0, idToken: token.2, presentationSubmission: token.1 ?? nil, redirectURI: presentationRequest?.redirectUri ?? "", state: presentationRequest?.state ?? "", responseType: presentationRequest?.responseType ?? "", wua: wua, pop: pop)
             }
+
+
+func createVPTokenAndPresentationSubmission(credentialsList: [String]?, clientID: String, transactionData: String? = nil, did: String, nonce: String, jwtHeader: String, presentationRequest: PresentationRequest?, presentationDefinition: PresentationDefinitionModel?) async -> ([String], PresentationSubmissionModel?, String){
+        var jwtList: [String] = []
+        var vpTokenList: [String] = []
+        var mdocList: [String] = []
+        var firstJWTProcessedIndex: Int? = nil
+        var mdocProcessedIndex: Int? = nil
+        var idToken: String = ""
+        var presentationSubmission: PresentationSubmissionModel? = nil
+        guard let credentialsList = credentialsList else { return ([], nil, "")}
+        if let resType = presentationRequest?.responseType, resType.contains("vp_token") {
+            for (index, item) in credentialsList.enumerated() {
+                var claims: [String: Any] = [:]
+                var credFormat: String? = ""
+                if let format = presentationDefinition?.inputDescriptors?[index].format ??  presentationDefinition?.format {
+                    for (key, _) in format {
+                        credFormat = key
+                    }
+                }
+                if let transactionData = transactionData, !transactionData.isEmpty {
+                    claims["transaction_data_hashes"] = [self.generateHash(input: transactionData)]
+                    claims["transaction_data_hashes_alg"] = "sha-256"
+                }
+                claims["aud"] = clientID
+                let split = item.split(separator: ".")
+                var dict: [String: Any] = [:]
+                if split.count > 1 {
+                    let jsonString = "\(split[1])".decodeBase64() ?? ""
+                    dict = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) ?? [:]
+                }
+                if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(issuerSignedJwt: item, claims: claims, keyHandler: keyHandler), let vct = dict["vct"] as? String, !vct.isEmpty {
+                    var updatedCred = String()
+                    if item.hasSuffix("~") {
+                        updatedCred = "\(item)\(keyBindingJwt)"
+                    } else {
+                        updatedCred = "\(item)~\(keyBindingJwt)"
+                    }
+                    vpTokenList.append(updatedCred)
+                } else if credFormat == "mso_mdoc" {
+                    mdocList.append(item)
+                    if !vpTokenList.contains("MDOC") {
+                        vpTokenList.append("MDOC")
+                    }
+                } else {
+                    jwtList.append(item)
+                    if !vpTokenList.contains("JWT") {
+                        firstJWTProcessedIndex = vpTokenList.count
+                        vpTokenList.append("JWT")
+                    }
+                }
+            }
+            var jwtPayload: String? = nil
+            var vpToken: String = ""
+            var mdocToken: String = ""
+            if !jwtList.isEmpty {
+                let uuid4 = UUID().uuidString
+                let jwtVP =
+                ([
+                    "@context": ["https://www.w3.org/2018/credentials/v1"],
+                    "holder": did,
+                    "id": "urn:uuid:\(uuid4)",
+                    "type": [
+                        "VerifiablePresentation"
+                    ],
+                    "verifiableCredential": jwtList
+                ] as [String : Any])
+                let currentTime = Int(Date().timeIntervalSince1970)
+                jwtPayload = ([
+                    "aud": clientID,
+                    "exp": currentTime + 3600,
+                    "iat": currentTime,
+                    "iss": "\(did)",
+                    "jti": "urn:uuid:\(uuid4)",
+                    "nbf": currentTime,
+                    "nonce": "\(nonce)",
+                    "sub": "\(did)",
+                    "vp": jwtVP,
+                ] as [String : Any]).toString() ?? ""
+                        vpToken = await generateVPToken(header: jwtHeader, payload: jwtPayload ?? "")
+            }
+            
+            if !mdocList.isEmpty {
+                
+                mdocToken = generateVPTokenForMdoc(credential: credentialsList ?? [], presentationDefinition: presentationDefinition)
+            }
+            
+            
+            
+            if let index = vpTokenList.firstIndex(of: "JWT") {
+                vpTokenList[index] = vpToken ?? ""
+            }
+            
+            if let index = vpTokenList.firstIndex(of: "MDOC") {
+                mdocProcessedIndex = index
+                vpTokenList[index] = mdocToken ?? ""
+            }
+            
+            //if presentationRequest == nil { return nil }
+            var descMap : [DescriptorMap] = []
+            var presentationDefinition :PresentationDefinitionModel? = nil
+            do {
+                presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
+            } catch {
+                presentationDefinition = nil
+            }
+            var credentialFormat: String = ""
+            
+            var format = ""
+            var formatType: String? = ""
+            var jwtIndex = 0
+            var vpTokenIndex = 0
+            var jwtListAdded: Bool = false
+            if let inputDescriptors = presentationDefinition?.inputDescriptors {
+                for index in 0..<inputDescriptors.count {
+                    let item = inputDescriptors[index]
+                    if var format2 = item.format ?? presentationDefinition?.format {
+                        for (key, _) in format2 {
+                            credentialFormat = key
+                        }
+                    }
+                    
+                    if credentialFormat == "vcsd-jwt" || credentialFormat == "vpsd-jwt"{
+                        format = "vc+sd-jwt"
+                    } else {
+                        format = credentialFormat
+                    }
+                    let encodedFormat = format.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "+")).subtracting(CharacterSet(charactersIn: "+")))?.replacingOccurrences(of: "+", with: "%2B")
+                    var pathNested: DescriptorMap? = nil
+                    if format ==  "vc+sd-jwt" {
+                        pathNested = nil
+                        if vpTokenList.count == 1 {
+                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: encodedFormat ?? "", pathNested: pathNested))
+                        } else {
+                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$[\(vpTokenIndex)]", format: encodedFormat ?? "", pathNested: pathNested))
+                        }
+                        vpTokenIndex += 1
+                    } else if credentialFormat == "mso_mdoc" {
+                        formatType = "mso_mdoc"
+                        pathNested = nil
+                        if vpTokenList.count == 1 {
+                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: formatType ?? "", pathNested: pathNested))
+                        } else {
+                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$[\(mdocProcessedIndex ?? 0)]", format: formatType ?? "", pathNested: pathNested))
+                        }
+                        vpTokenIndex += 1
+                    } else {
+                        var pathNestedValue: DescriptorMap? = nil
+                        formatType = encodedFormat ?? "jwt_vp"
+                        let credentialFormat = fetchFormat(presentationDefinition: presentationDefinition, index: index)
+                        if vpTokenList.count == 1 {
+                            pathNestedValue = DescriptorMap(id: item.id ?? "", path: "$.vp.verifiableCredential[\(jwtIndex)]", format: "jwt_vc", pathNested: nil)
+                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: credentialFormat ?? "", pathNested: pathNestedValue))
+                        } else {
+                            pathNestedValue = DescriptorMap(id: item.id ?? "", path: "$[\(firstJWTProcessedIndex ?? 0)].vp.verifiableCredential[\(jwtIndex)]", format: "jwt_vc", pathNested: nil)
+                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$[\(firstJWTProcessedIndex ?? 0)]", format: formatType ?? "", pathNested: pathNestedValue))
+                        }
+                        if !(jwtListAdded) {
+                            vpTokenIndex += 1
+                            jwtListAdded = true
+                        }
+                        jwtIndex += 1
+                    }
+                }
+            }
+            presentationSubmission = PresentationSubmissionModel(id: UUID().uuidString, definitionID: presentationDefinition?.id ?? "", descriptorMap: descMap)
+        }
+    if let resType = presentationRequest?.responseType, resType.contains("id_token") {
+            idToken =  await generateJWTokenForIDtokenRequest(didKeyIdentifier: did, authorizationEndpoint: presentationRequest?.clientId ?? "", nonce: presentationRequest?.nonce ?? "")
+        }
+        
+        return (vpTokenList, presentationSubmission, idToken)
+    }
+    
+    private func fetchFormat(presentationDefinition: PresentationDefinitionModel?, index: Int) -> String {
+        var credentialFormat: String = ""
+        var credentialFormatString: String = ""
+        var inputDescriptorFromat: String = ""
+        var presentationDefinitionFormat: String = ""
+        if var format = presentationDefinition?.inputDescriptors?[index].format ?? presentationDefinition?.format {
+            for (key, _) in format {
+                credentialFormat = key
+            }
+        }
+        if credentialFormat == "vcsd-jwt" || credentialFormat == "vpsd-jwt"{
+            credentialFormatString = "vc+sd-jwt"
+        } else {
+            credentialFormatString = credentialFormat
+        }
+        
+        guard let encodedFormat = credentialFormatString.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "+")).subtracting(CharacterSet(charactersIn: "+")))?.replacingOccurrences(of: "+", with: "%2B") else { return ""}
+        if var format = presentationDefinition?.inputDescriptors?[index].format  {
+            for (key, _) in format {
+                inputDescriptorFromat = key
+            }
+        }
+        if var format = presentationDefinition?.format  {
+            for (key, _) in format {
+                presentationDefinitionFormat = key
+            }
+        }
+        if inputDescriptorFromat.contains("jwt_vp") {
+            return "jwt_vp"
+        }
+        if inputDescriptorFromat.contains("jwt_vp_json") {
+            return "jwt_vp_json"
+        }
+        if presentationDefinitionFormat.contains("jwt_vp")  {
+            return "jwt_vp"
+        }
+        if  presentationDefinitionFormat.contains("jwt_vp_json") {
+            return "jwt_vp_json"
+        }
+        return encodedFormat
+    }
         
         
     func createVPToken(presentationRequest: PresentationRequest?, format: String, credentialsList: [String]?, presentationDefinition :PresentationDefinitionModel?, did: String, header: String, payload: String) async -> (String, String) {
@@ -95,95 +303,101 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     }
     
     public func processAuthorisationRequest(data: String?) async -> (PresentationRequest?, EUDIError?) {
-        guard let _ = data else { return (nil, nil) }
-        
-        if let code = data {
-            let state = URL(string: code)?.queryParameters?["state"] ?? ""
-            let nonce = URL(string: code)?.queryParameters?["nonce"] ?? ""
-            let responseUri = URL(string: code)?.queryParameters?["response_uri"] ?? ""
-            let redirectUri = URL(string: code)?.queryParameters?["redirect_uri"] ?? responseUri
-            let clientID = URL(string: code)?.queryParameters?["client_id"] ?? ""
-            let responseType = URL(string: code)?.queryParameters?["response_type"] ?? ""
-            let scope = URL(string: code)?.queryParameters?["scope"] ?? ""
-            let requestUri = URL(string: code)?.queryParameters?["request_uri"] ?? ""
-            let responseMode = URL(string: code)?.queryParameters?["response_mode"] ?? ""
-            var presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
-            var clientMetaData = URL(string: code)?.queryParameters?["client_metadata"] ?? ""
-            var presentationDefinitionUri = URL(string: code)?.queryParameters?["presentation_definition_uri"] ?? ""
-            var clientMetaDataUri = URL(string: code)?.queryParameters?["client_metadata_uri"] ?? ""
-            var clientIDScheme = URL(string: code)?.queryParameters?["client_id_scheme"] ?? ""
+            guard let _ = data else { return (nil, nil) }
             
-            if presentationDefinition != "" || presentationDefinitionUri != "" {
-                var presentationRequest =  PresentationRequest(state: state,
-                                                               clientId: clientID,
-                                                               redirectUri: redirectUri ?? responseUri,
-                                                               responseUri: responseUri,
-                                                               responseType: responseType,
-                                                               responseMode: responseMode,
-                                                               scope: scope,
-                                                               nonce: nonce,
-                                                               requestUri: requestUri,
-                                                               presentationDefinition: presentationDefinition,
-                                                               clientMetaData: clientMetaData,
-                                                               presentationDefinitionUri: presentationDefinitionUri, clientMetaDataUri: clientMetaDataUri, clientIDScheme: clientIDScheme, transactionData: [""]
-                )
-                if presentationDefinition == "" && presentationDefinitionUri != "" {
-                    let presentationDefinitionFromUri = await resolvePresentationDefinitionFromURI(url: presentationDefinitionUri)
-                    presentationRequest.presentationDefinition = presentationDefinitionFromUri
-                }
-                if clientMetaData == "" && clientMetaDataUri != "" {
-                    let clientMetaDataFromUri = await resolveClientMetaDataFromURI(url: clientMetaDataUri)
-                    presentationRequest.clientMetaData = clientMetaDataFromUri
-                }
-                return (presentationRequest, nil)
+            if let code = data {
+                let state = URL(string: code)?.queryParameters?["state"] ?? ""
+                let nonce = URL(string: code)?.queryParameters?["nonce"] ?? ""
+                let responseUri = URL(string: code)?.queryParameters?["response_uri"] ?? ""
+                let redirectUri = URL(string: code)?.queryParameters?["redirect_uri"] ?? responseUri
+                let clientID = URL(string: code)?.queryParameters?["client_id"] ?? ""
+                let responseType = URL(string: code)?.queryParameters?["response_type"] ?? ""
+                let scope = URL(string: code)?.queryParameters?["scope"] ?? ""
+                let requestUri = URL(string: code)?.queryParameters?["request_uri"] ?? ""
+                let responseMode = URL(string: code)?.queryParameters?["response_mode"] ?? ""
+                var presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
+                var clientMetaData = URL(string: code)?.queryParameters?["client_metadata"] ?? ""
+                var presentationDefinitionUri = URL(string: code)?.queryParameters?["presentation_definition_uri"] ?? ""
+                var clientMetaDataUri = URL(string: code)?.queryParameters?["client_metadata_uri"] ?? ""
+                var clientIDScheme = URL(string: code)?.queryParameters?["client_id_scheme"] ?? ""
                 
-            } else if requestUri != "" {
-                var request = URLRequest(url: URL(string: requestUri)!)
-                request.httpMethod = "GET"
-                
-                do {
-                    let (data, _) = try await URLSession.shared.data(for: request)
-                    let jsonDecoder = JSONDecoder()
-                    var model = try? jsonDecoder.decode(PresentationRequest.self, from: data)
-                    if model == nil {
-                        if let jwtString = String(data: data, encoding: .utf8) {
-                            do {
-                                let segments = jwtString.split(separator: ".")
-                                if segments.count == 3 {
-                                    guard let jsonPayload = try? jwtString.decodeJWT(jwtToken: jwtString) else { return (nil, nil) }
-                                    guard let data = try? JSONSerialization.data(withJSONObject: jsonPayload, options: []) else { return (nil, nil) }
-                                    let model = try jsonDecoder.decode(PresentationRequest.self, from: data)
-                                    return validatePresentationRequest(model: model, jwtString: jwtString)
-                                }
-                            } catch {
-                                debugPrint("Error:\(error)")
-                            }
+                if presentationDefinition != "" || presentationDefinitionUri != "" {
+                    var presentationRequest =  PresentationRequest(state: state,
+                                                                   clientId: clientID,
+                                                                   redirectUri: redirectUri ?? responseUri,
+                                                                   responseUri: responseUri,
+                                                                   responseType: responseType,
+                                                                   responseMode: responseMode,
+                                                                   scope: scope,
+                                                                   nonce: nonce,
+                                                                   requestUri: requestUri,
+                                                                   presentationDefinition: presentationDefinition,
+                                                                   clientMetaData: clientMetaData,
+                                                                   presentationDefinitionUri: presentationDefinitionUri, clientMetaDataUri: clientMetaDataUri, clientIDScheme: clientIDScheme, transactionData: [""]
+                    )
+                    if presentationDefinition == "" && presentationDefinitionUri != "" {
+                        let presentationDefinitionFromUri = await resolvePresentationDefinitionFromURI(url: presentationDefinitionUri)
+                        presentationRequest.presentationDefinition = presentationDefinitionFromUri
+                    }
+                    if clientMetaData == "" && clientMetaDataUri != "" {
+                        let clientMetaDataFromUri = await resolveClientMetaDataFromURI(url: clientMetaDataUri)
+                        presentationRequest.clientMetaData = clientMetaDataFromUri
+                    }
+                    return (presentationRequest, nil)
+                    
+                } else if requestUri != "" {
+                    var request = URLRequest(url: URL(string: requestUri)!)
+                    request.httpMethod = "GET"
+                    
+                    do {
+                        let (data, response) = try await URLSession.shared.data(for: request)
+                        if let res = response as? HTTPURLResponse, res.statusCode >= 400 {
+                            let dataString = String(data: data, encoding: .utf8)
+                            let errorMsg = EUDIError(from: ErrorResponse(message: dataString, code: nil))
+                            return(nil, errorMsg)
                         } else {
-                            let error = EUDIError(from: ErrorResponse(message:"Invalid DID", code: nil))
-                            debugPrint(error)
-                            return (nil, error)
+                        let jsonDecoder = JSONDecoder()
+                        var model = try? jsonDecoder.decode(PresentationRequest.self, from: data)
+                        if model == nil {
+                            if let jwtString = String(data: data, encoding: .utf8) {
+                                do {
+                                    let segments = jwtString.split(separator: ".")
+                                    if segments.count == 3 {
+                                        guard let jsonPayload = try? jwtString.decodeJWT(jwtToken: jwtString) else { return (nil, nil) }
+                                        guard let data = try? JSONSerialization.data(withJSONObject: jsonPayload, options: []) else { return (nil, nil) }
+                                        let model = try jsonDecoder.decode(PresentationRequest.self, from: data)
+                                        return validatePresentationRequest(model: model, jwtString: jwtString)
+                                    }
+                                } catch {
+                                    debugPrint("Error:\(error)")
+                                }
+                            } else {
+                                let error = EUDIError(from: ErrorResponse(message:"Invalid DID", code: nil))
+                                debugPrint(error)
+                                return (nil, error)
+                            }
                         }
+                        if model?.presentationDefinition == nil && model?.presentationDefinitionUri != "" {
+                            let presentationDefinitionFromUri = await resolvePresentationDefinitionFromURI(url: model?.presentationDefinitionUri)
+                            model?.presentationDefinition = presentationDefinitionFromUri
+                        }
+                        if model?.clientMetaData == nil && model?.clientMetaDataUri != "" {
+                            let clientMetaDataFromUri = await resolveClientMetaDataFromURI(url: model?.clientMetaDataUri)
+                            model?.clientMetaData = clientMetaDataFromUri
+                        }
+                        return (model, nil)
                     }
-                    if model?.presentationDefinition == nil && model?.presentationDefinitionUri != "" {
-                        let presentationDefinitionFromUri = await resolvePresentationDefinitionFromURI(url: model?.presentationDefinitionUri)
-                        model?.presentationDefinition = presentationDefinitionFromUri
+                    } catch {
+                        let errorMsg = EUDIError(from: ErrorResponse(message: error.localizedDescription, code: nil))
+                        debugPrint(error)
+                        return (nil, errorMsg)
+                        debugPrint("Error:\(error)")
                     }
-                    if model?.clientMetaData == nil && model?.clientMetaDataUri != "" {
-                        let clientMetaDataFromUri = await resolveClientMetaDataFromURI(url: model?.clientMetaDataUri)
-                        model?.clientMetaData = clientMetaDataFromUri
-                    }
-                    return (model, nil)
-                } catch {
-                    let errorMsg = EUDIError(from: ErrorResponse(message: error.localizedDescription, code: nil))
-                    debugPrint(error)
-                    return (nil, errorMsg)
-                    debugPrint("Error:\(error)")
                 }
             }
+            
+            return (nil, nil)
         }
-        
-        return (nil, nil)
-    }
     
     func validatePresentationRequest(model: PresentationRequest?, jwtString: String?) -> (PresentationRequest?, EUDIError?){
         guard let jwtString = jwtString, let model = model else { return (nil, nil)}
@@ -564,118 +778,78 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         var base64StringWithoutPadding = ""
         var requestedParams: [String] = []
         var limitDisclosure: Bool = false
-        if let fields = presentationDefinition?.inputDescriptors?.first?.constraints?.fields {
-            for field in fields {
-                let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
-                
-                let filteredComponents = components?.filter { !$0.isEmpty }
-                
-                if let identifier = filteredComponents?.last {
-                    requestedParams.append(String(identifier))
-                }
-            }
-        }
-        if presentationDefinition?.inputDescriptors?.first?.constraints?.limitDisclosure == nil {
-            limitDisclosure = false
-        } else {
-            limitDisclosure = true
-        }
-        for cred in credential {
-            if let issuerAuthData = getIssuerAuth(credential: cred), let cborNameSpace = getNameSpaces(credential: cred, presentationDefinition: presentationDefinition) {
-                var nameSpaceData: CBOR? = nil
-                if limitDisclosure {
-                    nameSpaceData = filterNameSpaces(nameSpacesValue: cborNameSpace, requestedParams: requestedParams)
-                } else {
-                    nameSpaceData = cborNameSpace
-                }
-                let docType = getDocTypeFromIssuerAuth(cborData: issuerAuthData)
-                let docFiltered = [Document(docType: docType ?? "", issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))]
-                
-                let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
-                let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
-                let responseDict = deviceResponseToSend.toDictionary()
-                if let cborData = encodeToCBOR(responseDict) {
-                    cborString = Data(cborData.encode()).base64EncodedString()
+        var docFiltered: [Document] = []
+        
+        for (index, cred) in credential.enumerated() {
+            if !cred.contains(".") {
+                if let issuerAuthData = getIssuerAuth(credential: cred), let cborNameSpace = getNameSpaces(credential: cred, inputDescriptor: presentationDefinition?.inputDescriptors?[index]) {
                     
-                    base64StringWithoutPadding = cborString.replacingOccurrences(of: "=", with: "") ?? ""
-                    base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "+", with: "-")
-                    base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "/", with: "_")
+                    if let fields = presentationDefinition?.inputDescriptors?[index].constraints?.fields {
+                        for field in fields {
+                            let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
+                            
+                            let filteredComponents = components?.filter { !$0.isEmpty }
+                            
+                            if let identifier = filteredComponents?.last {
+                                requestedParams.append(String(identifier))
+                            }
+                        }
+                    }
+                    if presentationDefinition?.inputDescriptors?[index].constraints?.limitDisclosure == nil {
+                        limitDisclosure = false
+                    } else {
+                        limitDisclosure = true
+                    }
+                    var nameSpaceData: CBOR? = nil
+                    if limitDisclosure {
+                        nameSpaceData = filterNameSpaces(nameSpacesValue: cborNameSpace, requestedParams: requestedParams)
+                    } else {
+                        nameSpaceData = cborNameSpace
+                    }
+                    let docType = getDocTypeFromIssuerAuth(cborData: issuerAuthData)
+                    docFiltered.append(contentsOf: [Document(docType: docType ?? "", issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))])
                     
-                    print(Data(cborData.encode()).base64EncodedString())
-                } else {
-                    print("Failed to encode data")
+                    let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
+                    let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
+                    let responseDict = deviceResponseToSend.toDictionary()
+                    if let cborData = encodeToCBOR(responseDict) {
+                        cborString = Data(cborData.encode()).base64EncodedString()
+                        
+                        base64StringWithoutPadding = cborString.replacingOccurrences(of: "=", with: "") ?? ""
+                        base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "+", with: "-")
+                        base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "/", with: "_")
+                        
+                        print(Data(cborData.encode()).base64EncodedString())
+                    } else {
+                        print("Failed to encode data")
+                    }
                 }
             }
         }
         return base64StringWithoutPadding
     }
     
-    func createParamsForSendVPRequest(token: String, idToken: String, presentationSubmission: String, state: String, responseType: String) -> [String: Any]{
-            var params: [String: Any] = [:]
-            if responseType == "vp_token" {
-                params = ["vp_token": token, "presentation_submission": presentationSubmission ?? "", "state": state]
-            } else if responseType == "id_token" {
-                params = ["id_token": idToken, "state": state]
-            } else if responseType == "vp_token+id_token" {
-                params = ["vp_token": token, "id_token": idToken ,"presentation_submission": presentationSubmission ?? "", "state": state]
-            }
-            return params
-        }
-    
-    private func preparePresentationSubmission(
-        presentationRequest: PresentationRequest?
-    ) -> PresentationSubmissionModel? {
-        if presentationRequest == nil { return nil }
-        var descMap : [DescriptorMap] = []
-        var presentationDefinition :PresentationDefinitionModel? = nil
-        do {
-            presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
-        } catch {
-            presentationDefinition = nil
-        }
-        var credentialFormat: String = ""
-        //Need to check for the format
-        if let format = presentationDefinition?.format ?? presentationDefinition?.inputDescriptors?.first?.format {
-            for (key, _) in format {
-                credentialFormat = key
-            }
-        }
-        
-        //encoding is done because '+' was removed by the URL session
-        var format = ""
-        //credentialFormat == "vcsd-jwt" ? "vc+sd-jwt" : credentialFormat
-        if credentialFormat == "vcsd-jwt" || credentialFormat == "vpsd-jwt"{
-            format = "vc+sd-jwt"
+    func createParamsForSendVPRequest(token: [String], idToken: String, presentationSubmission: String, state: String, responseType: String) -> [String: Any]{
+        var params: [String: Any] = [:]
+        var vpToken: Any? = nil
+        if token.count == 1 {
+            vpToken = token[0]
         } else {
-            format = credentialFormat
+            vpToken = token
         }
-        var formatType: String? = ""
-        let encodedFormat = format.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "+")).subtracting(CharacterSet(charactersIn: "+")))?.replacingOccurrences(of: "+", with: "%2B")
-        
-        print("encoded format:  \(encodedFormat)")
-        if let inputDescriptors = presentationDefinition?.inputDescriptors {
-            for index in 0..<inputDescriptors.count {
-                let item = inputDescriptors[index]
-                var pathNested: DescriptorMap? = nil
-                let pathNestedValue = DescriptorMap(id: item.id ?? "", path: "$.vp.verifiableCredential[\(index)]", format: "jwt_vc", pathNested: nil)
-                if credentialFormat == "mso_mdoc" {
-                    formatType = "mso_mdoc"
-                    pathNested = nil
-                } else {
-                    formatType = encodedFormat ?? "jwt_vp"
-                    pathNested = pathNestedValue
-                }
-                
-                descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: formatType ?? "", pathNested: pathNested))
-            }
+        if responseType.contains("vp_token") && responseType.contains("id_token") {
+            guard let vpToken = vpToken else { return [:]}
+            params = ["vp_token": vpToken , "id_token": idToken ,"presentation_submission": presentationSubmission ?? "", "state": state]
+        } else if responseType.contains("vp_token") {
+            guard let vpToken = vpToken else { return [:]}
+            params = ["vp_token": vpToken , "presentation_submission": presentationSubmission ?? "", "state": state]
+        } else if responseType.contains("id_token") {
+            params = ["id_token": idToken, "state": state]
         }
-        print("format inside descMap:  \(descMap.first?.format)")
-
-        
-        return PresentationSubmissionModel(id: UUID().uuidString, definitionID: presentationDefinition?.id ?? "", descriptorMap: descMap)
+        return params
     }
     
-    private func sendVPRequest(vpToken: String, idToken: String = "", presentationSubmission: PresentationSubmissionModel, redirectURI: String, state: String, responseType: String = "", wua: String, pop: String) async -> WrappedVerificationResponse? {
+    private func sendVPRequest(vpToken: [String], idToken: String = "", presentationSubmission: PresentationSubmissionModel?, redirectURI: String, state: String, responseType: String = "", wua: String, pop: String) async -> WrappedVerificationResponse? {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let data = try? encoder.encode(presentationSubmission)
@@ -915,9 +1089,9 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         return nil
     }
     
-    func getNameSpaces(credential: String, presentationDefinition: PresentationDefinitionModel?) -> CBOR? {
+    func getNameSpaces(credential: String, inputDescriptor: InputDescriptor?) -> CBOR? {
         var requestedParams: [String] = []
-        if let fields = presentationDefinition?.inputDescriptors?.first?.constraints?.fields {
+        if let fields = inputDescriptor?.constraints?.fields {
             for field in fields {
                 let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
                 
@@ -954,10 +1128,11 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     
     
     
-    public func getFilteredCbor(credential: String, presentationDefinition: PresentationDefinitionModel?) -> CBOR? {
+    public func getFilteredCbor(credential: String, inputDescriptor: InputDescriptor?) -> CBOR? {
         var requestedParams: [String] = []
         var limitDisclosure: Bool = false
-        if let fields = presentationDefinition?.inputDescriptors?.first?.constraints?.fields {
+        if let fields = inputDescriptor?.constraints?.fields {
+            print("printing inputDescriptor fields: \(fields)")
             for field in fields {
                 let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
                 let filteredComponents = components?.filter { !$0.isEmpty }
@@ -966,13 +1141,13 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 }
             }
         }
-        
-        if presentationDefinition?.inputDescriptors?.first?.constraints?.limitDisclosure == nil {
+        print("printing requestedParams from cbor: \(requestedParams)")
+        if inputDescriptor?.constraints?.limitDisclosure == nil {
             limitDisclosure = false
         } else {
             limitDisclosure = true
         }
-        
+        print("printing limitDisclosure from cbor: \(limitDisclosure)")
         if let data = Data(base64URLEncoded: credential) {
             do {
                 let decodedCBOR = try CBOR.decode([UInt8](data))
@@ -980,9 +1155,11 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                     //if let nameSpacesValue = dictionary[CBOR.utf8String("nameSpaces")] {
                     if limitDisclosure {
                         return filterCBORWithRequestedParams(cborData: dictionary, requestedParams: requestedParams)
+                        print("printing decoded cbor in limitDisclosure: \(filterCBORWithRequestedParams(cborData: dictionary, requestedParams: requestedParams))")
                     } else {
                         return dictionary
                     }
+                    print("printing decoded cbor: \(dictionary)")
                     // }
                 }
             } catch {
@@ -1002,20 +1179,23 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         guard case let CBOR.map(cborMap) = cborData else { return nil }
         
         var modifiedCBORMap = cborMap
-        
+        print("printing modifiedCBORMap cbor: \(modifiedCBORMap)")
+
         if let namespacesValue = modifiedCBORMap[CBOR.utf8String("nameSpaces")] {
+            print("printing modifiedCBORMap nameSpaces: \(CBOR.map(modifiedCBORMap))")
             if let filteredNameSpaces = filterNameSpaces(nameSpacesValue: namespacesValue, requestedParams: requestedParams) {
                 modifiedCBORMap[CBOR.utf8String("nameSpaces")] = filteredNameSpaces
+                print("printing modifiedCBORMap nameSpaces inside: \(filteredNameSpaces)")
             }
         }
-        
+        print("printing modifiedCBORMap return: \(CBOR.map(modifiedCBORMap))")
         return CBOR.map(modifiedCBORMap)
     }
     
     public func filterNameSpaces(nameSpacesValue: CBOR, requestedParams: [String]) -> CBOR? {
         if case let CBOR.map(nameSpaces) = nameSpacesValue {
             var filteredNameSpaces: OrderedDictionary<CBOR, CBOR> = [:]
-            
+            print("printing nameSpaces cbor: \(nameSpaces)")
             for (key, namespaceValue) in nameSpaces {
                 var valuesArray: [CBOR] = []
                 
@@ -1037,13 +1217,16 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                             }
                         }
                     }
+                    print("printing cbor attributes array: \(valuesArray)")
+
                 }
                 
                 if !valuesArray.isEmpty {
+                    print("printing cbor valuesArray array: \(valuesArray)")
                     filteredNameSpaces[key] = CBOR.array(valuesArray)
                 }
             }
-            
+            print("printing cbor data array: \(filteredNameSpaces)")
             return CBOR.map(filteredNameSpaces)
         }
         
@@ -1542,3 +1725,4 @@ enum DeviceSignature: Codable, CustomCborConvertible {
         }
     }
 }
+
