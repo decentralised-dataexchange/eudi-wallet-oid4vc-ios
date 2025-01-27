@@ -39,18 +39,15 @@ public class SDJWTService {
     }
     public func createSDJWTR(
         credential: String?,
-        presentationRequest: PresentationRequest,
-        privateKey: P256.Signing.PrivateKey
-    ) -> String? {
+        inputDescriptor: InputDescriptor?, format: String?
+        , keyHandler: SecureKeyProtocol) -> String? {
         do {
             guard let credential = credential else {
                 return nil
             }
             
             let processedCredentialWithRequiredDisclosures = try processDisclosuresWithPresentationDefinition(
-                credential: credential,
-                presentationDefinition: VerificationService.processPresentationDefinition(presentationRequest.presentationDefinition)
-            )
+                credential: credential, inputDescriptor: inputDescriptor, format: format, keyHandler: keyHandler)
             
             //            let iat = Date()
             //            let payload =
@@ -83,8 +80,7 @@ public class SDJWTService {
     }
     public func processDisclosuresWithPresentationDefinition(
         credential: String?,
-        presentationDefinition: PresentationDefinitionModel
-    ) -> String? {
+        inputDescriptor: InputDescriptor?, format: String?, keyHandler: SecureKeyProtocol) -> String? {
         guard let credential = credential else { return nil }
         
         // Split the credential into disclosures and the issued JWT
@@ -92,10 +88,13 @@ public class SDJWTService {
               var issuedJwt = getIssuerJwtFromSDJWT(credential) else {
             return nil
         }
+//            if disclosures.count == 0 {
+//                return nil
+//            }
         var disclosureList: [String] = []
         // Extract requested parameters from the presentation definition
         var requestedParams: [String] = []
-        if let fields = presentationDefinition.inputDescriptors?.first?.constraints?.fields {
+            if let fields = inputDescriptor?.constraints?.fields {
             for field in fields {
                 if let paramName = field.path?.first?.split(separator: ".").last {
                     requestedParams.append(String(paramName))
@@ -122,13 +121,11 @@ public class SDJWTService {
                 }
             }
         }
-        if let inputDescriptors = presentationDefinition.inputDescriptors {
-            for inputDescriptor in inputDescriptors {
+            if let inputDescriptor = inputDescriptor {
                 if inputDescriptor.constraints?.limitDisclosure == nil {
                     return issuedJwt.isEmpty ? nil : issuedJwt
                 } else {
                     var verificationHandler : eudiWalletOidcIos.VerificationService?
-                    let keyHandler = CryptoKitHandler()
                     verificationHandler = eudiWalletOidcIos.VerificationService(keyhandler: keyHandler)
                     let updatedDescriptor = verificationHandler?.updatePath(in: inputDescriptor)
                     var processedCredentials: [String] = []
@@ -138,10 +135,8 @@ public class SDJWTService {
                     credentialList.append(credential)
                     
                     var credentialFormat: String = ""
-                    if let format = presentationDefinition.format ?? inputDescriptor.format {
-                        for (key, value) in format {
-                            credentialFormat = key
-                        }
+                    if let format = format {
+                            credentialFormat = format
                     }
                 if credentialFormat == "mso_mdoc" {
                     tempCredentialList = credentialList
@@ -192,7 +187,6 @@ public class SDJWTService {
                 } catch {
                     print("error")
                 }
-            }
             }
         }
         return issuedJwt.isEmpty ? nil : issuedJwt
@@ -328,3 +322,4 @@ public class SDJWTService {
         return String(first)
     }
 }
+

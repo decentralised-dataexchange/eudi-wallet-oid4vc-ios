@@ -21,7 +21,6 @@ protocol VerificationServiceProtocol {
         did: String,
         presentationRequest: PresentationRequest?,
         credentialsList: [String]?,
-        format: String,
         wua: String,
         pop: String) async -> WrappedVerificationResponse?
     /**
