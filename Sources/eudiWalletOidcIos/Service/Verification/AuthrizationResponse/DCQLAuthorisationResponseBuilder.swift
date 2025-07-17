@@ -27,14 +27,17 @@ class DCQLAuthorisationResponseBuilder {
         for (index, credential) in dcqlCredentials.enumerated() {
             
                    var hasDoctype = false
+                    var format = credential.format ?? ""
                    switch credential.meta {
                    case .msoMdoc(let meta):
                        hasDoctype = !meta.doctypeValue.isEmpty
                    case .dcSDJWT:
                        hasDoctype = false
+                   case .jwt:
+                       hasDoctype = false
                    }
             
-            credentialMap[credential.id] = await generateVpTokensBasedOfCredntialFormat(credential: credentialsList[index], presentationRequest: presentationRequest, did: did, isMdoc: hasDoctype, index: index, keyHandler: keyHandler)
+            credentialMap[credential.id] = await generateVpTokensBasedOfCredntialFormat(credential: credentialsList[index], presentationRequest: presentationRequest, did: did, isMdoc: hasDoctype, index: index, keyHandler: keyHandler, format: format)
         }
         // Example: embed this dictionary in a vp_token structure
         let mainVpToken = generateMainVPToken(from: credentialMap)
@@ -58,9 +61,11 @@ class DCQLAuthorisationResponseBuilder {
     private func generateVpTokensBasedOfCredntialFormat(credential:String,
                                                         presentationRequest: PresentationRequest?,
                                                         did: String,
-                                                        isMdoc: Bool, index: Int, keyHandler: SecureKeyProtocol) async -> String {
-        if isMdoc {
+                                                        isMdoc: Bool, index: Int, keyHandler: SecureKeyProtocol, format: String) async -> String {
+        if format == "mso_mdoc"  {
             return MDocVpTokenBuilder().build(credentials: [credential], presentationRequest: presentationRequest ?? nil, did: did, index: index, keyHandler: keyHandler) ?? ""
+        } else if format == "jwt_vc_json"  {
+            return await JWTVpTokenBuilder().build(credentials: [credential], presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler) ?? ""
         } else {
             return await SDJWTVpTokenBuilder().build(credentials: [credential], presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler) ?? ""
         }
