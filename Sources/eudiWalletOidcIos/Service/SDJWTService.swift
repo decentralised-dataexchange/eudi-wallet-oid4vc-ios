@@ -37,47 +37,23 @@ public class SDJWTService {
         
         return base64urlEncodedHash
     }
+    
     public func createSDJWTR(
         credential: String?,
-        inputDescriptor: InputDescriptor?, format: String?
+        query: Any?, format: String?
         , keyHandler: SecureKeyProtocol) -> String? {
         do {
             guard let credential = credential else {
                 return nil
             }
-            
-            let processedCredentialWithRequiredDisclosures = try processDisclosuresWithPresentationDefinition(
-                credential: credential, inputDescriptor: inputDescriptor, format: format, keyHandler: keyHandler)
-            
-            //            let iat = Date()
-            //            let payload =
-            //            ([
-            //              "audience": "\(presentationRequest.clientId ?? "")",
-            //              "issueTime": "\(iat)",
-            //              "nonce": "\(UUID().uuidString)",
-            //              "exp": SDJWTService().calculateSHA256Hash(inputString: processedCredentialWithRequiredDisclosures) ?? ""
-            //            ] as [String : Any]).toString() ?? ""
-            //
-            //            let header =
-            //            ([
-            //              "algorithm": "ES256",
-            //              "type": "kb_jwt"
-            //            ]).toString() ?? ""
-            //
-            //            // Create JWT token
-            //            let headerData = Data(header.utf8)
-            //            let payloadData = Data(payload.utf8)
-            //            let unsignedToken = "\(headerData.base64URLEncodedString()).\(payloadData.base64URLEncodedString())"
-            //            let signatureData = try! privateKey.signature(for: unsignedToken.data(using: .utf8)!)
-            //            let signature = signatureData.rawRepresentation
-            //            let idToken = "\(unsignedToken).\(signature.base64URLEncodedString())"
-            
+            let processedCredentialWithRequiredDisclosures = processDisclosures(credential: credential, query: query, format: format, keyHandler: keyHandler)
             return processedCredentialWithRequiredDisclosures
         } catch {
             print("Error creating SD-JWT-R: \(error)")
             return nil
         }
     }
+    
     public func processDisclosuresWithPresentationDefinition(
         credential: String?,
         inputDescriptor: InputDescriptor?, format: String?, keyHandler: SecureKeyProtocol) -> String? {
@@ -190,6 +166,109 @@ public class SDJWTService {
             }
         }
         return issuedJwt.isEmpty ? nil : issuedJwt
+    }
+    
+    public func processDisclosuresWithDCQL(
+        credential: String?,
+        dcqlCredential: CredentialItems?, format: String?, keyHandler: SecureKeyProtocol) -> String? {
+            guard let credential = credential, let dcqlData = dcqlCredential  else { return nil }
+            
+            // Split the credential into disclosures and the issued JWT
+            guard let disclosures = SDJWTService.shared.getDisclosuresFromSDJWT(credential),
+                  var issuedJwt = SDJWTService.shared.getIssuerJwtFromSDJWT(credential) else {
+                return nil
+            }
+          
+            var disclosureList: [String] = []
+            // Extract requested parameters from the presentation definition
+            var requestedParams: [String] = []
+            
+            for (pathIndex, claim) in dcqlData.claims.enumerated() {
+                guard case .pathClaim(let pathClaim) = claim else { continue }
+                let paths = pathClaim.path.last
+                requestedParams.append(String(paths ?? ""))
+            }
+            
+            // Filter disclosures based on requested parameters
+            for disclosure in disclosures {
+                if let decodedDisclosure = disclosure.decodeBase64(),
+                   let list = try? JSONSerialization.jsonObject(with: Data(decodedDisclosure.utf8), options: []) as? [Any],
+                   list.count >= 2 {
+                    if let paramName = list[1] as? String,
+                       requestedParams.contains(paramName){
+                        disclosureList.append(disclosure)
+                    }
+                    if let secondParam = list[2] as? [String: Any] {
+                        let keys = Array(secondParam.keys)
+                        for key in keys {
+                            if requestedParams.contains(key) {
+                                disclosureList.append(disclosure)
+                            }
+                        }
+                    }
+                }
+            }
+            var verificationHandler : eudiWalletOidcIos.VerificationService?
+            verificationHandler = eudiWalletOidcIos.VerificationService(keyhandler: keyHandler)
+            var processedCredentials: [String] = []
+            var tempCredentialList: [String?] = []
+            var credentialList: [String] = []
+            var sdList: [String] = []
+            credentialList.append(credential)
+            
+            var credentialFormat: String = ""
+            if let format = format {
+                credentialFormat = format
+            }
+            if credentialFormat == "mso_mdoc" {
+                tempCredentialList = credentialList
+                processedCredentials = verificationHandler?.processCborCredentialToJsonString(credentialList: tempCredentialList) ?? []
+            } else {
+                tempCredentialList = credentialList
+                
+                processedCredentials = verificationHandler?.processCredentialsToJsonString(credentialList: tempCredentialList) ?? []
+            }
+            
+            let matchesString = DCQLFiltering.filterCredentialUsingSingleDCQLCredentialFilter(credentialFilter: dcqlData, credentialList: credentialList)
+            for item in matchesString {
+                for data in item.fields {
+                    let value = data.path.value
+                    if let valueDict = value as? [String: Any], let sdArray = valueDict["_sd"] as? [Any] {
+                        for element in sdArray {
+                            if let sdValue = element as? String {
+                                sdList.append(sdValue)
+                            }
+                        }
+                    }
+                }
+            }
+            for dis in disclosures {
+                let sdData = SDJWTService.shared.calculateSHA256Hash(inputString: dis) ?? ""
+                if sdList.contains(sdData) {
+                    if !(disclosureList.contains(sdData)) {
+                        disclosureList.append(dis)
+                    }
+                }
+            }
+            let uniqueDisclosureSet = Array(Set(disclosureList))
+            for data in uniqueDisclosureSet {
+                issuedJwt += "~\(data)"
+            }
+            return issuedJwt.isEmpty ? nil : issuedJwt
+            
+            
+            return issuedJwt.isEmpty ? nil : issuedJwt
+        }
+    
+    public func processDisclosures(credential: String?,
+                                   query: Any?, format: String?, keyHandler: SecureKeyProtocol) -> String? {
+        if let inputDescriptor = query as? InputDescriptor {
+            return processDisclosuresWithPresentationDefinition(credential: credential, inputDescriptor: inputDescriptor, format: format, keyHandler: keyHandler)
+        } else if let dcql = query as? CredentialItems {
+            return processDisclosuresWithDCQL(credential: credential, dcqlCredential: dcql, format: format, keyHandler: keyHandler)
+        } else {
+            return nil
+        }
     }
     
     public func updateIssuerJwtWithDisclosures(credential: String?) -> String? {
@@ -309,13 +388,13 @@ public class SDJWTService {
         }
         return (key, value)
     }
-    private func getDisclosuresFromSDJWT(_ credential: String?) -> [String]? {
+    public func getDisclosuresFromSDJWT(_ credential: String?) -> [String]? {
         guard let split = credential?.split(separator: "~"), split.count > 1 else {
             return []
         }
         return split.dropFirst().map { String($0) }
     }
-    private func getIssuerJwtFromSDJWT(_ credential: String?) -> String? {
+    public func getIssuerJwtFromSDJWT(_ credential: String?) -> String? {
         guard let split = credential?.split(separator: "~"), let first = split.first else {
             return nil
         }

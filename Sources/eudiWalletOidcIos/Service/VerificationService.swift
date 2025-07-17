@@ -597,24 +597,32 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         return (index, uri)
     }
         
-    public func getFilteredCbor(credential: String, inputDescriptor: InputDescriptor?) -> CBOR? {
+    public func getFilteredCbor(credential: String, query: Any?) -> CBOR? {
         var requestedParams: [String] = []
         var limitDisclosure: Bool = false
-        if let fields = inputDescriptor?.constraints?.fields {
-            print("printing inputDescriptor fields: \(fields)")
-            for field in fields {
-                let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
-                let filteredComponents = components?.filter { !$0.isEmpty }
-                if let identifier = filteredComponents?.last {
-                    requestedParams.append(String(identifier))
+        if let inputDescriptor =  query as? InputDescriptor {
+            if let fields = inputDescriptor.constraints?.fields {
+                print("printing inputDescriptor fields: \(fields)")
+                for field in fields {
+                    let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
+                    let filteredComponents = components?.filter { !$0.isEmpty }
+                    if let identifier = filteredComponents?.last {
+                        requestedParams.append(String(identifier))
+                    }
                 }
             }
-        }
-        print("printing requestedParams from cbor: \(requestedParams)")
-        if inputDescriptor?.constraints?.limitDisclosure == nil {
-            limitDisclosure = false
-        } else {
-            limitDisclosure = true
+            print("printing requestedParams from cbor: \(requestedParams)")
+            if inputDescriptor.constraints?.limitDisclosure == nil {
+                limitDisclosure = false
+            } else {
+                limitDisclosure = true
+            }
+        } else if let dcql = query as? CredentialItems {
+            for (pathIndex, claim) in dcql.claims.enumerated() {
+                guard case .pathClaim(let pathClaim) = claim else { continue }
+                let paths = pathClaim.path.last
+                requestedParams.append(String(paths ?? ""))
+            }
         }
         print("printing limitDisclosure from cbor: \(limitDisclosure)")
         if let data = Data(base64URLEncoded: credential) {

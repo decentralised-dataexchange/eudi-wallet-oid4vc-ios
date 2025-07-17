@@ -88,19 +88,12 @@ public struct PresentationRequest: Codable {
             clientIDScheme = String(scheme)
         }
         dcqlQuery = try container.decodeIfPresent(DCQLQuery.self, forKey: .dcqlQuery)
-        
-        if dcqlQuery != nil {
-            let dcqlData = DCQLToPresentationExchange().convertToOID4VP(dcql: dcqlQuery)
-            presentationDefinition = dcqlData.toJSONString()
-            print("")
-            
-        }
     }
 }
 public struct ClientMetaData: Codable {
-
     public var clientName, coverUri, description, location, logoUri, legalPidAttestation, legalPidAttestationPop, authorizationEncryptedResponseAlg, authorizationEncryptedResponseEnc, idTokenEncryptedResponseAlg, id_token_encrypted_response_enc, jwks_uri, id_token_signed_response_alg : String?
     public var subject_syntax_types_supported: [String]?
+    public var jwks: JWKS?
     
     enum CodingKeys: String, CodingKey {
         case clientName = "client_name"
@@ -117,9 +110,10 @@ public struct ClientMetaData: Codable {
         case jwks_uri = "jwks_uri"
         case subject_syntax_types_supported = "subject_syntax_types_supported"
         case id_token_signed_response_alg = "id_token_signed_response_alg"
+        case jwks = "jwks"
     }
-
-    public init(clientName: String?, coverUri: String?, description: String?, location: String?, logoUri: String?, legalPidAttestation: String?, legalPidAttestationPop: String?, authorizationEncryptedResponseAlg: String? = nil, authorizationEncryptedResponseEnc: String? = nil, idTokenEncryptedResponseAlg: String? = nil, id_token_encrypted_response_enc: String? = nil, jwks_uri: String? = nil,subject_syntax_types_supported: [String]? = nil, id_token_signed_response_alg: String? = nil) {
+    
+    public init(clientName: String?, coverUri: String?, description: String?, location: String?, logoUri: String?, legalPidAttestation: String?, legalPidAttestationPop: String?, authorizationEncryptedResponseAlg: String? = nil, authorizationEncryptedResponseEnc: String? = nil, idTokenEncryptedResponseAlg: String? = nil, id_token_encrypted_response_enc: String? = nil, jwks_uri: String? = nil,subject_syntax_types_supported: [String]? = nil, id_token_signed_response_alg: String? = nil, jwks: JWKS? = nil) {
         self.clientName = clientName
         self.coverUri = coverUri
         self.description = description
@@ -134,6 +128,7 @@ public struct ClientMetaData: Codable {
         self.jwks_uri = jwks_uri
         self.subject_syntax_types_supported = subject_syntax_types_supported
         self.id_token_signed_response_alg = id_token_signed_response_alg
+        self.jwks = jwks
     }
     
     public init(from decoder: Decoder) throws {
@@ -152,8 +147,21 @@ public struct ClientMetaData: Codable {
         jwks_uri = try container.decodeIfPresent(String.self, forKey: .jwks_uri)
         subject_syntax_types_supported = try container.decodeIfPresent([String].self, forKey: .subject_syntax_types_supported)
         id_token_signed_response_alg = try container.decodeIfPresent(String.self, forKey: .id_token_signed_response_alg)
+        jwks = try container.decodeIfPresent(JWKS.self, forKey: .jwks)
     }
     
+}
+public struct JWKS: Codable {
+    let keys: [JWKData]?
+}
+public struct JWKData: Codable {
+    let kty: String?
+    let use: String?
+    let crv: String?
+    let kid: String?
+    let x: String?
+    let y: String?
+    let alg: String?
 }
 public struct TransactionData: Codable {
     public var type: String?
@@ -218,7 +226,7 @@ public struct CurrencyAmount: Codable {
 }
 
 public struct DCQLQuery: Codable {
-    public let credentials: [CredentialItems]
+    public var credentials: [CredentialItems]
     
     public init(credentials: [CredentialItems]) {
         self.credentials = credentials
@@ -242,10 +250,12 @@ public struct CredentialItems: Codable {
 public enum Meta: Codable {
     case dcSDJWT(DCSDJWTMeta)
     case msoMdoc(MSOMdocMeta)
+    case jwt(JWTMeta)
 
     enum CodingKeys: String, CodingKey {
         case vct_values
         case doctype_value
+        case type_values
     }
 
     public init(from decoder: Decoder) throws {
@@ -254,6 +264,8 @@ public enum Meta: Codable {
             self = .dcSDJWT(DCSDJWTMeta(vctValues: vctValues))
         } else if let doctypeValue = try? container.decode(String.self, forKey: .doctype_value) {
             self = .msoMdoc(MSOMdocMeta(doctypeValue: doctypeValue))
+        } else if let typeValue = try? container.decode([[String]].self, forKey: .type_values) {
+            self = .jwt(JWTMeta(typeValues: typeValue))
         } else {
             throw DecodingError.dataCorruptedError(forKey: .vct_values, in: container, debugDescription: "Unknown meta type")
         }
@@ -266,8 +278,21 @@ public enum Meta: Codable {
             try container.encode(meta.vctValues, forKey: .vct_values)
         case .msoMdoc(let meta):
             try container.encode(meta.doctypeValue, forKey: .doctype_value)
+        case .jwt(let meta):
+            try container.encode(meta.typeValues, forKey: .type_values)
         }
     }
+    
+    public var extractedCredentialTypes: [String] {
+            switch self {
+            case .dcSDJWT(let meta):
+                return meta.vctValues
+            case .msoMdoc(let meta):
+                return [meta.doctypeValue]
+            case .jwt(let meta):
+                return meta.typeValues.flatMap { $0 }
+            }
+        }
 }
 
 public struct DCSDJWTMeta: Codable {
@@ -283,6 +308,14 @@ public struct MSOMdocMeta: Codable {
     
     public init(doctypeValue: String) {
         self.doctypeValue = doctypeValue
+    }
+}
+
+public struct JWTMeta: Codable {
+    public let typeValues: [[String]]
+    
+    public init(typeValues: [[String]]) {
+        self.typeValues = typeValues
     }
 }
 
