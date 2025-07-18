@@ -62,6 +62,9 @@ public struct DigitalId: Codable {
     public var x509Certificate: String?
     public var x509SKI: String?
     public var x509SubjectName: String?
+    public var DID: String?
+    public var KID: String?
+    public var JwksURI: String?
 }
 
 public class XMLToJSONParser: NSObject, XMLParserDelegate {
@@ -139,7 +142,10 @@ public class XMLToJSONParser: NSObject, XMLParserDelegate {
             currentDigitalId = DigitalId(
                 x509Certificate: nil,
                 x509SKI: nil,
-                x509SubjectName: nil
+                x509SubjectName: nil,
+                DID: nil,
+                KID: nil,
+                JwksURI: nil
             )
         case "TSPAddress":
             currentAddress = TSPAddress(
@@ -255,6 +261,12 @@ public class XMLToJSONParser: NSObject, XMLParserDelegate {
             currentDigitalId?.x509SKI = currentText.isEmpty ? nil : currentText
         case "X509SubjectName":
             currentDigitalId?.x509SubjectName = currentText.isEmpty ? nil : currentText
+        case "KID":
+            currentDigitalId?.KID = currentText.isEmpty ? nil : currentText
+        case "DID":
+            currentDigitalId?.DID = currentText.isEmpty ? nil : currentText
+        case "JwksURI":
+            currentDigitalId?.JwksURI = currentText.isEmpty ? nil : currentText
             
         case "DigitalId":
             if let digitalId = currentDigitalId {
