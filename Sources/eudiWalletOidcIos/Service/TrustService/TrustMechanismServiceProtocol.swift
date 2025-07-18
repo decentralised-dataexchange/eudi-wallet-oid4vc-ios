@@ -11,5 +11,5 @@ protocol TrustMechanismServiceProtocol {
     
     func isIssuerOrVerifierTrusted(url: String?, x5c: String?, jwksURI: String?, completion: @escaping (Bool?) -> Void)
     
-    func fetchTrustDetails(url: String?, x5c: String?, completion: @escaping (TrustServiceProvider?) -> Void)
+    func fetchTrustDetails(url: String?, x5c: String?, jwksURI: String?, completion: @escaping (TrustServiceProvider?) -> Void)
 }

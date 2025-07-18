@@ -47,7 +47,7 @@ public class TrustMechanismService: TrustMechanismServiceProtocol {
         }
     }
 
-public func fetchTrustDetails(url: String?, x5c: String?, completion: @escaping (TrustServiceProvider?) -> Void) {
+public func fetchTrustDetails(url: String?, x5c: String?, jwksURI: String?, completion: @escaping (TrustServiceProvider?) -> Void) {
     parseXmlDataToJson(url: url) { data in
         guard let data = data else {
             completion(nil)
@@ -57,7 +57,7 @@ public func fetchTrustDetails(url: String?, x5c: String?, completion: @escaping 
         for item in data.trustServiceProviders ?? [] {
             for service in item.tspServices {
                 let hasMatchingId = service.serviceDigitalIdentities?.contains {
-                    $0.x509Certificate == x5c || $0.x509SKI == x5c || $0.KID == x5c || $0.DID == x5c
+                    $0.x509Certificate == x5c || $0.x509SKI == x5c || ($0.KID == x5c && $0.JwksURI == jwksURI) || $0.DID == x5c
                 } ?? false
 
                 if hasMatchingId {
