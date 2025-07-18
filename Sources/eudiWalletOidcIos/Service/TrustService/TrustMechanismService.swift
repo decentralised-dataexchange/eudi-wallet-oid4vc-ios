@@ -12,7 +12,7 @@ public class TrustMechanismService: TrustMechanismServiceProtocol {
     public static var shared = TrustMechanismService()
     public init() {}
     
-    public func isIssuerOrVerifierTrusted(url: String?, x5c: String?, completion: @escaping (Bool?) -> Void){
+    public func isIssuerOrVerifierTrusted(url: String?, x5c: String?, jwksURI: String?, completion: @escaping (Bool?) -> Void){
         var isValidOrganization: Bool? = nil
         var validationResults: [Bool?] = []
         parseXmlDataToJson(url: url) { data in
@@ -25,6 +25,10 @@ public class TrustMechanismService: TrustMechanismServiceProtocol {
                                     validationResults.append(true)
                                 
                                 } else if identity.x509SKI == x5c {
+                                    validationResults.append(true)
+                                } else if identity.DID == x5c {
+                                    validationResults.append(true)
+                                } else if identity.KID == x5c && identity.JwksURI == jwksURI {
                                     validationResults.append(true)
                                 }
                             }
@@ -43,7 +47,7 @@ public class TrustMechanismService: TrustMechanismServiceProtocol {
         }
     }
 
-public func fetchTrustDetails(url: String?, x5c: String?, completion: @escaping (TrustServiceProvider?) -> Void) {
+public func fetchTrustDetails(url: String?, x5c: String?, jwksURI: String?, completion: @escaping (TrustServiceProvider?) -> Void) {
     parseXmlDataToJson(url: url) { data in
         guard let data = data else {
             completion(nil)
@@ -53,7 +57,7 @@ public func fetchTrustDetails(url: String?, x5c: String?, completion: @escaping 
         for item in data.trustServiceProviders ?? [] {
             for service in item.tspServices {
                 let hasMatchingId = service.serviceDigitalIdentities?.contains {
-                    $0.x509Certificate == x5c || $0.x509SKI == x5c
+                    $0.x509Certificate == x5c || $0.x509SKI == x5c || ($0.KID == x5c && $0.JwksURI == jwksURI) || $0.DID == x5c
                 } ?? false
 
                 if hasMatchingId {
@@ -70,7 +74,7 @@ public func fetchTrustDetails(url: String?, x5c: String?, completion: @escaping 
 }
     
     public func parseXmlDataToJson(url: String?, completion: @escaping (TrustServiceStatusList?) -> Void) {
-        let url = URL(string: "https://ewc-consortium.github.io/ewc-trust-list/EWC-TL")!
+        let url = URL(string: url ?? "")!
                 URLSession.shared.dataTask(with: url) { data, response, error in
                     guard let data = data, error == nil else {
                         print("Error fetching XML: \(error?.localizedDescription ?? "Unknown error")")
