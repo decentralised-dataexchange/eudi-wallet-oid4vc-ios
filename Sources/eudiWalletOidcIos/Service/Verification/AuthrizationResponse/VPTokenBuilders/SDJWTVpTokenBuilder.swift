@@ -18,16 +18,23 @@ class SDJWTVpTokenBuilder : VpTokenBuilder{
         claims["aud"] = presentationRequest?.clientId ?? ""
         claims["nonce"] = presentationRequest?.nonce ?? ""
         
-        var presentationDefinition :PresentationDefinitionModel? = nil
-        do {
-            presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
-        } catch {
-            presentationDefinition = nil
+        var queryItem: Any?
+        var format: String?
+        if let pd = presentationRequest?.presentationDefinition, !pd.isEmpty {
+            var presentationDefinition :PresentationDefinitionModel? = nil
+            do {
+                presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
+            } catch {
+                presentationDefinition = nil
+            }
+            queryItem = presentationDefinition?.inputDescriptors?[index ?? 0]
+        } else if let dcql = presentationRequest?.dcqlQuery {
+            queryItem = dcql.credentials[index ?? 0]
         }
         var transactionData: String? = nil
         if !(presentationRequest?.transactionData?.isEmpty ?? true) {
             transactionData = presentationRequest?.transactionData?.first
-            if checkTransactionDataWithMultipleInputDescriptors(inputDescriptor: presentationDefinition?.inputDescriptors?[index ?? 0], transactionDataItem: transactionData) {
+            if checkTransactionDataWithMultipleInputDescriptors(queryItem: queryItem, transactionDataItem: transactionData) {
                 claims["transaction_data_hashes"] = [self.generateHash(input: transactionData ?? "")]
                 claims["transaction_data_hashes_alg"] = "sha-256"
             }
@@ -49,12 +56,18 @@ class SDJWTVpTokenBuilder : VpTokenBuilder{
         return resultString
     }
     
-    func checkTransactionDataWithMultipleInputDescriptors(inputDescriptor: InputDescriptor?,
+    func checkTransactionDataWithMultipleInputDescriptors(queryItem: Any?,
                                                           transactionDataItem: String?) -> Bool {
+        var id: String?
+        if let inputDescriptor = queryItem as? InputDescriptor {
+            id = inputDescriptor.id
+        } else if let credentialItem = queryItem as? CredentialItems {
+            id = credentialItem.id
+        }
         let decodedTransactionData = transactionDataItem?.decodeBase64() ?? ""
         let transactionDataDict = UIApplicationUtils.shared.convertToDictionary(text: decodedTransactionData)
         let credIdsArray = transactionDataDict?["credential_ids"] as? [String]
-        guard let inputDescriptorId = inputDescriptor?.id else { return false }
+        guard let inputDescriptorId = id else { return false }
         return credIdsArray?.contains(inputDescriptorId) ?? false
     }
     

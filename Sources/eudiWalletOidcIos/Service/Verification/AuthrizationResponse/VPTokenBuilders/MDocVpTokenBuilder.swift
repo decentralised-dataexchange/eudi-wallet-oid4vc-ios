@@ -14,11 +14,19 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
     
     func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) -> String? {
         
-        var presentationDefinition :PresentationDefinitionModel? = nil
-        do {
-            presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
-        } catch {
-            presentationDefinition = nil
+        var queryItem: Any?
+        var doc: String?
+        if let pd = presentationRequest?.presentationDefinition, !pd.isEmpty {
+            var presentationDefinition :PresentationDefinitionModel? = nil
+            do {
+                presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
+            } catch {
+                presentationDefinition = nil
+            }
+            doc = presentationDefinition?.docType
+            queryItem = presentationDefinition?.inputDescriptors?[index ?? 0]
+        } else if let dcql = presentationRequest?.dcqlQuery {
+            queryItem = dcql.credentials[index ?? 0]
         }
         
         var cborString: String = ""
@@ -29,9 +37,8 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         
         for (index, cred) in credentials.enumerated() {
             if !cred.contains(".") {
-                if let issuerAuthData = getIssuerAuth(credential: cred), let cborNameSpace = getNameSpaces(credential: cred, inputDescriptor: presentationDefinition?.inputDescriptors?[index]) {
-                    
-                    if let fields = presentationDefinition?.inputDescriptors?[index].constraints?.fields {
+                if let issuerAuthData = getIssuerAuth(credential: cred), let cborNameSpace = getNameSpaces(credential: cred, query: queryItem) {
+                    if let inputDescriptor = queryItem as? InputDescriptor, let fields = inputDescriptor.constraints?.fields {
                         for field in fields {
                             let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
                             
@@ -41,12 +48,23 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                                 requestedParams.append(String(identifier))
                             }
                         }
+                    } else if let dcql = queryItem as? CredentialItems {
+                        for (pathIndex, claim) in dcql.claims.enumerated() {
+                            guard case .pathClaim(let pathClaim) = claim else { continue }
+                            let paths = pathClaim.path.last
+                            requestedParams.append(String(paths ?? ""))
+                        }
+                        switch dcql.meta {
+                        case .msoMdoc(let meta):
+                            limitDisclosure = false
+                            doc = meta.doctypeValue
+                        case .dcSDJWT:
+                            limitDisclosure = true
+                        case .jwt:
+                            limitDisclosure = false
+                        }
                     }
-                    if presentationDefinition?.inputDescriptors?[index].constraints?.limitDisclosure == nil {
-                        limitDisclosure = false
-                    } else {
-                        limitDisclosure = true
-                    }
+                    
                     var nameSpaceData: CBOR? = nil
                     if limitDisclosure {
                         nameSpaceData = filterNameSpaces(nameSpacesValue: cborNameSpace, requestedParams: requestedParams)
@@ -56,7 +74,7 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     var docType = ""
                     if let docTypeValue = getDocTypeFromIssuerAuth(cborData: issuerAuthData), !docTypeValue.isEmpty {
                         docType = docTypeValue
-                    } else if let docTypeValue = presentationDefinition?.docType,  !docTypeValue.isEmpty {
+                    } else if let docTypeValue = doc, !docTypeValue.isEmpty {
                         docType = docTypeValue
                     }
                     docFiltered.append(contentsOf: [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))])
@@ -103,9 +121,9 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         return nil
     }
     
-    func getNameSpaces(credential: String, inputDescriptor: InputDescriptor?) -> CBOR? {
+    func getNameSpaces(credential: String, query: Any?) -> CBOR? {
         var requestedParams: [String] = []
-        if let fields = inputDescriptor?.constraints?.fields {
+        if let inputDescriptor = query as? InputDescriptor, let fields = inputDescriptor.constraints?.fields {
             for field in fields {
                 let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
                 
@@ -114,6 +132,12 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                 if let identifier = filteredComponents?.last {
                     requestedParams.append(String(identifier))
                 }
+            }
+        } else if let dcql = query as? CredentialItems {
+            for (pathIndex, claim) in dcql.claims.enumerated() {
+                guard case .pathClaim(let pathClaim) = claim else { continue }
+                let paths = pathClaim.path.last
+                requestedParams.append(String(paths ?? ""))
             }
         }
         // Convert the base64 URL encoded credential to Data

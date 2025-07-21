@@ -134,7 +134,7 @@ class AuthorisationResponseBuilder{
                 var transactionData: String? = nil
                 if !(presentationRequest?.transactionData?.isEmpty ?? true) {
                     transactionData = presentationRequest?.transactionData?.first
-                    if SDJWTVpTokenBuilder().checkTransactionDataWithMultipleInputDescriptors(inputDescriptor: presentationDefinition?.inputDescriptors?[index], transactionDataItem: transactionData) {
+                    if SDJWTVpTokenBuilder().checkTransactionDataWithMultipleInputDescriptors(queryItem: presentationDefinition?.inputDescriptors?[index], transactionDataItem: transactionData) {
                         claims["transaction_data_hashes"] = [SDJWTVpTokenBuilder().generateHash(input: transactionData ?? "")]
                         claims["transaction_data_hashes_alg"] = "sha-256"
                     }
