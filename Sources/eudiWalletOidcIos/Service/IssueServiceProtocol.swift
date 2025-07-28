@@ -6,6 +6,7 @@
 //
 import Foundation
 import CryptoKit
+import JOSESwift
 protocol IssueServiceProtocol {
     // Retrieves credential issuer asynchronously based on the provided credential_offer / credential_offer_uri.
     ///
@@ -52,7 +53,7 @@ protocol IssueServiceProtocol {
      - accessToken: The access token for authentication.
      - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
      */
-    func processCredentialRequest(did: String, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String, credentialTypes: [String], tokenResponse: TokenResponse?, authDetails: AuthorizationDetails?) async -> CredentialResponse?
+    func processCredentialRequest(did: String, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String, credentialTypes: [String], tokenResponse: TokenResponse?, authDetails: AuthorizationDetails?, privateKey: ECPrivateKey?) async -> CredentialResponse?
     
     // Processes a deferred credential request to obtain the credential response in deffered manner.
     /** - Parameters
@@ -60,7 +61,7 @@ protocol IssueServiceProtocol {
      - deferredCredentialEndPoint - end point to call the deferred credential
      **/
     //    - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
-    func processDeferredCredentialRequest(acceptanceToken: String, deferredCredentialEndPoint: String, version: String?, accessToken: String?) async -> CredentialResponse?
+    func processDeferredCredentialRequest(acceptanceToken: String, deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?) async -> CredentialResponse?
     
     func getFormatFromIssuerConfig(
         issuerConfig: IssuerWellKnownConfiguration?,

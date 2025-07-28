@@ -193,6 +193,8 @@ public struct IssuerWellKnownConfiguration {
     public let error: EUDIError?
     public let notificationEndPoint: String?
     public let nonceEndPoint: String?
+    public let credentialResponseEncryption: CredentialResponseEncryptionModel?
+    
     
     public init(from: IssuerWellKnownConfigurationResponse) {
         credentialIssuer = from.credentialIssuer
@@ -222,6 +224,7 @@ public struct IssuerWellKnownConfiguration {
         }
         notificationEndPoint = from.notificationEndPoint
         nonceEndPoint = from.nonceEndpoint
+        credentialResponseEncryption = from.credentialResponseEncryption
         error = nil
   
     }
@@ -255,6 +258,7 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         error = nil
         notificationEndPoint = from.notificationEndPoint
         nonceEndPoint = from.nonceEndpoint
+        credentialResponseEncryption = from.credentialResponseEncryption
     }
     
     public init(mCredentialIssuer: String?,
@@ -271,6 +275,7 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         error = nil
         notificationEndPoint = nil
         nonceEndPoint = nil
+        credentialResponseEncryption = nil
     }
     
     init(from: EUDIError) {
@@ -283,5 +288,16 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         credentialsSupported = nil
         notificationEndPoint = nil
         nonceEndPoint = nil
+        credentialResponseEncryption = nil
+    }
+}
+
+public struct CredentialResponseEncryptionModel: Codable {
+    public let algValuesSupported: [String]?
+    public let encValuesSupported: [String]?
+    
+    enum CodingKeys: String, CodingKey {
+        case algValuesSupported = "alg_values_supported"
+        case encValuesSupported = "enc_values_supported"
     }
 }

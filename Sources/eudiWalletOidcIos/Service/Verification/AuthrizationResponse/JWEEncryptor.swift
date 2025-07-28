@@ -121,6 +121,25 @@ class JWEEncryptor {
 
         return secKey
     }
+    
+    func generateEphemeralEncryptionJWK(privateKey: ECPrivateKey?) -> Any? {
+        guard let privateKey = privateKey else {
+            return nil
+        }
+        let publicKey = privateKey.getPublic()
+
+        let jwk: [String: String] = [
+            "kty": "EC",
+            "crv": "P-256",
+            "x": publicKey.x,
+            "y": publicKey.y,
+            "alg": "ECDH-ES",
+            "enc": "A128CBC-HS256",
+            "use": "enc"
+        ]
+
+        return jwk
+    }
 
     // Helper: Convert base64url strings to EC public key (CryptoKit)
     struct EphemeralPublicKey {
