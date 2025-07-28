@@ -69,7 +69,7 @@ class AuthorisationResponseBuilder{
                     }
                 }
                 
-                params["presentation_submission"] = json.toString()
+                params["presentation_submission"] = json
             }
             
             // Handle id_token
@@ -216,9 +216,9 @@ class AuthorisationResponseBuilder{
                     if format ==  "vc+sd-jwt" || format == "dc+sd-jwt" {
                         pathNested = nil
                         if vpTokenList.count == 1 {
-                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: encodedFormat ?? "", pathNested: pathNested))
+                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: format ?? "", pathNested: pathNested))
                         } else {
-                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$[\(vpTokenIndex)]", format: encodedFormat ?? "", pathNested: pathNested))
+                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$[\(vpTokenIndex)]", format: format ?? "", pathNested: pathNested))
                         }
                         vpTokenIndex += 1
                     } else if credentialFormat == "mso_mdoc" {
@@ -232,7 +232,7 @@ class AuthorisationResponseBuilder{
                         vpTokenIndex += 1
                     } else {
                         var pathNestedValue: DescriptorMap? = nil
-                        formatType = encodedFormat ?? "jwt_vp"
+                        formatType = format ?? "jwt_vp"
                         let credentialFormat = fetchFormat(presentationDefinition: presentationDefinition, index: index)
                         if vpTokenList.count == 1 {
                             pathNestedValue = DescriptorMap(id: item.id ?? "", path: "$.vp.verifiableCredential[\(jwtIndex)]", format: "jwt_vc", pathNested: nil)
@@ -335,6 +335,6 @@ class AuthorisationResponseBuilder{
         if  presentationDefinitionFormat.contains("jwt_vp_json") {
             return "jwt_vp_json"
         }
-        return encodedFormat
+        return credentialFormatString
     }
 }

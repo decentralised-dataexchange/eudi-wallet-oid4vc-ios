@@ -7,8 +7,9 @@
 
 import Foundation
 import CryptoKit
-//import KeychainSwift
 import CryptoSwift
+import JOSESwift
+import ASN1Decoder
 
 public class IssueService: NSObject, IssueServiceProtocol {
     
@@ -522,7 +523,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
         format: String,
-        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil) async -> CredentialResponse? {
+        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?) async -> CredentialResponse? {
             
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
@@ -630,7 +631,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
                     }
                 }
             }
-            
+            if issuerConfig.credentialResponseEncryption != nil && issuerConfig.credentialResponseEncryption?.algValuesSupported?.contains("ECDH-ES") == true && issuerConfig.credentialResponseEncryption?.encValuesSupported?.contains("A128CBC-HS256") == true {
+                let jwk = JWEEncryptor().generateEphemeralEncryptionJWK(privateKey: privateKey)
+                params["credential_response_encryption"] = ["jwk": jwk, "alg": "ECDH-ES", "enc": "A128CBC-HS256"]
+            }
             // Create URL for the credential endpoint
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
             
@@ -657,19 +661,30 @@ public class IssueService: NSObject, IssueServiceProtocol {
                         return CredentialResponse(fromError: error)
                     }
                 }
-                guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return nil }
+            
+               var jsonObject: [String: Any]?
+                var responseData: Data?
+                if httpRes?.value(forHTTPHeaderField: "Content-Type") == "application/jwt", let responseString = String(data: data, encoding: .utf8) {
+                    if let decryptedData = JWEDecryptor().decryptJWE(responseString, privateKey: privateKey) {
+                        jsonObject = try JSONSerialization.jsonObject(with: decryptedData.data(using: .utf8)!, options: []) as? [String: Any]
+                        responseData = decryptedData.data(using: .utf8)!
+                    }
+                } else {
+                    responseData = data
+                    jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+                }
+                guard let jsonObject = jsonObject, let responseData = responseData  else { return nil }
                 if jsonObject["acceptance_token"] != nil {
-                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: data)
+                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: responseData)
                     return CredentialResponse(from: model)
                     
                 } else if jsonObject["transaction_id"] != nil {
-                    let modelV2 = try jsonDecoder.decode(CredentialResponseV2.self, from: data)
+                    let modelV2 = try jsonDecoder.decode(CredentialResponseV2.self, from: responseData)
                     return CredentialResponse(from: modelV2)
                 } else if jsonObject["acceptance_token"] == nil && jsonObject["transaction_id"] == nil {
-                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: data)
+                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: responseData)
                     return CredentialResponse(from: model)
-                }
-                else {
+                } else {
                     //let error = EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil))
             let error = ErrorHandler.processError(data: data, contentType: httpRes?.value(forHTTPHeaderField: "Content-Type"))
                     return CredentialResponse(fromError: error ?? EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil)))
@@ -682,8 +697,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 return CredentialResponse(fromError: error)
             }
         }
-    
-    
+
     // MARK: - Processes a deferred credential request to obtain the credential response in deffered manner.
     
     /** - Parameters
@@ -694,7 +708,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
     
     public func processDeferredCredentialRequest(
         acceptanceToken: String,
-        deferredCredentialEndPoint: String, version: String?, accessToken: String?) async -> CredentialResponse? {
+        deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?) async -> CredentialResponse? {
             
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: deferredCredentialEndPoint) else { return nil }
@@ -718,19 +732,30 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Perform the request and handle the response
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
-                guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
-                    return nil
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let httpRes = response as? HTTPURLResponse
+                var jsonObject: [String: Any]?
+                var responseData: Data?
+                if httpRes?.value(forHTTPHeaderField: "Content-Type") == "application/jwt", let responseString = String(data: data, encoding: .utf8) {
+                    if let decryptedData = JWEDecryptor().decryptJWE(responseString, privateKey: privateKey) {
+                        jsonObject = try JSONSerialization.jsonObject(with: decryptedData.data(using: .utf8)!, options: []) as? [String: Any]
+                        responseData = decryptedData.data(using: .utf8)!
+                    }
+                    print("")
+                } else {
+                    responseData = data
+                    jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
                 }
+                guard let jsonObject = jsonObject, let responseData = responseData  else { return nil }
                 if jsonObject["acceptance_token"] != nil {
-                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: data)
+                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: responseData)
                     return CredentialResponse(from: model)
                     
                 } else if jsonObject["transaction_id"] != nil {
-                    let modelV2 = try jsonDecoder.decode(CredentialResponseV2.self, from: data)
+                    let modelV2 = try jsonDecoder.decode(CredentialResponseV2.self, from: responseData)
                     return CredentialResponse(from: modelV2)
                 } else if jsonObject["acceptance_token"] == nil && jsonObject["transaction_id"] == nil {
-                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: data)
+                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: responseData)
                     return CredentialResponse(from: model)
                 }
                 else {

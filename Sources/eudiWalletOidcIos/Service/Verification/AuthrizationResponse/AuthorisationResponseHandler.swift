@@ -15,7 +15,13 @@ class AuthorisationResponseHandler {
         guard let responseMode = ResponseMode(from: presentationRequest?.responseMode ?? "") else { return nil}
         switch responseMode {
         case .directPost:
-            return await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
+            var params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
+            if var presentationSubmission = params["presentation_submission"] as? [String: Any]{
+                 // For encoding the format we have encoded the presentation submission
+                let encodedPresentationSubmission = presentationSubmission.toString()?.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "+")).subtracting(CharacterSet(charactersIn: "+")))?.replacingOccurrences(of: "+", with: "%2B")
+                params["presentation_submission"] = encodedPresentationSubmission
+            }
+            return params
         case .directPostJWT:
             let params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
             do {
