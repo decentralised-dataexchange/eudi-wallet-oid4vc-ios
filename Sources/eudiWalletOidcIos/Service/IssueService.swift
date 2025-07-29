@@ -193,11 +193,11 @@ public class IssueService: NSObject, IssueServiceProtocol {
     public func processAuthorisationRequest(did: String,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,
-                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?, redirectURI: String?) async -> WrappedResponse? {
+                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?, redirectURI: String?, isApiCallRequired: Bool? = false) async -> WrappedResponse? {
         
         guard let authorizationEndpoint = authServer.authorizationEndpoint else { return WrappedResponse(data: nil, error: nil) }
         let redirectUri = redirectURI ?? "openid://callback"
-        
+        var authorizationURL: URL?
         // Gather query parameters
         let responseType = "code"
         let scope = credentialFormat == "mso_mdoc" ? credentialFormat + "openid" : "openid"
@@ -260,6 +260,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                             URLQueryItem(name: "client_id", value: did),
                             URLQueryItem(name: "request_uri", value: requestURI)
                         ]
+                        authorizationURL = authorizationURLComponents?.url
                     }
                 } else if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
                     return WrappedResponse(data: nil, error: ErrorHandler.processError(data: data, contentType: httpResponse.value(forHTTPHeaderField: "Content-Type")))
@@ -287,6 +288,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 URLQueryItem(name: "client_metadata", value: clientMetadata),
                 URLQueryItem(name: "issuer_state", value: credentialOffer.grants?.authorizationCode?.issuerState)
             ]
+            authorizationURL = authorizationURLComponents?.url
         }
         
         // Validate the constructed authorization URL
@@ -294,81 +296,83 @@ public class IssueService: NSObject, IssueServiceProtocol {
             debugPrint("Failed to construct the authorization URL.")
             return WrappedResponse(data: nil, error: nil)
         }
-        debugPrint(authorizationURL)
-        
-        // Service call to get authorisation response
-        var request = URLRequest(url: authorizationURL)
-        request.httpMethod = "GET"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        
-        var responseUrl = ""
-        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-        do {
-            // Try to fetch data from the URL session
-//            if session == nil{
-//                session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-//            }
-            let (data, response) = try await session.data(for: request)
-            
-            let httpres = response as? HTTPURLResponse
-            if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
-                responseUrl = location
-            } else if httpres?.statusCode ?? 0 >= 400 {
-                return WrappedResponse(data: nil, error: ErrorHandler.processError(data: data, contentType: httpres?.value(forHTTPHeaderField: "Content-Type")))
-            } else if httpres?.statusCode == 200, let contentType = httpres?.value(forHTTPHeaderField: "Content-Type"), contentType.contains("text/html") {
-                responseUrl = authorizationURL.absoluteString
-            } else{
-                guard let authorization_response = String.init(data: data, encoding: .utf8) else { return nil }
-                responseUrl = authorization_response
+        if isApiCallRequired ?? false {
+            // Service call to get authorisation response
+            var request = URLRequest(url: authorizationURL)
+            request.httpMethod = "GET"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+    
+            var responseUrl = ""
+            let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+            do {
+                // Try to fetch data from the URL session
+    //            if session == nil{
+    //                session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+    //            }
+                let (data, response) = try await session.data(for: request)
+    
+                let httpres = response as? HTTPURLResponse
+                if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
+                    responseUrl = location
+                } else if httpres?.statusCode ?? 0 >= 400 {
+                    return WrappedResponse(data: nil, error: ErrorHandler.processError(data: data))
+                } else if httpres?.statusCode == 200, let contentType = httpres?.value(forHTTPHeaderField: "Content-Type"), contentType.contains("text/html") {
+                    responseUrl = authorizationURL.absoluteString
+                } else{
+                    guard let authorization_response = String.init(data: data, encoding: .utf8) else { return nil }
+                    responseUrl = authorization_response
+                }
+    
+            } catch {
+                // If an error occurs, attempt to extract the failing URL from the error
+                let nsError = error as NSError
+                let response = nsError.userInfo["NSErrorFailingURLKey"]
+                responseUrl = String(describing: response ?? "")
             }
             
-        } catch {
-            // If an error occurs, attempt to extract the failing URL from the error
-            let nsError = error as NSError
-            let response = nsError.userInfo["NSErrorFailingURLKey"]
-            responseUrl = String(describing: response ?? "")
-        }
-        
-        
-        if responseUrl.contains("code=") ||
-            responseUrl.contains("error=") ||
-            responseUrl.contains("presentation_definition=") || responseUrl.contains("presentation_definition_uri=") ||
-            (responseUrl.contains("request_uri=") && !responseUrl.contains("response_type=") && !responseUrl.contains("state=")){
-            return WrappedResponse(data: responseUrl, error: nil)
-        } else if let url = URL(string: responseUrl), let redirectUri = url.queryParameters?["redirect_uri"] , let responseType = url.queryParameters?["response_type"], responseType == "id_token" {
-            let nonce = url.queryParameters?["nonce"]
-            let state = url.queryParameters?["state"]
-            let clientID = url.queryParameters?["client_id"]
-            let uri = redirectUri.replacingOccurrences(of: "\n", with: "") ?? ""
-            let code =  await processAuthorisationRequestUsingIdToken(
-                did: did,
-                authServerWellKnownConfig: authServer,
-                redirectURI:  uri.trimmingCharacters(in: .whitespaces) ,
-                nonce: nonce ?? "",
-                state: state ?? "", clientID: clientID ?? "")
-            return WrappedResponse(data: code, error: nil)
-        } else if !responseUrl.hasPrefix(redirectURI ?? "") {
-            return WrappedResponse(data: responseUrl, error: nil)
+            
+            if responseUrl.contains("code=") ||
+                responseUrl.contains("error=") ||
+                responseUrl.contains("presentation_definition=") || responseUrl.contains("presentation_definition_uri=") ||
+                (responseUrl.contains("request_uri=") && !responseUrl.contains("response_type=") && !responseUrl.contains("state=")){
+                return WrappedResponse(data: responseUrl, error: nil)
+            } else if let url = URL(string: responseUrl), let redirectUri = url.queryParameters?["redirect_uri"] , let responseType = url.queryParameters?["response_type"], responseType == "id_token" {
+                let nonce = url.queryParameters?["nonce"]
+                let state = url.queryParameters?["state"]
+                let clientID = url.queryParameters?["client_id"]
+                let uri = redirectUri.replacingOccurrences(of: "\n", with: "") ?? ""
+                let code =  await processAuthorisationRequestUsingIdToken(
+                    did: did,
+                    authServerWellKnownConfig: authServer,
+                    redirectURI:  uri.trimmingCharacters(in: .whitespaces) ,
+                    nonce: nonce ?? "",
+                    state: state ?? "", clientID: clientID ?? "")
+                return WrappedResponse(data: code, error: nil)
+            } else if !responseUrl.hasPrefix(redirectURI ?? "") {
+                return WrappedResponse(data: responseUrl, error: nil)
+            } else {
+                // if 'code' is not present
+                let url = URL(string: responseUrl)
+                let state = url?.queryParameters?["state"]
+                let nonce = url?.queryParameters?["nonce"]
+                let redirectUri = url?.queryParameters?["redirect_uri"]
+                let uri = redirectUri?.replacingOccurrences(of: "\n", with: "") ?? ""
+              let clientID = url?.queryParameters?["client_id"]
+                let code =  await processAuthorisationRequestUsingIdToken(
+                    did: did,
+                    authServerWellKnownConfig: authServer,
+                    redirectURI:  uri.trimmingCharacters(in: .whitespaces) ,
+                    nonce: nonce ?? "",
+                    state: state ?? "", clientID: clientID ?? "")
+                return WrappedResponse(data: code, error: nil)
+            }
         } else {
-            // if 'code' is not present
-            let url = URL(string: responseUrl)
-            let state = url?.queryParameters?["state"]
-            let nonce = url?.queryParameters?["nonce"]
-            let redirectUri = url?.queryParameters?["redirect_uri"]
-            let uri = redirectUri?.replacingOccurrences(of: "\n", with: "") ?? ""
-          let clientID = url?.queryParameters?["client_id"]
-            let code =  await processAuthorisationRequestUsingIdToken(
-                did: did,
-                authServerWellKnownConfig: authServer,
-                redirectURI:  uri.trimmingCharacters(in: .whitespaces) ,
-                nonce: nonce ?? "",
-                state: state ?? "", clientID: clientID ?? "")
-            return WrappedResponse(data: code, error: nil)
+            return WrappedResponse(data: authorizationURL.absoluteString, error: nil)
         }
     }
     
     
-    private func processAuthorisationRequestUsingIdToken(
+    public func processAuthorisationRequestUsingIdToken(
         did: String,
         authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration,
         redirectURI: String,
@@ -665,7 +669,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                var jsonObject: [String: Any]?
                 var responseData: Data?
                 if httpRes?.value(forHTTPHeaderField: "Content-Type") == "application/jwt", let responseString = String(data: data, encoding: .utf8) {
-                    if let decryptedData = JWEDecryptor().decryptJWE(responseString, privateKey: privateKey) {
+                    if let decryptedData = JWEDecryptor().decrypt(responseString, privateKey: privateKey) {
                         jsonObject = try JSONSerialization.jsonObject(with: decryptedData.data(using: .utf8)!, options: []) as? [String: Any]
                         responseData = decryptedData.data(using: .utf8)!
                     }
@@ -737,7 +741,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 var jsonObject: [String: Any]?
                 var responseData: Data?
                 if httpRes?.value(forHTTPHeaderField: "Content-Type") == "application/jwt", let responseString = String(data: data, encoding: .utf8) {
-                    if let decryptedData = JWEDecryptor().decryptJWE(responseString, privateKey: privateKey) {
+                    if let decryptedData = JWEDecryptor().decrypt(responseString, privateKey: privateKey) {
                         jsonObject = try JSONSerialization.jsonObject(with: decryptedData.data(using: .utf8)!, options: []) as? [String: Any]
                         responseData = decryptedData.data(using: .utf8)!
                     }
