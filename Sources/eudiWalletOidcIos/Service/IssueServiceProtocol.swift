@@ -61,7 +61,7 @@ protocol IssueServiceProtocol {
      - deferredCredentialEndPoint - end point to call the deferred credential
      **/
     //    - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
-    func processDeferredCredentialRequest(acceptanceToken: String, deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?) async -> CredentialResponse?
+    func processDeferredCredentialRequest(acceptanceToken: String, deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?, jwks: [String: Any]?, encryptionRequired: Bool?) async -> CredentialResponse?
     
     func getFormatFromIssuerConfig(
         issuerConfig: IssuerWellKnownConfiguration?,

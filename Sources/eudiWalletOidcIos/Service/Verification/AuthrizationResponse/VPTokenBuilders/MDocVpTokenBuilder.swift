@@ -205,7 +205,7 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         return nil
     }
     
-    func getDocTypeFromIssuerAuth(cborData: CBOR) -> String? {
+    public func getDocTypeFromIssuerAuth(cborData: CBOR) -> String? {
         guard case let CBOR.array(elements) = cborData else {
             print("Expected CBOR array, but got something else.")
             return nil

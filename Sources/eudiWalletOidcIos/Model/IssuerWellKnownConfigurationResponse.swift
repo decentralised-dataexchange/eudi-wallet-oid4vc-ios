@@ -106,6 +106,7 @@ struct DataSharingResponse: Codable {
     var display: [DisplayResponse]?
     var credentialDefinition: IssuerCredentialDefinitionResponse?
     var docType: String?
+    public let credentialMetadata: CredentialMetadata?
     
     enum CodingKeys: String, CodingKey {
         case format, scope
@@ -113,7 +114,8 @@ struct DataSharingResponse: Codable {
         case cryptographicSuitesSupported = "cryptographic_suites_supported"
         case display
         case credentialDefinition = "credential_definition"
-    case docType = "doctype"
+        case docType = "doctype"
+        case credentialMetadata = "credential_metadata"
     }
 }
 
@@ -123,12 +125,14 @@ struct DataSharingOldFormatResponse: Codable {
     var trustFramework: TrustFrameworkResponse?
     var display: [DisplayResponse]?
     var docType: String?
+    public let credentialMetadata: CredentialMetadata?
     
     enum CodingKeys: String, CodingKey {
         case format, types
         case trustFramework = "trust_framework"
         case display
         case docType = "doctype"
+        case credentialMetadata = "credential_metadata"
     }
 }
 
@@ -139,15 +143,17 @@ struct DataSharingResponseV2: Codable {
     var display: [DisplayResponse]?
     var credentialDefinition: IssuerCredentialDefinitionResponse?
     var vct: String?
-        var docType: String?
+    var docType: String?
+    public let credentialMetadata: CredentialMetadata?
     
     enum CodingKeys: String, CodingKey {
         case format, scope, vct
         case cryptographicBindingMethodsSupported = "cryptographic_binding_methods_supported"
         case cryptographicSuitesSupported = "credential_signing_alg_values_supported"
-    case credentialDefinition = "credential_definition"
+        case credentialDefinition = "credential_definition"
         case display
         case docType = "doctype"
+        case credentialMetadata = "credential_metadata"
     }
 }
 
@@ -200,6 +206,7 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
     public let notificationEndPoint: String?
     let nonceEndpoint: String?
     public let credentialResponseEncryption: CredentialResponseEncryptionModel?
+    public let credentialRequestEncryption: CredentialRequestEncryption?
     
     enum CodingKeys: String, CodingKey {
         case credentialIssuer = "credential_issuer"
@@ -212,6 +219,7 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
         case notificationEndPoint = "notification_endpoint"
         case nonsceEndpoint = "nonce_endpoint"
         case credentialResponseEncryption = "credential_response_encryption"
+        case credentialRequestEncryption = "credential_request_encryption"
     }
     
     public func encode(to encoder: Encoder) throws {
@@ -244,5 +252,6 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
         notificationEndPoint = try? container.decode(String.self, forKey: .notificationEndPoint)
         nonceEndpoint = try? container.decode(String.self, forKey: .nonsceEndpoint)
         credentialResponseEncryption = try? container.decode(CredentialResponseEncryptionModel.self, forKey: .credentialResponseEncryption)
+        credentialRequestEncryption = try? container.decode(CredentialRequestEncryption.self, forKey: .credentialRequestEncryption)
     }
 }

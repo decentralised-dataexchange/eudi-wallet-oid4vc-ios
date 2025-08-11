@@ -15,7 +15,7 @@ class JWEEncryptor {
         payload: [String: Any],
         presentationRequest: PresentationRequest?
     ) async throws -> String {
-        // 1. Get P-256 public key from `jwks` or `jwks_uri`
+        
         let jwk: [String: Any]
         var clientMetaData: [String: Any] = [:]
         if let clientMetaDataString = presentationRequest?.clientMetaData, let dataObject = clientMetaDataString.data(using: .utf8) {
@@ -37,37 +37,34 @@ class JWEEncryptor {
             throw NSError(domain: "JWE", code: 400, userInfo: [NSLocalizedDescriptionKey: "No P-256 key found"])
         }
 
-        guard let x = jwk["x"] as? String,
-              let y = jwk["y"] as? String,
-              let kid = jwk["kid"] as? String else {
+        return try await encrypt(payload: payload,
+                       jwks: jwk,
+                       nonce: presentationRequest?.nonce,
+                       clientID: presentationRequest?.clientId)
+    }
+    
+    func encrypt(
+        payload: [String: Any],
+        jwks: [String: Any]?,
+        nonce: String? = nil,
+        clientID: String? = nil
+    ) async throws -> String {
+        guard let x = jwks?["x"] as? String,
+              let y = jwks?["y"] as? String,
+              let kid = jwks?["kid"] as? String else {
             throw NSError(domain: "JWE", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid JWK"])
         }
-
-        // 2. Build public EC key (JWK)
-        //let ecKey = try EphemeralPublicKey(x: x, y: y)
-        
         let ecKeyData = ECPublicKey(crv: .P256, x: x, y: y, additionalParameters: ["kid": kid])
-        
-        let ecKeyjwk: [String: Any] = [
-            "kty": "EC",
-            "crv": "P-256",
-            "x": x,
-            "y": y,
-            "kid": kid
-        ]
-
-        // 3. JWE Header with ECDH-ES + A128CBC-HS256
         var header = JWEHeader(keyManagementAlgorithm: .ECDH_ES, contentEncryptionAlgorithm: .A128CBCHS256)
         header.kid = kid
-        //header["apu"] = presentationRequest?.clientId?.data(using: .utf8)
-        // set header key apu and value presentationRequest.clientId?.data(using: .utf8)
-            // set apv presentationRequest.nonce?.data(using: .utf8)
-        let apuData = presentationRequest?.clientId?.data(using: .utf8)
-        let apvData = presentationRequest?.nonce?.data(using: .utf8)
-        header.apu = apuData?.base64URLEncodedString()
-        header.apv = apvData?.base64URLEncodedString()
-//        header.agreementPartyUInfo = presentationRequest.clientId?.data(using: .utf8)
-//        header.agreementPartyVInfo = presentationRequest.nonce?.data(using: .utf8)
+        if let nonce = nonce, !nonce.isEmpty {
+            let apvData = nonce.data(using: .utf8)
+            header.apv = apvData?.base64URLEncodedString()
+        }
+        if let clientID = clientID, !clientID.isEmpty {
+            let apuData = clientID.data(using: .utf8)
+            header.apu = apuData?.base64URLEncodedString()
+        }
 
         // 4. Convert payload to JSON data
         let payloadData = try JSONSerialization.data(withJSONObject: payload, options: [])
@@ -75,9 +72,6 @@ class JWEEncryptor {
         // 5. Encrypt
         let payloadEncrypted = Payload(payloadData)
         let encrypter = try Encrypter(keyManagementAlgorithm: .ECDH_ES, contentEncryptionAlgorithm: .A128CBCHS256, encryptionKey: ecKeyData)
-//        ECDHEncrypter(keyEncryptionAlgorithm: .ECDH_ES,
-//                                          encryptionAlgorithm: .A128CBCHS256,
-//                                          recipientPublicKey: ecKey)
         guard let encrypter = encrypter else { return ""}
         let jwe = try JWE(header: header, payload: payloadEncrypted, encrypter: encrypter)
 
