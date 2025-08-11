@@ -544,13 +544,22 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let doctType = getDocTypeFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
             var params: [String: Any] = [:]
             if authDetails != nil && authDetails?.type == "openid_credential" && authDetails?.credentialIdentifiers != nil {
-                params = [
-                    "credential_identifier": authDetails?.credentialIdentifiers?.first,
-                    "proof": [
-                        "proof_type": "jwt",
-                        "jwt": idToken
+                if issuerConfig.credentialRequestEncryption != nil {
+                    params = [
+                        "credential_identifier": authDetails?.credentialIdentifiers?.first,
+                        "proofs": [
+                            "jwt": [idToken]
+                        ]
                     ]
-                ]
+                } else {
+                    params = [
+                        "credential_identifier": authDetails?.credentialIdentifiers?.first,
+                        "proof": [
+                            "proof_type": "jwt",
+                            "jwt": idToken
+                        ]
+                    ]
+                }
             } else if authDetails != nil && authDetails?.type == "openid_credential" && authDetails?.credentialConfigId != nil && issuerConfig.nonceEndPoint != nil {
                 params = [
                     "credential_configuration_id": authDetails?.credentialConfigId,
@@ -567,8 +576,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                         "jwt": idToken
                     ]
                 ]
-        
-    } else if formatT == "mso_mdoc" {
+            } else if formatT == "mso_mdoc" {
                 params = [
                     "doctype": doctType,
                     "format": formatT,
@@ -609,7 +617,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
                         ]
                     ]
                 } else {
-                    
                     if let data = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "") {
                         if let dataArray = data as? [String] {
                             params = [
@@ -644,13 +651,28 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Set up the request for the credential endpoint
             request = URLRequest(url: url)
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if issuerConfig.credentialRequestEncryption?.encryptionRequired == true  {
+                request.setValue("application/jwt", forHTTPHeaderField: "Content-Type")
+            } else {
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
             request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             request.httpMethod = "POST"
-            
-            // Convert the parameters to JSON data and set it as the request body
-            let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
-            request.httpBody =  requestBodyData
+            if issuerConfig.credentialRequestEncryption?.encryptionRequired == true {
+                let credentialRequestEncryptionJwks = issuerConfig.credentialRequestEncryption?.jwks?.first?.dictionary
+                var encryptRequest = ""
+                do {
+                    encryptRequest = try await JWEEncryptor().encrypt(payload: params, jwks: credentialRequestEncryptionJwks)
+                } catch {
+                    encryptRequest = ""
+                }
+                // Convert the parameters to JSON data and set it as the request body
+                let requestBodyData = encryptRequest.data(using: .utf8)
+                request.httpBody =  requestBodyData
+            } else {
+                let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
+                request.httpBody =  requestBodyData
+            }
             
             // Perform the request and handle the response
             do {
@@ -665,8 +687,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                         return CredentialResponse(fromError: error)
                     }
                 }
-            
-               var jsonObject: [String: Any]?
+                var jsonObject: [String: Any]?
                 var responseData: Data?
                 if httpRes?.value(forHTTPHeaderField: "Content-Type") == "application/jwt", let responseString = String(data: data, encoding: .utf8) {
                     if let decryptedData = JWEDecryptor().decrypt(responseString, privateKey: privateKey) {
@@ -690,7 +711,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                     return CredentialResponse(from: model)
                 } else {
                     //let error = EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil))
-            let error = ErrorHandler.processError(data: data, contentType: httpRes?.value(forHTTPHeaderField: "Content-Type"))
+                    let error = ErrorHandler.processError(data: data, contentType: httpRes?.value(forHTTPHeaderField: "Content-Type"))
                     return CredentialResponse(fromError: error ?? EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil)))
                 }
             } catch {
@@ -712,13 +733,17 @@ public class IssueService: NSObject, IssueServiceProtocol {
     
     public func processDeferredCredentialRequest(
         acceptanceToken: String,
-        deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?) async -> CredentialResponse? {
+        deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?, jwks: [String: Any]?, encryptionRequired: Bool?) async -> CredentialResponse? {
             
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: deferredCredentialEndPoint) else { return nil }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if encryptionRequired == true {
+                request.setValue("application/jwt", forHTTPHeaderField: "Content-Type")
+            } else {
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
             
             if version == "v1" {
                 request.setValue( "Bearer \(acceptanceToken)", forHTTPHeaderField: "Authorization")
@@ -729,8 +754,19 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 var params: [String: Any] = [:]
                 request.setValue( "Bearer \(accessToken ?? "")", forHTTPHeaderField: "Authorization")
                 params = ["transaction_id": acceptanceToken ?? ""]
-                let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
-                request.httpBody =  requestBodyData
+                if encryptionRequired == true {
+                    var encryptRequest = ""
+                    do {
+                        encryptRequest = try await JWEEncryptor().encrypt(payload: params, jwks: jwks)
+                    } catch {
+                        encryptRequest = ""
+                    }
+                    let requestBodyData = encryptRequest.data(using: .utf8)
+                    request.httpBody =  requestBodyData
+                } else {
+                    let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
+                    request.httpBody =  requestBodyData
+                }
             }
             
             
@@ -967,8 +1003,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
     public func getCredentialDisplayFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Display? {
         guard let issuerConfig = issuerConfig else { return nil }
         
-        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
-            return credentialSupported.display?[0] ?? nil
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""], let display =  credentialSupported.display?[0]{
+            return display
+        } else if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""], let credentialMetadata = credentialSupported.credentialMetadata {
+            return credentialMetadata.display?[0]
         } else {
             return nil
         }

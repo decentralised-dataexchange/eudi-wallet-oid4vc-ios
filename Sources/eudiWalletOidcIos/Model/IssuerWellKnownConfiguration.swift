@@ -124,6 +124,7 @@ public struct DataSharing {
     public var credentialDefinition: IssuerCredentialDefinition?
     public var docType: String?
     public var vct: String?
+    public let credentialMetadata: CredentialMetadata?
     
     init(from: DataSharingResponse) {
         format = from.format
@@ -134,7 +135,8 @@ public struct DataSharing {
             display = dataSharingDisplayList.map({ Display(from: $0) })
         }
         credentialDefinition = from.credentialDefinition == nil ? nil : IssuerCredentialDefinition(from: from.credentialDefinition!)
-    docType = from.docType
+        docType = from.docType
+        credentialMetadata = from.credentialMetadata
     }
     init(from: DataSharingResponseV2) {
         format = from.format
@@ -147,16 +149,18 @@ public struct DataSharing {
         credentialDefinition = from.credentialDefinition == nil ? nil : IssuerCredentialDefinition(from: from.credentialDefinition!)
         vct = from.vct
         docType = from.docType
+        credentialMetadata = from.credentialMetadata
     }
     
     init(from: DataSharingOldFormatResponse) {
         format = from.format
         types = from.types
-    docType = from.docType
+        docType = from.docType
         trustFramework = from.trustFramework == nil ? nil : TrustFramework(from: from.trustFramework!)
         if let dataSharingDisplayList = from.display, dataSharingDisplayList.count > 0{
             display = dataSharingDisplayList.map({ Display(from: $0)})
         }
+        credentialMetadata = from.credentialMetadata
     }
 }
 // MARK: - CredentialsSupportedObjectDisplay
@@ -194,7 +198,7 @@ public struct IssuerWellKnownConfiguration {
     public let notificationEndPoint: String?
     public let nonceEndPoint: String?
     public let credentialResponseEncryption: CredentialResponseEncryptionModel?
-    
+    public let credentialRequestEncryption: CredentialRequestEncryption?
     
     public init(from: IssuerWellKnownConfigurationResponse) {
         credentialIssuer = from.credentialIssuer
@@ -225,6 +229,7 @@ public struct IssuerWellKnownConfiguration {
         notificationEndPoint = from.notificationEndPoint
         nonceEndPoint = from.nonceEndpoint
         credentialResponseEncryption = from.credentialResponseEncryption
+        credentialRequestEncryption = from.credentialRequestEncryption
         error = nil
   
     }
@@ -259,6 +264,7 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         notificationEndPoint = from.notificationEndPoint
         nonceEndPoint = from.nonceEndpoint
         credentialResponseEncryption = from.credentialResponseEncryption
+        credentialRequestEncryption = from.credentialRequestEncryption
     }
     
     public init(mCredentialIssuer: String?,
@@ -276,6 +282,7 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         notificationEndPoint = nil
         nonceEndPoint = nil
         credentialResponseEncryption = nil
+        credentialRequestEncryption = nil
     }
     
     init(from: EUDIError) {
@@ -289,6 +296,7 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         notificationEndPoint = nil
         nonceEndPoint = nil
         credentialResponseEncryption = nil
+        credentialRequestEncryption = nil
     }
 }
 
@@ -300,4 +308,19 @@ public struct CredentialResponseEncryptionModel: Codable {
         case algValuesSupported = "alg_values_supported"
         case encValuesSupported = "enc_values_supported"
     }
+}
+
+
+public struct CredentialRequestEncryption: Codable {
+    public let jwks: [JWKData]?
+    public let encryptionRequired: Bool?
+    
+    enum CodingKeys: String, CodingKey {
+        case jwks = "jwks"
+        case encryptionRequired = "encryption_required"
+    }
+}
+
+public struct CredentialMetadata: Codable {
+    public let display: [Display]?
 }
