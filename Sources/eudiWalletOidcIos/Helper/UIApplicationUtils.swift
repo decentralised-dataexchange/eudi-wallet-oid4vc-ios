@@ -27,6 +27,18 @@ class UIApplicationUtils {
         return nil
     }
     
+    func convertStringToDictionaryAny(text: String) -> [String:Any]? {
+        if let data = text.data(using: .utf8) {
+            do {
+                let json = try JSONSerialization.jsonObject(with: data, options: .mutableContainers) as? [String:Any]
+                return json
+            } catch {
+                print("Something went wrong")
+            }
+        }
+        return nil
+    }
+    
     // Constructs a URL-encoded string from the given parameters dictionary.
     func getPostString(params: [String:Any]) -> String {
         var data = [String]()

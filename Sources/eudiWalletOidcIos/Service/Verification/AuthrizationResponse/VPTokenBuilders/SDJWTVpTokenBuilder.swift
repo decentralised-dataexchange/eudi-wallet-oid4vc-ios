@@ -15,7 +15,10 @@ class SDJWTVpTokenBuilder : VpTokenBuilder{
     func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) async -> String? {
         let item = credentials.first ?? ""
         var claims: [String: Any] = [:]
-        claims["aud"] = presentationRequest?.clientId ?? ""
+        let split = presentationRequest?.clientId?.components(separatedBy: "/")
+        let udatedClientId = split?.dropLast()
+        
+        claims["aud"] = "iar:\(udatedClientId?.joined(separator: "/") ?? "")/iar"
         claims["nonce"] = presentationRequest?.nonce ?? ""
         
         var queryItem: Any?

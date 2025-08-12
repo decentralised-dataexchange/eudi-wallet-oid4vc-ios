@@ -15,6 +15,9 @@ public struct PresentationRequest: Codable {
     public var transactionData: [String]?
     public var dcqlQuery: DCQLQuery?
     public var request: String?
+    public var authSession: String?
+    public var type: String?
+    
     enum CodingKeys: String, CodingKey {
         case state = "state"
         case clientId = "client_id"
@@ -33,9 +36,11 @@ public struct PresentationRequest: Codable {
         case transactionData = "transaction_data"
         case dcqlQuery = "dcql_query"
         case request = "request"
+        case authSession = "auth_session"
+        case type = "type"
     }
     
-    public init(state: String?, clientId: String?, redirectUri: String?, responseUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: String?, clientMetaData:  String?, presentationDefinitionUri: String?, clientMetaDataUri: String?, clientIDScheme: String?, transactionData: [String], dcqlQuery: DCQLQuery? = nil, request: String?) {
+    public init(state: String?, clientId: String?, redirectUri: String?, responseUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: String?, clientMetaData:  String?, presentationDefinitionUri: String?, clientMetaDataUri: String?, clientIDScheme: String?, transactionData: [String], dcqlQuery: DCQLQuery? = nil, request: String?, authSession: String?) {
         self.state = state
         self.clientId = clientId
         self.redirectUri = redirectUri
@@ -53,6 +58,7 @@ public struct PresentationRequest: Codable {
         self.transactionData = transactionData
         self.request = request
         self.dcqlQuery = dcqlQuery
+        self.authSession = authSession
     }
     
     public init(from decoder: Decoder) throws {
@@ -88,6 +94,8 @@ public struct PresentationRequest: Codable {
             clientIDScheme = String(scheme)
         }
         dcqlQuery = try container.decodeIfPresent(DCQLQuery.self, forKey: .dcqlQuery)
+        authSession = try container.decodeIfPresent(String.self, forKey: .authSession)
+        type = try container.decodeIfPresent(String.self, forKey: .type)
     }
 }
 public struct ClientMetaData: Codable {
