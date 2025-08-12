@@ -12,6 +12,8 @@ enum ResponseMode: String {
     case directPostJWT = "direct_post.jwt"
     case dcApi = "dc_api"
     case dcApiJWT = "dc_api.jwt"
+    case iarPost = "iar-post"
+    case iarPostJWT = "iar-post.jwt"
 
     init?(from string: String) {
         self.init(rawValue: string)

@@ -20,7 +20,7 @@ class RedirectURIHandler: ClientIdSchemeHandler {
         let uriToInject = ClientIdSchemeRequestHandler().getClientIDFromClientID(afterColon: presentationRequest.clientId ?? "")
         
         switch responseMode {
-        case .directPost, .directPostJWT:
+        case .directPost, .directPostJWT, .iarPost, .iarPostJWT:
             if updated.responseUri?.isEmpty ?? true {
                 updated.responseUri = uriToInject
             }

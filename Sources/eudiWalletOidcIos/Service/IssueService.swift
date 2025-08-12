@@ -223,7 +223,68 @@ public class IssueService: NSObject, IssueServiceProtocol {
             return WrappedResponse(data: nil, error: nil)
         }
         var authorizationURLComponents: URLComponents?
-        if authServer.requirePushedAuthorizationRequests == true {
+        if authServer.interactiveAuthorizationEndpoint != nil {
+            let iarEndpoint = authServer.interactiveAuthorizationEndpoint ?? ""
+            var request = URLRequest(url: URL(string: iarEndpoint)!)
+            request.httpMethod = "POST"
+            
+            let bodyParameters = [
+                "response_type": responseType,
+                "client_id": did,
+                "code_challenge": codeChallenge ?? "",
+                "code_challenge_method": codeChallengeMethod,
+                "redirect_uri": redirectUri,
+                "authorization_details": authorizationDetails,
+                "issuer_state": credentialOffer.grants?.authorizationCode?.issuerState ?? "",
+                "interaction_types_supported": "openid4vp_presentation,redirect_to_web",
+            ] as [String: Any]
+            
+            let postString = UIApplicationUtils.shared.getPostString(params: bodyParameters)
+            let parameter = postString.replacingOccurrences(of: "+", with: "%2B")
+            request.httpBody =  parameter.data(using: .utf8)
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            
+            do {
+                let (data, response) = try await session!.data(for: request)
+                guard let authorization_response = String.init(data: data, encoding: .utf8) else { return WrappedResponse(data: nil, error: nil) }
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+                    if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []),
+                       let jsonDict = jsonResponse as? [String: Any]{
+                        let requestURI = jsonDict["request_uri"] as? String
+                        let type = jsonDict["type"] as? String
+                        let status = jsonDict["status"] as? String
+                        if let openid4vpRequest = jsonDict["openid4vp_request"] as? [String: Any] {
+                            let authSession = jsonDict["auth_session"] as? String
+                            authorizationURLComponents = URLComponents(string: authorizationEndpoint)
+                            authorizationURLComponents?.queryItems = [
+                                URLQueryItem(name: "type", value: type),
+                                URLQueryItem(name: "openid4vp_request", value: openid4vpRequest.toString()),
+                                URLQueryItem(name: "request_uri", value: requestURI),
+                                URLQueryItem(name: "auth_session", value: authSession),
+                                URLQueryItem(name: "client_id", value: did)
+                            ]
+                            authorizationURL = authorizationURLComponents?.url
+                        } else {
+                            authorizationURLComponents = URLComponents(string: authorizationEndpoint ?? "")
+                            authorizationURLComponents?.queryItems = [
+                                URLQueryItem(name: "type", value: type),
+                                URLQueryItem(name: "status", value: status),
+                                URLQueryItem(name: "request_uri", value: requestURI),
+                                URLQueryItem(name: "client_id", value: did)
+                            ]
+                            authorizationURL = authorizationURLComponents?.url
+                        }
+                    }
+                } else if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
+                    return WrappedResponse(data: nil, error: ErrorHandler.processError(data: data, contentType: httpResponse.value(forHTTPHeaderField: "Content-Type")))
+                }
+                else {
+                    debugPrint("Failed to get request_uri from the PAR response.")
+                }
+            } catch {
+                debugPrint("Error in making PAR request: \(error.localizedDescription)")
+            }
+        } else if authServer.requirePushedAuthorizationRequests == true {
             let parEndpoint = authServer.pushedAuthorizationRequestEndpoint ?? ""
             var request = URLRequest(url: URL(string: parEndpoint)!)
             request.httpMethod = "POST"
@@ -544,14 +605,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let doctType = getDocTypeFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
             var params: [String: Any] = [:]
             if authDetails != nil && authDetails?.type == "openid_credential" && authDetails?.credentialIdentifiers != nil {
-                if issuerConfig.credentialRequestEncryption != nil {
-                    params = [
-                        "credential_identifier": authDetails?.credentialIdentifiers?.first,
-                        "proofs": [
-                            "jwt": [idToken]
-                        ]
-                    ]
-                } else {
                     params = [
                         "credential_identifier": authDetails?.credentialIdentifiers?.first,
                         "proof": [
@@ -559,7 +612,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
                             "jwt": idToken
                         ]
                     ]
-                }
             } else if authDetails != nil && authDetails?.type == "openid_credential" && authDetails?.credentialConfigId != nil && issuerConfig.nonceEndPoint != nil {
                 params = [
                     "credential_configuration_id": authDetails?.credentialConfigId,
@@ -642,6 +694,14 @@ public class IssueService: NSObject, IssueServiceProtocol {
                     }
                 }
             }
+            
+            if issuerConfig.credentialRequestEncryption != nil {
+                params.removeValue(forKey: "proof")
+                var proofsDict: [String: Any] = [:]
+                proofsDict["jwt"] = [idToken]
+                params["proofs"] = proofsDict
+            }
+            
             if issuerConfig.credentialResponseEncryption != nil && issuerConfig.credentialResponseEncryption?.algValuesSupported?.contains("ECDH-ES") == true && issuerConfig.credentialResponseEncryption?.encValuesSupported?.contains("A128CBC-HS256") == true {
                 let jwk = JWEEncryptor().generateEphemeralEncryptionJWK(privateKey: privateKey)
                 params["credential_response_encryption"] = ["jwk": jwk, "alg": "ECDH-ES", "enc": "A128CBC-HS256"]
@@ -1006,7 +1066,11 @@ public class IssueService: NSObject, IssueServiceProtocol {
         if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""], let display =  credentialSupported.display?[0]{
             return display
         } else if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""], let credentialMetadata = credentialSupported.credentialMetadata {
-            return credentialMetadata.display?[0]
+            var display: [Display]?
+            if let dataSharingDisplayList = credentialMetadata.display, dataSharingDisplayList.count > 0{
+                display = dataSharingDisplayList.map({ Display(from: $0) })
+            }
+            return display?[0]
         } else {
             return nil
         }
