@@ -18,6 +18,7 @@ public struct AuthorisationServerWellKnownConfiguration: Codable {
     public var subjectSyntaxTypesSupported, subjectSyntaxTypesDiscriminations, subjectTrustFrameworksSupported, idTokenTypesSupported: [String]?
     public var requirePushedAuthorizationRequests: Bool?
     public var pushedAuthorizationRequestEndpoint: String?
+    public var interactiveAuthorizationEndpoint: String?
     public var error: EUDIError?
     
     enum CodingKeys: String, CodingKey {
@@ -44,6 +45,7 @@ public struct AuthorisationServerWellKnownConfiguration: Codable {
         case idTokenTypesSupported = "id_token_types_supported"
         case requirePushedAuthorizationRequests = "require_pushed_authorization_requests"
         case pushedAuthorizationRequestEndpoint = "pushed_authorization_request_endpoint"
+        case interactiveAuthorizationEndpoint = "interactive_authorization_endpoint"
     }
 }
 // MARK: - RequestAuthenticationMethodsSupported
