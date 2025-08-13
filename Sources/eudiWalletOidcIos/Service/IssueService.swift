@@ -193,7 +193,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
     public func processAuthorisationRequest(did: String,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,
-                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?, redirectURI: String?, isApiCallRequired: Bool? = false) async -> WrappedResponse? {
+                                            authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?, redirectURI: String?, isApiCallRequired: Bool? = false, wua: String,
+                                            pop: String) async -> WrappedResponse? {
         
         guard let authorizationEndpoint = authServer.authorizationEndpoint else { return WrappedResponse(data: nil, error: nil) }
         let redirectUri = redirectURI ?? "openid://callback"
@@ -222,6 +223,14 @@ public class IssueService: NSObject, IssueServiceProtocol {
         if responseType == "", did == "" {
             return WrappedResponse(data: nil, error: nil)
         }
+        
+        var updatedDid: String? = ""
+        let wuaComponents = wua.split(separator: ".")
+        if wuaComponents.count > 1 {
+            let payload = "\(wuaComponents[1])".decodeBase64()
+            let payloadDict = UIApplicationUtils.shared.convertStringToDictionaryAny(text: payload ?? "") ?? [:]
+            updatedDid = payloadDict["sub"] as? String
+        }
         var authorizationURLComponents: URLComponents?
         if authServer.interactiveAuthorizationEndpoint != nil {
             let iarEndpoint = authServer.interactiveAuthorizationEndpoint ?? ""
@@ -230,7 +239,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             let bodyParameters = [
                 "response_type": responseType,
-                "client_id": did,
+                "client_id": updatedDid ?? did,
                 "code_challenge": codeChallenge ?? "",
                 "code_challenge_method": codeChallengeMethod,
                 "redirect_uri": redirectUri,
@@ -243,6 +252,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let parameter = postString.replacingOccurrences(of: "+", with: "%2B")
             request.httpBody =  parameter.data(using: .utf8)
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+            request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
             
             do {
                 let (data, response) = try await session!.data(for: request)
@@ -291,7 +302,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             let bodyParameters = [
                 "response_type": responseType,
-                "client_id": did,
+                "client_id": updatedDid ?? did,
                 "code_challenge": codeChallenge ?? "",
                 "code_challenge_method": codeChallengeMethod,
                 "redirect_uri": redirectUri,
@@ -307,6 +318,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let parameter = postString.replacingOccurrences(of: "+", with: "%2B")
             request.httpBody =  parameter.data(using: .utf8)
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+            request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
             
             do {
                 let (data, response) = try await session!.data(for: request)
