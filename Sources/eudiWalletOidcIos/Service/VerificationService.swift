@@ -72,26 +72,31 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 var presentationDefinitionUri = URL(string: code)?.queryParameters?["presentation_definition_uri"] ?? ""
                 var clientMetaDataUri = URL(string: code)?.queryParameters?["client_metadata_uri"] ?? ""
                 var clientIDScheme = URL(string: code)?.queryParameters?["client_id_scheme"] ?? ""
-                var dcql = URL(string: code)?.queryParameters?["dcql_query"] ?? ""
+                var dcql = ""
                 var authSession = URL(string: code)?.queryParameters?["auth_session"] ?? ""
                 var openid4vpRequest = URL(string: code)?.queryParameters?["openid4vp_request"] ?? ""
                 var request = ""
+                var dcqlQueryModel: DCQLQuery? = nil
                 if URL(string: code)?.queryParameters?["type"] == "openid4vp_presentation" {
                     if let openid4vpRequest = URL(string: code)?.queryParameters?["openid4vp_request"] as? String,
                        let jsonData = openid4vpRequest.data(using: .utf8) {
                         
                         do {
                             let requestDict = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any]
-                            let requestString = requestDict?["request"] as? String
-                            request = requestString ?? ""
+                            if let requestString = requestDict?["request"] as? String {
+                                request = requestString ?? ""
+                            }
+                            if let dcqlData = requestDict?["dcql_query"] as? [String: Any] {
+                                dcql = dcqlData.toString() ?? ""
+                            }
                         } catch {
                             print("Error parsing JSON: \(error)")
                         }
                     }
                 } else {
                     request = URL(string: code)?.queryParameters?["request"] ?? ""
+                    dcql = URL(string: code)?.queryParameters?["dcql_query"] ?? ""
                 }
-                var dcqlQueryModel: DCQLQuery? = nil
                 if !dcql.isEmpty {
                     if let data = dcql.data(using: .utf8) {
                         do {
@@ -126,16 +131,24 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                     return (presentationRequest, nil)
                     
                 } else if openid4vpRequest != "" {
-                    let split = request.split(separator: ".")
-                    var decodedRequest: [String: Any] = [:]
-                    var decoded = ""
-                    if split.count > 1 {
-                        decoded =  "\(split[1])".decodeBase64() ?? ""
-                        decodedRequest = UIApplicationUtils.shared.convertStringToDictionaryAny(text: decoded ?? "") ?? [:]
-                    }
                     var presentationRquestDataModel: PresentationRequest?
-                    if !decoded.isEmpty {
-                        if let data = decoded.data(using: .utf8) {
+                    if request != "" {
+                        let split = request.split(separator: ".")
+                        var decodedRequest: [String: Any] = [:]
+                        var decoded = ""
+                        if split.count > 1 {
+                            decoded =  "\(split[1])".decodeBase64() ?? ""
+                        }
+                        if !decoded.isEmpty {
+                            if let data = decoded.data(using: .utf8) {
+                                do {
+                                    presentationRquestDataModel = try JSONDecoder().decode(PresentationRequest.self, from: data)
+                                } catch {
+                                }
+                            }
+                        }
+                    } else {
+                        if let data = openid4vpRequest.data(using: .utf8) {
                             do {
                                 presentationRquestDataModel = try JSONDecoder().decode(PresentationRequest.self, from: data)
                             } catch {
