@@ -155,7 +155,10 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                             }
                         }
                     }
-                    let updatedClientID = presentationRquestDataModel?.clientId?.replacingOccurrences(of: "redirect_uri:", with: "")
+                    let resolvedClientID = presentationRquestDataModel?.clientId?.replacingOccurrences(of: "redirect_uri:", with: "")
+                    let split = resolvedClientID?.components(separatedBy: "/")
+                    let splitValue = split?.dropLast()
+                    let updatedClientID = "iar:\(splitValue?.joined(separator: "/") ?? "")/iar"
                     presentationRquestDataModel?.clientId = updatedClientID
                     presentationRquestDataModel?.authSession = authSession
                     presentationRquestDataModel?.type = URL(string: code)?.queryParameters?["type"] ?? ""
