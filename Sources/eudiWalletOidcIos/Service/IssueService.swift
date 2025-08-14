@@ -224,7 +224,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             return WrappedResponse(data: nil, error: nil)
         }
         
-        var updatedDid: String? = ""
+        var updatedDid: String? = nil
         let wuaComponents = wua.split(separator: ".")
         if wuaComponents.count > 1 {
             let payload = "\(wuaComponents[1])".decodeBase64()
@@ -252,8 +252,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let parameter = postString.replacingOccurrences(of: "+", with: "%2B")
             request.httpBody =  parameter.data(using: .utf8)
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
-            request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
+            if wua != "" {
+                request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+                request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
+            }
             
             do {
                 let (data, response) = try await session!.data(for: request)
@@ -275,6 +277,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                 URLQueryItem(name: "client_id", value: did)
                             ]
                             authorizationURL = authorizationURLComponents?.url
+                            return WrappedResponse(data: authorizationURL?.absoluteString, error: nil)
                         } else {
                             authorizationURLComponents = URLComponents(string: authorizationEndpoint ?? "")
                             authorizationURLComponents?.queryItems = [
@@ -284,6 +287,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                 URLQueryItem(name: "client_id", value: did)
                             ]
                             authorizationURL = authorizationURLComponents?.url
+                            return WrappedResponse(data: authorizationURL?.absoluteString, error: nil)
                         }
                     }
                 } else if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
@@ -318,8 +322,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let parameter = postString.replacingOccurrences(of: "+", with: "%2B")
             request.httpBody =  parameter.data(using: .utf8)
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
-            request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
+            if wua != "" {
+                request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+                request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
+            }
             
             do {
                 let (data, response) = try await session!.data(for: request)
@@ -986,8 +992,11 @@ public class IssueService: NSObject, IssueServiceProtocol {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
-            request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
+            if wua != "" {
+                request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+                request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
+                
+            }
             
             request.httpBody = postString.data(using: .utf8)
             
