@@ -6,17 +6,28 @@
 //
 
 import Foundation
+import Crypto
+import CryptoKit
+import JOSESwift
 
 class ProofService {
     
     static func generateProof(nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, did: String, keyHandler: SecureKeyProtocol) async -> String? {
-        let keyId = generateKeyId(credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, keyHandler: keyHandler)
+        let cryptographicBindingMethodsSupported = getCryptographicBindingMethodsFromIssuerConfig(issuerConfig: issuerConfig, type: credentialOffer.credentials?.first?.types?.last)
+        let keyId = generateKeyId(credentialOffer: credentialOffer, bindingMethod: cryptographicBindingMethodsSupported, did: did, keyHandler: keyHandler)
         // Generate JWT Header
-        let header = ([
+        
+        var header = ([
             "typ": "openid4vci-proof+jwt",
             "alg": "ES256",
             "kid": keyId
-        ]).toString() ?? ""
+        ]) as [String : Any]
+        
+        if cryptographicBindingMethodsSupported.contains("jwk") {
+            header["jwk"] = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
+        }
+        
+        let headerString = header.toString() ?? ""
         
         // Generate JWT payload
         let currentTime = Int(Date().epochTime) ?? 0
@@ -27,21 +38,32 @@ class ProofService {
             "exp": currentTime + 86400,
             "nonce": "\(nonce)"
         ] as [String : Any]).toString() ?? ""
-        let headerData = Data(header.utf8)
+        let headerData = Data(headerString.utf8)
         let secureData = await keyHandler.generateSecureKey()
         guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.privateKey) else{return nil}
         return idToken
     }
     
     static func generateKeyId(credentialOffer: CredentialOffer,
-                                issuerConfig: IssuerWellKnownConfiguration, did: String, keyHandler: SecureKeyProtocol) -> String? {
-        let cryptographicBindingMethodsSupported = getCryptographicBindingMethodsFromIssuerConfig(issuerConfig: issuerConfig, type: credentialOffer.credentials?.first?.types?.last)
+                              bindingMethod: [String], did: String, keyHandler: SecureKeyProtocol) -> String? {
+        
         var keyId: String? = nil
         let methodSpecificId = did.replacingOccurrences(of: "did:key:", with: "")
-        if cryptographicBindingMethodsSupported.contains("did:jwk") {
+        if bindingMethod.contains("did:jwk") {
             guard let jwk = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data()) else { return nil }
             let base64JWK = base64URLEncodeJWK(jwk) ?? ""
             keyId = "did:jwk:\(base64JWK)"
+        } else if bindingMethod.contains("jwk") {
+            let jwk = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
+            do {
+                let jsonData = try JSONSerialization.data(withJSONObject: jwk, options: [.sortedKeys])
+                let sha256 = SHA256.hash(data: jsonData)
+                let thumbprint = Data(sha256).base64URLEncodedString()
+                keyId = thumbprint
+            } catch {
+                print("Error generating thumbprint: \(error)")
+                return nil
+            }
         } else {
             keyId = "\(did)#\(methodSpecificId)"
         }
