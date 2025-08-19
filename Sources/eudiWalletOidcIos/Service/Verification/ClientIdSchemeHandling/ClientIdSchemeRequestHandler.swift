@@ -17,15 +17,15 @@ class ClientIdSchemeRequestHandler {
         switch scheme {
         case .redirectURI:
             return RedirectURIHandler().update(presentationRequest: presentationRequest, jwtRequest: jwtRequest)
-        case .did:
+        case .did, .decentralizedIdentifier:
                 let isVerified = try await DIDSchemeHandler().validate(presentationRequest: presentationRequest, jwtRequest: jwtRequest) ?? false
                 if isVerified {
                     return presentationRequest
                 } else {
                     // Handle verification failure
                     // Fix me - throw error - request validation failed
-                    return presentationRequest
-                    //throw PresentationRequestError.requestValidationFailed// or throw an error
+                    //return presentationRequest
+                    throw PresentationRequestError.requestValidationFailed// or throw an error
                 }
         case .verifierAttestation:
                 let isVerified = try await VerifierAttestationSchemeHandler().validate(presentationRequest: presentationRequest, jwtRequest: jwtRequest) ?? false
@@ -34,8 +34,8 @@ class ClientIdSchemeRequestHandler {
                 } else {
                     // Handle verification failure
                     // Fix me - throw error
-                    return presentationRequest
-                    //throw PresentationRequestError.requestValidationFailed// or throw an error
+                    //return presentationRequest
+                    throw PresentationRequestError.requestValidationFailed// or throw an error
                 }
             
         case .x509SanDNS:
@@ -46,7 +46,7 @@ class ClientIdSchemeRequestHandler {
                     return presentationRequest
                     // Fix me - throw error
                     // Handle verification failure
-                    //throw PresentationRequestError.requestValidationFailed// or throw an error
+                   throw PresentationRequestError.requestValidationFailed// or throw an error
                 }
         case .x509SanURI:
                 let isVerified = try await X509SanUriSchemeHandler().validate(presentationRequest: presentationRequest, jwtRequest: jwtRequest) ?? false
