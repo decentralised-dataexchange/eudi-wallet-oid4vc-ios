@@ -409,6 +409,14 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
             return String(floatValue)
         case .double(let doubleValue):
             return String(doubleValue)
+     case .map(let dict):
+        var result: [String] = []
+        for (key, value) in dict {
+            let keyString = cborToString(key)
+            let valueString = cborToString(value)
+            result.append("\"\(keyString)\": \"\(valueString)\"")
+        }
+        return "{\(result.joined(separator: ", "))}"
         default:
             return "Unsupported CBOR type"
         }

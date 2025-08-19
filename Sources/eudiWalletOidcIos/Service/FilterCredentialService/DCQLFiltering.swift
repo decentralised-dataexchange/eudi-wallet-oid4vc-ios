@@ -55,7 +55,7 @@ public class DCQLFiltering {
                 for (pathIndex, claim) in credentialFilter.claims.enumerated() {
                     guard case .pathClaim(let pathClaim) = claim else { continue }
                     let paths = pathClaim.path
-                    let joinedPath = paths.joined(separator: ".")
+                    let joinedPath = paths.joined(separator: ",")
 
                     guard let matchedValue = getValue(from: credentialJSON, forPath: joinedPath) else {
                         continue credentialLoop
@@ -63,7 +63,7 @@ public class DCQLFiltering {
 
                     matchedFields.append(MatchedField(
                         index: credentialIndex,
-                        path: MatchedPath(path: joinedPath, index: pathIndex, value: matchedValue)
+                        path: MatchedPath(path: paths.joined(separator: "."), index: pathIndex, value: matchedValue)
                     ))
                 }
 
@@ -81,24 +81,41 @@ public class DCQLFiltering {
                 var matchedFields: [MatchedField] = []
 
                 for (pathIndex, claim) in credentialFilter.claims.enumerated() {
-                    guard case .namespacedClaim(let namespacedClaim) = claim else { continue }
+                    switch claim {
+                      case .namespacedClaim(let namespacedClaim):
+                        let namespace = namespacedClaim.namespace
+                        let claimName = namespacedClaim.claimName
 
-                    let namespace = namespacedClaim.namespace
-                    let claimName = namespacedClaim.claimName
+                        guard !namespace.isEmpty, !claimName.isEmpty else {
+                            continue credentialLoop
+                        }
 
-                    guard !namespace.isEmpty, !claimName.isEmpty else {
-                        continue credentialLoop
+                        guard let namespaceDict = credentialJSON[namespace] as? [String: Any],
+                              let value = namespaceDict[claimName] else {
+                            continue credentialLoop
+                        }
+
+                        matchedFields.append(MatchedField(
+                            index: credentialIndex,
+                            path: MatchedPath(path: "\(namespace).\(claimName)", index: pathIndex, value: value)
+                        ))
+                    case .pathClaim(let pathClaim):
+                        let paths = pathClaim.path
+                        let joinedPath = paths.joined(separator: ",")
+
+                        guard let matchedValue = getValue(from: credentialJSON, forPath: joinedPath) else {
+                            continue credentialLoop
+                        }
+
+                        matchedFields.append(MatchedField(
+                            index: credentialIndex,
+                            path: MatchedPath(path: paths.joined(separator: "."), index: pathIndex, value: matchedValue)
+                        ))
+                        
+                    default:
+                            continue
                     }
-
-                    guard let namespaceDict = credentialJSON[namespace] as? [String: Any],
-                          let value = namespaceDict[claimName] else {
-                        continue credentialLoop
-                    }
-
-                    matchedFields.append(MatchedField(
-                        index: credentialIndex,
-                        path: MatchedPath(path: "\(namespace).\(claimName)", index: pathIndex, value: value)
-                    ))
+                    
                 }
 
                 filteredList.append(MatchedCredential(index: credentialIndex, fields: matchedFields))
@@ -108,13 +125,15 @@ public class DCQLFiltering {
         return filteredList
     }
 
-    private static func getValue(from json: [String: Any], forPath path: String) -> Any? {
-        let keys = path.split(separator: ".").map { String($0) }
+     private static func getValue(from json: [String: Any], forPath path: String) -> Any? {
+        let keys = path.split(separator: ",").map { String($0) }
         var current: Any = json
 
         for key in keys {
             if let dict = current as? [String: Any], let next = dict[key] {
                 current = next
+            } else if let stringValue = current as? String, /*let sanitisedString = sanitizeToJson(stringValue),*/ let innerDict = UIApplicationUtils.shared.convertStringToDictionary(text: stringValue), let reslut = innerDict[key]{
+                current = reslut
             } else {
                 return nil
             }
