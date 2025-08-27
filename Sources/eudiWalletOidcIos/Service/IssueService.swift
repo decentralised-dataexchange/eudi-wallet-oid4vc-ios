@@ -108,6 +108,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
     private func buildAuthorizationRequestV1(credentialOffer: CredentialOffer?, docType: String, format: String) -> String {
         var authorizationDetails =  if format == "mso_mdoc" {
             "[" + (([
+                "type": "openid_credential",
                 "format": format,
                 "doctype": docType,
                 "locations": [credentialOffer?.credentialIssuer ?? ""]
