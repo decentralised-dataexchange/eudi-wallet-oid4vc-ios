@@ -235,9 +235,16 @@ public struct CurrencyAmount: Codable {
 
 public struct DCQLQuery: Codable {
     public var credentials: [CredentialItems]
+    public var credentialSets: [CredentialSet]?
     
-    public init(credentials: [CredentialItems]) {
+    enum CodingKeys: String, CodingKey {
+        case credentials = "credentials"
+        case credentialSets = "credential_sets"
+    }
+    
+    public init(credentials: [CredentialItems], credentialSets: [CredentialSet]? = nil) {
         self.credentials = credentials
+        self.credentialSets = credentialSets
     }
 }
 
@@ -252,6 +259,16 @@ public struct CredentialItems: Codable {
         self.format = format
         self.meta = meta
         self.claims = claims
+    }
+}
+
+public struct CredentialSet: Codable {
+    public let required: Bool?
+    public let options: [[String]]
+    
+    public init(required: Bool? = nil, options: [[String]]) {
+        self.required = required
+        self.options = options
     }
 }
 

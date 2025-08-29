@@ -36,8 +36,10 @@ class DCQLAuthorisationResponseBuilder {
                    case .jwt:
                        hasDoctype = false
                    }
-            
-            credentialMap[credential.id] = await generateVpTokensBasedOfCredntialFormat(credential: credentialsList[index], presentationRequest: presentationRequest, did: did, isMdoc: hasDoctype, index: index, keyHandler: keyHandler, format: format)
+            let generatedVPToken = await generateVpTokensBasedOfCredntialFormat(credential: credentialsList[index], presentationRequest: presentationRequest, did: did, isMdoc: hasDoctype, index: index, keyHandler: keyHandler, format: format)
+            if !generatedVPToken.isEmpty {
+                credentialMap[credential.id] = generatedVPToken
+            }
         }
         // Example: embed this dictionary in a vp_token structure
         let mainVpToken = generateMainVPToken(from: credentialMap)
