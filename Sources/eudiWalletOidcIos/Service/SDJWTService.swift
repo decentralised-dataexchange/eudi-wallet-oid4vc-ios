@@ -116,9 +116,9 @@ public class SDJWTService {
                     }
                 if credentialFormat == "mso_mdoc" {
                     tempCredentialList = credentialList
-                    processedCredentials = verificationHandler?.processCborCredentialToJsonString(credentialList: tempCredentialList) ?? []
+                    processedCredentials = FilterCredentialService().processCborCredentialToJsonString(credentialList: tempCredentialList) ?? []
                 } else {
-                    tempCredentialList = verificationHandler?.splitCredentialsBySdJWT(allCredentials: credentialList, isSdJwt: inputDescriptor.constraints?.limitDisclosure != nil) ?? []
+                    tempCredentialList = FilterCredentialService().splitCredentialsBySdJWT(allCredentials: credentialList, isSdJwt: inputDescriptor.constraints?.limitDisclosure != nil) ?? []
                     
                     processedCredentials = verificationHandler?.processCredentialsToJsonString(credentialList: tempCredentialList) ?? []
                 }
@@ -222,11 +222,11 @@ public class SDJWTService {
             }
             if credentialFormat == "mso_mdoc" {
                 tempCredentialList = credentialList
-                processedCredentials = verificationHandler?.processCborCredentialToJsonString(credentialList: tempCredentialList) ?? []
+                processedCredentials = FilterCredentialService().processCborCredentialToJsonString(credentialList: tempCredentialList) ?? []
             } else {
                 tempCredentialList = credentialList
                 
-                processedCredentials = verificationHandler?.processCredentialsToJsonString(credentialList: tempCredentialList) ?? []
+                processedCredentials = FilterCredentialService().processCredentialsToJsonString(credentialList: tempCredentialList) ?? []
             }
             
             let matchesString = DCQLFiltering.filterCredentialUsingSingleDCQLCredentialFilter(credentialFilter: dcqlData, credentialList: credentialList)

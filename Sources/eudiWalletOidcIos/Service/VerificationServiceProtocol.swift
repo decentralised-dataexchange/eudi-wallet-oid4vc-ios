@@ -43,5 +43,4 @@ protocol VerificationServiceProtocol {
        - presentationDefinition: The presentation definition model containing the criteria for filtering.
      - Returns: An array of arrays of filtered credentials, where each inner array represents a set of credentials that satisfy the presentation definition criteria.
      */
-    func filterCredentials(credentialList: [String?], presentationDefinition: PresentationDefinitionModel) -> [[String]]
 }
