@@ -12,7 +12,7 @@ class JWTVpTokenBuilder : VpTokenBuilder{
     
     func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) async -> String? {
         var jwtPayload: String? = nil
-        if !credentials.isEmpty {
+        if credentials.first?.isEmpty == false {
             let uuid4 = UUID().uuidString
             let jwtVP =
             ([
