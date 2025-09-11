@@ -100,6 +100,7 @@ public struct PresentationRequest: Codable {
 }
 public struct ClientMetaData: Codable {
     public var clientName, coverUri, description, location, logoUri, legalPidAttestation, legalPidAttestationPop, authorizationEncryptedResponseAlg, authorizationEncryptedResponseEnc, idTokenEncryptedResponseAlg, id_token_encrypted_response_enc, jwks_uri, id_token_signed_response_alg : String?
+    public var version: String?
     public var subject_syntax_types_supported: [String]?
     public var jwks: JWKS?
     
@@ -119,9 +120,10 @@ public struct ClientMetaData: Codable {
         case subject_syntax_types_supported = "subject_syntax_types_supported"
         case id_token_signed_response_alg = "id_token_signed_response_alg"
         case jwks = "jwks"
+        case version = "version"
     }
     
-    public init(clientName: String?, coverUri: String?, description: String?, location: String?, logoUri: String?, legalPidAttestation: String?, legalPidAttestationPop: String?, authorizationEncryptedResponseAlg: String? = nil, authorizationEncryptedResponseEnc: String? = nil, idTokenEncryptedResponseAlg: String? = nil, id_token_encrypted_response_enc: String? = nil, jwks_uri: String? = nil,subject_syntax_types_supported: [String]? = nil, id_token_signed_response_alg: String? = nil, jwks: JWKS? = nil) {
+    public init(clientName: String?, coverUri: String?, description: String?, location: String?, logoUri: String?, legalPidAttestation: String?, legalPidAttestationPop: String?, authorizationEncryptedResponseAlg: String? = nil, authorizationEncryptedResponseEnc: String? = nil, idTokenEncryptedResponseAlg: String? = nil, id_token_encrypted_response_enc: String? = nil, jwks_uri: String? = nil,subject_syntax_types_supported: [String]? = nil, id_token_signed_response_alg: String? = nil, jwks: JWKS? = nil, version: String? = nil) {
         self.clientName = clientName
         self.coverUri = coverUri
         self.description = description
@@ -137,6 +139,7 @@ public struct ClientMetaData: Codable {
         self.subject_syntax_types_supported = subject_syntax_types_supported
         self.id_token_signed_response_alg = id_token_signed_response_alg
         self.jwks = jwks
+        self.version = version
     }
     
     public init(from decoder: Decoder) throws {
@@ -156,6 +159,7 @@ public struct ClientMetaData: Codable {
         subject_syntax_types_supported = try container.decodeIfPresent([String].self, forKey: .subject_syntax_types_supported)
         id_token_signed_response_alg = try container.decodeIfPresent(String.self, forKey: .id_token_signed_response_alg)
         jwks = try container.decodeIfPresent(JWKS.self, forKey: .jwks)
+        version = try container.decodeIfPresent(String.self, forKey: .version)
     }
     
 }

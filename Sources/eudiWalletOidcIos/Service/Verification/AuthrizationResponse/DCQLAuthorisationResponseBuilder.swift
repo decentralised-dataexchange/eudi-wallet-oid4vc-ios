@@ -22,7 +22,7 @@ class DCQLAuthorisationResponseBuilder {
             return params
         }
         
-        var credentialMap: [String: String] = [:]
+        var credentialMap: [String: Any] = [:]
         
         for (index, credential) in dcqlCredentials.enumerated() {
             
@@ -37,8 +37,21 @@ class DCQLAuthorisationResponseBuilder {
                        hasDoctype = false
                    }
             let generatedVPToken = await generateVpTokensBasedOfCredntialFormat(credential: credentialsList[index], presentationRequest: presentationRequest, did: did, isMdoc: hasDoctype, index: index, keyHandler: keyHandler, format: format)
+            let clientDataString = presentationRequest?.clientMetaData?.replacingOccurrences(of: "+", with: " ")
+            let clientMetadataJson = clientDataString?.data(using: .utf8)!
+            var clientMetaDataModel: ClientMetaData? = nil
+            if let data = clientMetadataJson {
+                clientMetaDataModel = try? JSONDecoder().decode(eudiWalletOidcIos.ClientMetaData.self, from: data)
+            }
+            
+            var generatedToken: Any? = nil
+            if let version = clientMetaDataModel?.version, version == "draft_23" {
+                generatedToken = generatedVPToken
+            } else {
+                generatedToken = [generatedVPToken]
+            }
             if !generatedVPToken.isEmpty {
-                credentialMap[credential.id] = generatedVPToken
+                credentialMap[credential.id] = generatedToken
             }
         }
         // Example: embed this dictionary in a vp_token structure
@@ -50,7 +63,7 @@ class DCQLAuthorisationResponseBuilder {
         return params
     }
     
-    private func generateMainVPToken(from credentialMap: [String: String]) -> String {
+    private func generateMainVPToken(from credentialMap: [String: Any]) -> String {
         // Replace with actual VP token generation logic (JWS/JWT/JWE etc.)
         // For now, we just JSON-encode it
         if let jsonData = try? JSONSerialization.data(withJSONObject: credentialMap, options: []),
