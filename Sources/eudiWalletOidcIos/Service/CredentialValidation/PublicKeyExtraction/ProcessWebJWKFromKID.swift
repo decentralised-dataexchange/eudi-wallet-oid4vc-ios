@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Base58Swift
 
 class ProcessWebJWKFromKID {
     static func fetchDIDDocument(did: String) async throws -> [String: Any]? {
@@ -42,6 +43,29 @@ class ProcessWebJWKFromKID {
                 }
             }
         }
+        
+        // Fallback: if no JWK found, pick first with publicKeyBase58
+        if publicKeyJwk == nil {
+            if let verificationMethod = didDoc?["verificationMethod"] as? [[String: Any]] {
+                if let firstBase58Item = verificationMethod.first(where: { $0["publicKeyBase58"] != nil }) {
+                    if let publicKeyBase58 = firstBase58Item["publicKeyBase58"] as? String {
+                        if let pubBytes = Base58.base58Decode(publicKeyBase58) {
+                            let pubData = Data(pubBytes)
+                            let x = pubData.base64URLEncodedString()
+                            
+                            // Construct a JWK dictionary
+                            publicKeyJwk = [
+                                "kty": "OKP",
+                                "crv": "Ed25519",
+                                "x": x
+                            ]
+                        }
+                    }
+                    
+                }
+            }
+        }
+        
         return publicKeyJwk
     }
 }
