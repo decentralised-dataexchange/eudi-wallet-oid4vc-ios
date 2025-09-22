@@ -105,6 +105,13 @@ public class SignatureValidator {
                 var publicKey: Any?
                 if alg == "RS256" {
                     publicKey = createRSAPublicKey(from: data as? [String: Any] ?? [:])
+                } else if alg == "EdDSA" {
+                    // Expect crv == "Ed25519"
+                    guard let jwkData = data as? [String: Any], let crv = jwkData["crv"] as? String, crv == "Ed25519" else {
+                        validationResults.append(false)
+                        continue
+                    }
+                    publicKey = extractPublicKey(from: jwkData, crv: crv)
                 } else {
                     guard let jwkData = data as? [String: Any], let crv = jwkData["crv"] as? String else {
                         validationResults.append(false)
@@ -207,18 +214,24 @@ public class SignatureValidator {
     }
     
     static private func extractPublicKey(from jwk: [String: Any], crv: String? = "ES") -> Any? {
-        guard let crv = jwk["crv"] as? String,
-              let x = jwk["x"] as? String,
-              let y = jwk["y"] as? String,
-              let xData = Data(base64URLEncoded: x),
-              let yData = Data(base64URLEncoded: y) else {
-            return nil
-        }
         
         var publicKeyData = Data()
-        publicKeyData.append(0x04)
-        publicKeyData.append(xData)
-        publicKeyData.append(yData)
+        if let crv = jwk["crv"] as? String, crv == "Ed25519"{
+            guard let x = jwk["x"] as? String else {
+                return nil
+            }
+        } else {
+            guard let x = jwk["x"] as? String,
+                  let y = jwk["y"] as? String,
+                  let xData = Data(base64URLEncoded: x),
+                  let yData = Data(base64URLEncoded: y) else {
+                return nil
+            }
+            
+            publicKeyData.append(0x04)
+            publicKeyData.append(xData)
+            publicKeyData.append(yData)
+        }
         
         do {
             switch crv {
@@ -228,6 +241,12 @@ public class SignatureValidator {
                 return try P384.Signing.PublicKey(x963Representation: publicKeyData)
             case "P-521":
                 return try P521.Signing.PublicKey(x963Representation: publicKeyData)
+            case "Ed25519":
+                guard let xStr = jwk["x"] as? String,
+                    let xData = Data(base64URLEncoded: xStr) else {
+                    return nil
+                }
+                return try Curve25519.Signing.PublicKey(rawRepresentation: xData)
             default:
                 return try P256.Signing.PublicKey(x963Representation: publicKeyData)
             }
@@ -261,6 +280,8 @@ public class SignatureValidator {
                 }
                 return publicKey.isValidSignature(ecdsaSignature, for: data)
                 
+            case let publicKey as Curve25519.Signing.PublicKey:
+                return publicKey.isValidSignature(signature, for: data)
             case let publicKey as SecKey:
                         // Using SecKey for RS256 verification
                         let algorithm: SecKeyAlgorithm = .rsaSignatureMessagePKCS1v15SHA256
