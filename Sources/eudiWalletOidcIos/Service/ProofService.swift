@@ -19,12 +19,13 @@ class ProofService {
         
         var header = ([
             "typ": "openid4vci-proof+jwt",
-            "alg": "ES256",
-            "kid": keyId
+            "alg": "ES256"
         ]) as [String : Any]
         
         if cryptographicBindingMethodsSupported.contains("jwk") {
             header["jwk"] = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
+        } else  {
+            header["kid"] = keyId
         }
         
         let headerString = header.toString() ?? ""
