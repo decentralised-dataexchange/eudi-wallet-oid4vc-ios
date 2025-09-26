@@ -375,7 +375,7 @@ public enum Claim: Codable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        if let path = try? container.decode([String].self, forKey: .path) {
+        if let path = try? container.decode([String?].self, forKey: .path) {
             self = .pathClaim(PathClaim(path: path))
         } else if let namespace = try? container.decode(String.self, forKey: .namespace),
                   let claimName = try? container.decode(String.self, forKey: .claim_name) {
@@ -398,9 +398,9 @@ public enum Claim: Codable {
 }
 
 public struct PathClaim: Codable {
-    public let path: [String]
+    public let path: [String?]
     
-    public init(path: [String]) {
+    public init(path: [String?]) {
         self.path = path
     }
 }

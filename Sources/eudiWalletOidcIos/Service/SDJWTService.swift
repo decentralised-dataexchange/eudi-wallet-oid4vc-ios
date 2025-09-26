@@ -185,7 +185,8 @@ public class SDJWTService {
             
             for (pathIndex, claim) in dcqlData.claims.enumerated() {
                 guard case .pathClaim(let pathClaim) = claim else { continue }
-                let paths = pathClaim.path.last
+            let nonNilPaths = pathClaim.path.compactMap { $0 }
+                let paths = nonNilPaths.last
                 requestedParams.append(String(paths ?? ""))
             }
             
