@@ -51,7 +51,8 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     } else if let dcql = queryItem as? CredentialItems {
                         for (pathIndex, claim) in dcql.claims.enumerated() {
                             guard case .pathClaim(let pathClaim) = claim else { continue }
-                            let paths = pathClaim.path.last
+                let nonNilPaths = pathClaim.path.compactMap { $0 }
+                            let paths = nonNilPaths.last
                             requestedParams.append(String(paths ?? ""))
                         }
                         switch dcql.meta {
@@ -136,7 +137,8 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         } else if let dcql = query as? CredentialItems {
             for (pathIndex, claim) in dcql.claims.enumerated() {
                 guard case .pathClaim(let pathClaim) = claim else { continue }
-                let paths = pathClaim.path.last
+        let nonNilPaths = pathClaim.path.compactMap { $0 }
+                let paths = nonNilPaths.last
                 requestedParams.append(String(paths ?? ""))
             }
         }

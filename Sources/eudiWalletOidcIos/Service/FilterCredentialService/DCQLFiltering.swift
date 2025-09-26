@@ -55,15 +55,16 @@ public class DCQLFiltering {
                 for (pathIndex, claim) in credentialFilter.claims.enumerated() {
                     guard case .pathClaim(let pathClaim) = claim else { continue }
                     let paths = pathClaim.path
-                    let joinedPath = paths.joined(separator: ",")
+                    let nonNilPaths = paths.compactMap { $0 }
+                    let joinedPath = nonNilPaths.joined(separator: ",")
 
                     guard let matchedValue = getValue(from: credentialJSON, forPath: joinedPath) else {
                         continue credentialLoop
                     }
-
+            
                     matchedFields.append(MatchedField(
                         index: credentialIndex,
-                        path: MatchedPath(path: paths.joined(separator: "."), index: pathIndex, value: matchedValue)
+                        path: MatchedPath(path: joinedPath, index: pathIndex, value: matchedValue)
                     ))
                 }
 
@@ -101,7 +102,8 @@ public class DCQLFiltering {
                         ))
                     case .pathClaim(let pathClaim):
                         let paths = pathClaim.path
-                        let joinedPath = paths.joined(separator: ",")
+                    let nonNilPaths = paths.compactMap { $0 }
+                        let joinedPath = nonNilPaths.joined(separator: ",")
 
                         guard let matchedValue = getValue(from: credentialJSON, forPath: joinedPath) else {
                             continue credentialLoop
@@ -109,7 +111,7 @@ public class DCQLFiltering {
 
                         matchedFields.append(MatchedField(
                             index: credentialIndex,
-                            path: MatchedPath(path: paths.joined(separator: "."), index: pathIndex, value: matchedValue)
+                            path: MatchedPath(path: joinedPath, index: pathIndex, value: matchedValue)
                         ))
                         
                     default:
