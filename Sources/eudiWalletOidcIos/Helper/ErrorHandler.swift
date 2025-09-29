@@ -45,6 +45,8 @@ class ErrorHandler {
                 } else if let error = jsonObject["detail"] as? [String: Any] {
                     let errorDetail = error["error_description"] as? String
                     errorResponse = EUDIError(from: ErrorResponse(message:errorDetail, code: -1))
+                } else if let errorMessage = jsonObject["message"] as? String {
+                    errorResponse = EUDIError(from: ErrorResponse(message:errorMessage , code: -1))
                 } else {
                     errorResponse = EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1))
                 }
