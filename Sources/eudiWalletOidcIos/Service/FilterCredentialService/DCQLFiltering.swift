@@ -30,8 +30,7 @@ public class DCQLFiltering {
         credentialList: [String?]
     ) -> [MatchedCredential] {
         var filteredList: [MatchedCredential] = []
-
-        if credentialFilter.format == "dc+sd-jwt" || credentialFilter.format == "jwt_vc_json"{
+        if credentialFilter.format == "dc+sd-jwt" {
             let updatedCredentials = FilterCredentialService().processCredentialsToJsonString(credentialList: credentialList)
             credentialLoop: for (credentialIndex, credentialString) in updatedCredentials.enumerated() {
                 guard let credentialData = credentialString.data(using: .utf8),
@@ -51,26 +50,72 @@ public class DCQLFiltering {
                    let vctValues = vctValues, !vctValues.contains(vct) {
                     continue
                 }
-
+                
                 for (pathIndex, claim) in credentialFilter.claims.enumerated() {
                     guard case .pathClaim(let pathClaim) = claim else { continue }
                     let paths = pathClaim.path
                     let nonNilPaths = paths.compactMap { $0 }
                     let joinedPath = nonNilPaths.joined(separator: ",")
-
+                    
                     guard let matchedValue = getValue(from: credentialJSON, forPath: joinedPath) else {
                         continue credentialLoop
                     }
-            
+                    
                     matchedFields.append(MatchedField(
                         index: credentialIndex,
                         path: MatchedPath(path: joinedPath, index: pathIndex, value: matchedValue)
                     ))
                 }
-
+                
                 filteredList.append(MatchedCredential(index: credentialIndex, fields: matchedFields))
             }
-
+            
+        } else if  credentialFilter.format == "jwt_vc_json" {
+            
+            let updatedCredentials = FilterCredentialService().processCredentialsToJsonString(credentialList: credentialList)
+            credentialLoop: for (credentialIndex, credentialString) in updatedCredentials.enumerated() {
+                guard let credentialData = credentialString.data(using: .utf8),
+                      let credentialJSON = try? JSONSerialization.jsonObject(with: credentialData) as? [String: Any] else {
+                    continue
+                }
+                
+                var matchedFields: [MatchedField] = []
+                
+                var typeValues: [[String]]? = nil
+                if case .jwt(let meta) = credentialFilter.meta {
+                    typeValues = meta.typeValues
+                }
+                
+                if let types = credentialJSON["type"] as? [String],
+                   let typeValues = typeValues {
+                    let hasCommonType = typeValues.contains { innerArray in
+                        !Set(innerArray).isDisjoint(with: Set(types))
+                    }
+                    
+                    if !hasCommonType {
+                        continue
+                    }
+                }
+                
+                for (pathIndex, claim) in credentialFilter.claims.enumerated() {
+                    guard case .pathClaim(let pathClaim) = claim else { continue }
+                    let paths = pathClaim.path
+                    let nonNilPaths = paths.compactMap { $0 }
+                    let joinedPath = nonNilPaths.joined(separator: ",")
+                    
+                    guard let matchedValue = getValue(from: credentialJSON, forPath: joinedPath) else {
+                        continue credentialLoop
+                    }
+                    
+                    matchedFields.append(MatchedField(
+                        index: credentialIndex,
+                        path: MatchedPath(path: joinedPath, index: pathIndex, value: matchedValue)
+                    ))
+                }
+                
+                filteredList.append(MatchedCredential(index: credentialIndex, fields: matchedFields))
+            }
+            
         } else if credentialFilter.format == "mso_mdoc" {
             let updatedCredentials = FilterCredentialService().processCborCredentialToJsonString(credentialList: credentialList)
             credentialLoop: for (credentialIndex, credentialString) in updatedCredentials.enumerated() {
