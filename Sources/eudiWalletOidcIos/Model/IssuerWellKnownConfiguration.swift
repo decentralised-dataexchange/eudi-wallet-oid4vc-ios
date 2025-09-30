@@ -51,7 +51,7 @@ public struct TrustFrameworkInIssuer {
     }
 }
 // MARK: - CredentialObj
-public struct CredentialSupportedObject {
+public struct CredentialSupportedObject: Codable {
     
     public var dataSharing: [String : DataSharing]?
     // version is used to identify whether the CredentialSupportedObject is an array or another type
@@ -105,7 +105,7 @@ public struct DisplayElement {
         locale = from.locale
     }
 }
-public struct IssuerCredentialDefinition {
+public struct IssuerCredentialDefinition: Codable {
     public var type: [String]?
     public var vct: String?
     
@@ -115,7 +115,7 @@ public struct IssuerCredentialDefinition {
     }
 }
 // MARK: - DataSharing
-public struct DataSharing {
+public struct DataSharing: Codable {
     public var format, scope: String?
     public var cryptographicBindingMethodsSupported, cryptographicSuitesSupported: [String]?
     public var display: [Display]?
@@ -187,7 +187,7 @@ public struct DisplayCover: Codable {
         url = mUrl
     }
 }
-public struct IssuerWellKnownConfiguration {
+public struct IssuerWellKnownConfiguration: Codable {
     public let credentialIssuer: String?
     public let authorizationServer: [String]?
     public let credentialEndpoint: String?

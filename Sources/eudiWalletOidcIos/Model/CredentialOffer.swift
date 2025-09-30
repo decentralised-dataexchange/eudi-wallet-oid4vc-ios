@@ -6,12 +6,12 @@
 //
 import Foundation
 // MARK: - CredentialOffer model
-public struct CredentialOffer {
+public struct CredentialOffer: Codable {
     public var credentialIssuer: String?
     public var credentials: [Credential]?
     public var grants: Grants?
     public var error: EUDIError?
-        public var version: String?
+    public var version: String?
     
     public init(from: CredentialOfferResponse) {
         credentialIssuer = from.credentialIssuer
@@ -60,7 +60,7 @@ public struct CredentialOffer {
     
 }
 // MARK: - Credential
-public struct Credential {
+public struct Credential: Codable {
     public let format: String?
     public let types: [String]?
     public let doctype: String?
@@ -93,7 +93,7 @@ public struct Credential {
     
 }
 // MARK: - CredentialDefinition
-public struct CredentialDefinition {
+public struct CredentialDefinition: Codable {
     public var context: [String]?
     public var types: [String]?
     
@@ -103,7 +103,7 @@ public struct CredentialDefinition {
     }
 }
 // MARK: - TrustFramework
-public struct TrustFramework {
+public struct TrustFramework: Codable {
     public let name, type, uri: String?
     
     init(from: TrustFrameworkResponse) {
@@ -112,7 +112,7 @@ public struct TrustFramework {
         uri = from.uri
     }
 }
-public struct Grants {
+public struct Grants: Codable {
     public var authorizationCode: AuthorizationCode?
     public var urnIETFParamsOauthGrantTypePreAuthorizedCode: UrnIETFParamsOauthGrantTypePreAuthorizedCode?
     
@@ -122,7 +122,7 @@ public struct Grants {
     }
 }
 // MARK: - AuthorizationCode
-public struct AuthorizationCode  {
+public struct AuthorizationCode: Codable  {
     public let issuerState: String?
     public var authorizationServer: String?
     init(from: AuthorizationCodeResponse) {
@@ -131,7 +131,7 @@ public struct AuthorizationCode  {
     }
 }
 // MARK: - UrnIETFParamsOauthGrantTypePreAuthorizedCode
-public struct UrnIETFParamsOauthGrantTypePreAuthorizedCode {
+public struct UrnIETFParamsOauthGrantTypePreAuthorizedCode: Codable {
     public let preAuthorizedCode: String?
     public let userPinRequired: Bool?
     public var txCode: TransactionCode?
