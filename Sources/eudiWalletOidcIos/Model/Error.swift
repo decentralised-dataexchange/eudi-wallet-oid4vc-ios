@@ -17,7 +17,7 @@ struct ErrorResponse: Codable {
     }
 }
 
-public struct EUDIError {
+public struct EUDIError: Codable {
     public var message: String?
     public var code: Int?
     
