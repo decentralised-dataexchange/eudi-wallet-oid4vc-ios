@@ -43,10 +43,14 @@ class ClientIdSchemeRequestHandler {
                 if isVerified {
                     return presentationRequest
                 } else {
+                   throw PresentationRequestError.requestValidationFailed
+                }
+        case .x509Hash:
+                let isVerified = try await X509HashSchemeHandler().validate(presentationRequest: presentationRequest, jwtRequest: jwtRequest) ?? false
+                if isVerified {
                     return presentationRequest
-                    // Fix me - throw error
-                    // Handle verification failure
-                   throw PresentationRequestError.requestValidationFailed// or throw an error
+                } else {
+                   throw PresentationRequestError.requestValidationFailed
                 }
         case .x509SanURI:
                 let isVerified = try await X509SanUriSchemeHandler().validate(presentationRequest: presentationRequest, jwtRequest: jwtRequest) ?? false
