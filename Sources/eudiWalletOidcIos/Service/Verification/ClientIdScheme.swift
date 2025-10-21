@@ -16,6 +16,7 @@ enum ClientIdScheme: String {
     case x509SanURI = "x509_san_uri"
     case webOrigin = "web-origin"
     case decentralizedIdentifier = "decentralized_identifier"
+    case x509Hash = "x509_hash"
 
     init?(from string: String) {
         self.init(rawValue: string)
