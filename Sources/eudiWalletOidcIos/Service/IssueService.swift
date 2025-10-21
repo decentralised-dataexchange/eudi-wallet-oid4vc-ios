@@ -1099,6 +1099,19 @@ public class IssueService: NSObject, IssueServiceProtocol {
         }
     }
     
+    public func isCryptographicBindingMethodSupported(issuerConfig:  IssuerWellKnownConfiguration?,  type: String?) -> Bool {
+        guard let issuerConfig = issuerConfig else { return false }
+        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
+            let cryptographicBindingMethods = credentialSupported.cryptographicBindingMethodsSupported
+            if cryptographicBindingMethods?.contains("did:key") == true || cryptographicBindingMethods?.contains("did:jwk") == true || cryptographicBindingMethods?.contains("jwk") == true || cryptographicBindingMethods == nil || cryptographicBindingMethods?.contains("cose_key") == true {
+                return true
+            }
+        } else {
+            return false
+        }
+        return false
+    }
+    
     public func getDocTypeFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> String? {
         guard let issuerConfig = issuerConfig else { return nil }
         
