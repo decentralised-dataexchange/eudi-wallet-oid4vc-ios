@@ -126,11 +126,11 @@ public class SDJWTService {
                 jsonEncoder.keyEncodingStrategy = .convertToSnakeCase
                 guard let jsonData = try? jsonEncoder.encode(updatedDescriptor),
                       let dictionary = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
-                    fatalError("Failed to convert Person to dictionary")
+                    return nil
                 }
                 // Convert the dictionary to a string
                 guard let inputDescriptorString = String(data: try! JSONSerialization.data(withJSONObject: dictionary, options: .withoutEscapingSlashes), encoding: .utf8) else {
-                    fatalError("Failed to convert dictionary to string")
+                    return nil
                 }
                 do {
                     
