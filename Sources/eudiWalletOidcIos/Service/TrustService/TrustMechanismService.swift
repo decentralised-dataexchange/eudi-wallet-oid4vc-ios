@@ -30,6 +30,8 @@ public class TrustMechanismService: TrustMechanismServiceProtocol {
                                     validationResults.append(true)
                                 } else if identity.KID == x5c && identity.JwksURI == jwksURI {
                                     validationResults.append(true)
+                                } else if identity.KID == x5c {
+                                    validationResults.append(true)
                                 }
                             }
                         }
