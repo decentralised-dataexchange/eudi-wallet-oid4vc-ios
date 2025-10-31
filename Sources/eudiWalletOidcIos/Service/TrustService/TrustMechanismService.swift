@@ -76,54 +76,36 @@ public func fetchTrustDetails(url: String?, x5c: String?, jwksURI: String?, comp
 }
     
     public func parseXmlDataToJson(url: String?, completion: @escaping (TrustServiceStatusList?) -> Void) {
-        let url = URL(string: url ?? "")!
-                URLSession.shared.dataTask(with: url) { data, response, error in
-                    guard let data = data, error == nil else {
-                        print("Error fetching XML: \(error?.localizedDescription ?? "Unknown error")")
-                        return
-                    }
-                    
-                    let parser = XMLToJSONParser()
-                        parser.parse(xmlData: data) { result in
-                            switch result {
-                            case .success(let jsonData):
-                                if let jsonString = String(data: jsonData, encoding: .utf8) {
-                                    print("JSON Output:")
-                                    print(jsonString)
-                                    
-                                    
-                                    
-                                    do {
-                                        if let jsonData = jsonString.data(using: .utf8) {
-                                            let decoder = JSONDecoder()
-                                            let trustServiceList = try decoder.decode(TrustServiceStatusList.self, from: jsonData)
-                                            completion(trustServiceList)
-                                            print("Decoded TSL version: \(trustServiceList.schemeInformation.tslVersionIdentifier)")
-                                            print("Number of providers: \(trustServiceList.trustServiceProviders?.count)")
-                                            
-                                            for provider in trustServiceList.trustServiceProviders ?? [] {
-                                                print("Provider: \(provider.tspName)")
-                                                if let tradeName = provider.tspTradeName {
-                                                    print("Trade Name: \(tradeName)")
-                                                }
-                                            }
-                                        }
-                                    } catch {
-                                        completion(nil)
-                                        print("Error decoding JSON: \(error)")
-                                        
-                                    }
-                                }
-//
-                                
-                            case .failure(let error):
-                                completion(nil)
-                                print("Error parsing XML to JSON: \(error)")
+        guard let urlStr = url, let fetchURL = URL(string: urlStr) else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+        URLSession.shared.dataTask(with: fetchURL) { data, response, error in
+            guard let data = data, error == nil else {
+                print("Error fetching XML: \(error?.localizedDescription ?? "Unknown error")")
+                return
+            }
+            let parser = XMLToJSONParser()
+            parser.parse(xmlData: data) { result in
+                switch result {
+                case .success(let jsonData):
+                    if let jsonString = String(data: jsonData, encoding: .utf8) {
+                        do {
+                            if let jsonData = jsonString.data(using: .utf8) {
+                                let decoder = JSONDecoder()
+                                let trustServiceList = try decoder.decode(TrustServiceStatusList.self, from: jsonData)
+                                completion(trustServiceList)
                             }
+                        } catch {
+                            completion(nil)
                         }
-    
-                }.resume()
+                    }
+                case .failure(let error):
+                    completion(nil)
+                }
+            }
+            
+        }.resume()
     }
-    
     
 }
