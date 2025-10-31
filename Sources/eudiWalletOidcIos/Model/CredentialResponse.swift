@@ -1,9 +1,3 @@
-//
-//  CredentialResponse.swift
-//
-//
-//  Created by Mumthasir mohammed on 11/03/24.
-//
 import Foundation
 // MARK: - CredentialResponse
 public struct CredentialResponse {
@@ -15,6 +9,7 @@ public struct CredentialResponse {
     public var error: EUDIError?
     public var notificationID: String?
     public var credentials: [CredentialItem]?
+    public var interval: Double?
     
     
     public init(from: CredentialResponseV1) {
@@ -29,6 +24,7 @@ public struct CredentialResponse {
         error = from.error
         notificationID = from.notificationID
         credentials = from.credentials
+        interval = from.interval
     }
     
     
@@ -44,6 +40,7 @@ public struct CredentialResponse {
         error = from.error
         notificationID = from.notificationID
         credentials = from.credentials
+        interval = from.interval
     }
     
     public init(fromError: EUDIError) {
