@@ -208,32 +208,20 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
     }
     
     public func getDocTypeFromIssuerAuth(cborData: CBOR) -> String? {
-        guard case let CBOR.array(elements) = cborData else {
-            print("Expected CBOR array, but got something else.")
-            return nil
-        }
-        var docType: String? = ""
+        guard case let .array(elements) = cborData else { return nil }
+        
         for element in elements {
-            if case let CBOR.byteString(byteString) = element {
-                if let nestedCBOR = try? CBOR.decode(byteString) {
-                    if case let CBOR.tagged(tag, item) = nestedCBOR, tag.rawValue == 24 {
-                        if case let CBOR.byteString(data) = item {
-                            if let decodedInnerCBOR = try? CBOR.decode([UInt8](data)) {
-                                docType = extractDocType(cborData: decodedInnerCBOR )
-                            } else {
-                                print("Failed to decode inner ByteString under Tag 24.")
-                            }
-                        }
-                    }
-                } else {
-                    print("Could not decode ByteString as CBOR, inspecting data directly.")
-                    print("ByteString data: \(byteString)")
-                }
-            } else {
-                print("Element: \(element)")
+            guard case let .byteString(byteString) = element else { continue }
+            guard let nested = try? CBOR.decode(byteString) else { continue }
+            guard case let .tagged(tag, item) = nested, tag.rawValue == 24 else { continue }
+            guard case let .byteString(innerBytes) = item else { continue }
+            guard let decodedInner = try? CBOR.decode(innerBytes) else { continue }
+            
+            if let type = extractDocType(cborData: decodedInner), !type.isEmpty {
+                return type
             }
         }
-        return docType ?? ""
+        return nil
     }
     
     func extractDocType(cborData: CBOR) -> String? {
