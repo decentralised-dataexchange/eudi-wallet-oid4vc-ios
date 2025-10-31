@@ -5,6 +5,7 @@
 //  Created by oem on 10/10/24.
 //
 import Foundation
+
 public struct CredentialResponseV1: Codable {
     public var format, credential, acceptanceToken: String?
     public var isDeferred, isPinRequired: Bool?
@@ -14,6 +15,7 @@ public struct CredentialResponseV1: Codable {
     public var error: EUDIError?
     public var notificationID: String?
     public var credentials: [CredentialItem]?
+    public var interval: Double?
     
     enum CodingKeys: String, CodingKey {
         case acceptanceToken = "acceptance_token"
@@ -21,5 +23,6 @@ public struct CredentialResponseV1: Codable {
         case credential = "credential"
         case notificationID = "notification_id"
         case credentials = "credentials"
+        case interval = "interval"
     }
 }

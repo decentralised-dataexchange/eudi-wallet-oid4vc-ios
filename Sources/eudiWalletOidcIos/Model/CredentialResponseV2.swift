@@ -14,12 +14,14 @@ public struct CredentialResponseV2: Codable {
     public var error: EUDIError?
     public var notificationID: String?
     public var credentials: [CredentialItem]?
-    
+    public var interval: Double?
+     
     enum CodingKeys: String, CodingKey {
         case acceptanceToken = "transaction_id"
         case format = "format"
         case credential = "credential"
         case notificationID = "notification_id"
         case credentials = "credentials"
+        case interval = "interval"
     }
 }
