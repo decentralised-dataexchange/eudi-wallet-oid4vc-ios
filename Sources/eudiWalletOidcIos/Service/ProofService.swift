@@ -12,8 +12,8 @@ import JOSESwift
 
 class ProofService {
     
-    static func generateProof(nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, did: String, keyHandler: SecureKeyProtocol) async -> String? {
-        let cryptographicBindingMethodsSupported = getCryptographicBindingMethodsFromIssuerConfig(issuerConfig: issuerConfig, type: credentialOffer.credentials?.first?.types?.last)
+    static func generateProof(nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, did: String, keyHandler: SecureKeyProtocol, credentialTypes: [String]) async -> String? {
+        let cryptographicBindingMethodsSupported = getCryptographicBindingMethodsFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
         let keyId = generateKeyId(credentialOffer: credentialOffer, bindingMethod: cryptographicBindingMethodsSupported, did: did, keyHandler: keyHandler)
         // Generate JWT Header
         
