@@ -30,7 +30,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     public func processOrSendAuthorizationResponse(
         did: String,
         presentationRequest: PresentationRequest?,
-        credentialsList: [String]?,
+        credentialsList: [[String]]?,
         wua: String,
         pop: String) async -> WrappedVerificationResponse? {
             

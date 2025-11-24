@@ -9,7 +9,7 @@ import Foundation
 
 class AuthorisationResponseHandler {
     
-    func prepareAuthorisationResponse(credentialsList: [String]?,
+    func prepareAuthorisationResponse(credentialsList: [[String]]?,
                                       presentationRequest: PresentationRequest?,
                                       did: String, keyHandler: SecureKeyProtocol) async -> [String: Any]?{
         guard let responseMode = ResponseMode(from: presentationRequest?.responseMode ?? "") else { return nil}

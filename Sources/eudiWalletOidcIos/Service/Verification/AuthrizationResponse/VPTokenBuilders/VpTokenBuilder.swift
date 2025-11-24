@@ -8,5 +8,5 @@
 import Foundation
 
 protocol VpTokenBuilder {
-    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) async -> String?
+    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) async -> [String]?
 }

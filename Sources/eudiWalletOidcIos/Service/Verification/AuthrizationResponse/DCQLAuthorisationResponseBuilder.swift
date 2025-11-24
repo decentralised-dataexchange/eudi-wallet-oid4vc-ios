@@ -9,7 +9,7 @@ import Foundation
 
 class DCQLAuthorisationResponseBuilder {
     
-    func build(credentialsList: [String]?,
+    func build(credentialsList: [[String]]?,
                presentationRequest: PresentationRequest?,
                did: String, keyHandler: SecureKeyProtocol) async -> [String: Any]{
         
@@ -46,9 +46,9 @@ class DCQLAuthorisationResponseBuilder {
             
             var generatedToken: Any? = nil
             if let version = clientMetaDataModel?.version, version == "draft_23" {
-                generatedToken = generatedVPToken
+                generatedToken = generatedVPToken.first
             } else {
-                generatedToken = [generatedVPToken]
+                generatedToken = generatedVPToken
             }
             if !generatedVPToken.isEmpty {
                 credentialMap[credential.id] = generatedToken
@@ -73,16 +73,16 @@ class DCQLAuthorisationResponseBuilder {
         return ""
     }
     
-    private func generateVpTokensBasedOfCredntialFormat(credential:String,
+    private func generateVpTokensBasedOfCredntialFormat(credential:[String],
                                                         presentationRequest: PresentationRequest?,
                                                         did: String,
-                                                        isMdoc: Bool, index: Int, keyHandler: SecureKeyProtocol, format: String) async -> String {
+                                                        isMdoc: Bool, index: Int, keyHandler: SecureKeyProtocol, format: String) async -> [String] {
         if format == "mso_mdoc"  {
-            return MDocVpTokenBuilder().build(credentials: [credential], presentationRequest: presentationRequest ?? nil, did: did, index: index, keyHandler: keyHandler) ?? ""
+            return MDocVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest ?? nil, did: did, index: index, keyHandler: keyHandler) ?? []
         } else if format == "jwt_vc_json"  {
-            return await JWTVpTokenBuilder().build(credentials: [credential], presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler) ?? ""
+            return await JWTVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler) ?? []
         } else {
-            return await SDJWTVpTokenBuilder().build(credentials: [credential], presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler) ?? ""
+            return await SDJWTVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler) ?? []
         }
     }
 }

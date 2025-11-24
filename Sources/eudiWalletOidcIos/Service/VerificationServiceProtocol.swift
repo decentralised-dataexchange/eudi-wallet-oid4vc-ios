@@ -20,7 +20,7 @@ protocol VerificationServiceProtocol {
     func processOrSendAuthorizationResponse(
         did: String,
         presentationRequest: PresentationRequest?,
-        credentialsList: [String]?,
+        credentialsList: [[String]]?,
         wua: String,
         pop: String) async -> WrappedVerificationResponse?
     /**
