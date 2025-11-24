@@ -9,10 +9,8 @@ import Foundation
 import CryptoKit
 
 class SDJWTVpTokenBuilder : VpTokenBuilder{
-    
-    
-    
-    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) async -> String? {
+        
+    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) async -> [String]? {
         let item = credentials.first ?? ""
         guard !item.isEmpty else { return nil }
         var claims: [String: Any] = [:]
@@ -40,21 +38,22 @@ class SDJWTVpTokenBuilder : VpTokenBuilder{
                 claims["transaction_data_hashes_alg"] = "sha-256"
             }
         }
-        
-        var itemWithTilda: String? = nil
-        if item.hasSuffix("~") {
-            itemWithTilda = item
-        } else {
-            itemWithTilda = "\(item)~"
-        }
-        var resultString: String? = nil
-            if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(issuerSignedJwt: itemWithTilda, claims: claims, keyHandler: keyHandler) {
-                var updatedCred = "\(itemWithTilda ?? "")\(keyBindingJwt)"
-                resultString = updatedCred
-            } else {
-                resultString = credentials.first ?? ""
-            }
-        return resultString
+        var processedResults: [String] = []
+        for item in credentials {
+               
+               let itemWithTilda = item.hasSuffix("~") ? item : "\(item)~"
+               
+               if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(
+                   issuerSignedJwt: itemWithTilda,
+                   claims: claims,
+                   keyHandler: keyHandler
+               ) {
+                   processedResults.append("\(itemWithTilda)\(keyBindingJwt)")
+               } else {
+                   processedResults.append(item)
+               }
+           }
+        return processedResults
     }
     
     func checkTransactionDataWithMultipleInputDescriptors(queryItem: Any?,

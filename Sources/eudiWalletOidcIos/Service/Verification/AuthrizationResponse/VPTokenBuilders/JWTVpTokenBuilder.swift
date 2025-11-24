@@ -8,43 +8,58 @@
 import Foundation
 
 class JWTVpTokenBuilder : VpTokenBuilder{
-    
-    
-    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) async -> String? {
-        var jwtPayload: String? = nil
-        if credentials.first?.isEmpty == false {
+
+    func build(credentials: [String],
+               presentationRequest: PresentationRequest?,
+               did: String,
+               index: Int?,
+               keyHandler: SecureKeyProtocol) async -> [String]? {
+        
+        var vpTokens: [String] = []
+        
+        guard !credentials.isEmpty else { return [] }
+        
+        guard let secureData = keyHandler.generateSecureKey() else { return nil }
+        let jwk = generateJWKFromPrivateKey(secureKey: secureData, did: did)
+        let header = generateJWTHeader(jwk: jwk, did: did)
+        
+        for credential in credentials {
+            
             let uuid4 = UUID().uuidString
-            let jwtVP =
-            ([
+            
+            let jwtVP: [String: Any] = [
                 "@context": ["https://www.w3.org/2018/credentials/v1"],
                 "holder": did,
                 "id": "urn:uuid:\(uuid4)",
-                "type": [
-                    "VerifiablePresentation"
-                ],
-                "verifiableCredential": credentials
-            ] as [String : Any])
+                "type": ["VerifiablePresentation"],
+                "verifiableCredential": [credential]   // each VP contains only this credential
+            ]
+            
             let currentTime = Int(Date().timeIntervalSince1970)
-            jwtPayload = ([
+            
+            let payloadDict: [String: Any] = [
                 "aud": presentationRequest?.clientId ?? "",
                 "exp": currentTime + 3600,
                 "iat": currentTime,
-                "iss": "\(did)",
+                "iss": did,
                 "jti": "urn:uuid:\(uuid4)",
                 "nbf": currentTime,
                 "nonce": presentationRequest?.nonce ?? "",
-                "sub": "\(did)",
-                "vp": jwtVP,
-            ] as [String : Any]).toString() ?? ""
+                "sub": did,
+                "vp": jwtVP
+            ]
             
-            guard let secureData = keyHandler.generateSecureKey() else { return nil}
-            let jwk = generateJWKFromPrivateKey(secureKey: secureData, did: did)
-            let header = generateJWTHeader(jwk: jwk, did: did)
-            let vpToken = await generateVPToken(header: header, payload: jwtPayload ?? "", keyHandler: keyHandler)
-            return vpToken ?? ""
-        } else {
-            return ""
+            guard let jwtPayload = payloadDict.toString() else { continue }
+            
+            let vpToken = await generateVPToken(
+                header: header,
+                payload: jwtPayload,
+                keyHandler: keyHandler
+            )
+            
+            vpTokens.append(vpToken)
         }
+        return vpTokens
     }
     
     private func generateJWKFromPrivateKey(secureKey: SecureKeyData, did: String) -> [String: Any] {

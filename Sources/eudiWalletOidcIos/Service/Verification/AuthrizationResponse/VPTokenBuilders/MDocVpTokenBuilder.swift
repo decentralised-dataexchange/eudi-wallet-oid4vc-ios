@@ -12,7 +12,7 @@ import OrderedCollections
 public class MDocVpTokenBuilder : VpTokenBuilder{
     public init() {}
     
-    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) -> String? {
+    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) -> [String]? {
         
         var queryItem: Any?
         var doc: String?
@@ -31,6 +31,7 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         
         var cborString: String = ""
         var base64StringWithoutPadding = ""
+        var base64StringsWithoutPadding: [String] = []
         var requestedParams: [String] = []
         var limitDisclosure: Bool = false
         var docFiltered: [Document] = []
@@ -89,7 +90,7 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                         base64StringWithoutPadding = cborString.replacingOccurrences(of: "=", with: "") ?? ""
                         base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "+", with: "-")
                         base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "/", with: "_")
-                        
+                        base64StringsWithoutPadding.append(base64StringWithoutPadding)
                         print(Data(cborData.encode()).base64EncodedString())
                     } else {
                         print("Failed to encode data")
@@ -97,7 +98,7 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                 }
             }
         }
-        return base64StringWithoutPadding
+        return base64StringsWithoutPadding
     }
     
     public func getIssuerAuth(credential: String) -> CBOR? {

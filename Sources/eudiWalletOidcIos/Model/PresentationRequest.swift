@@ -258,6 +258,7 @@ public struct CredentialItems: Codable {
     public let meta: Meta
     public let claims: [Claim]
     public let trustedAuthorities: [TrustedAuthorities]?
+    public let multiple: Bool?
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -265,14 +266,16 @@ public struct CredentialItems: Codable {
         case meta
         case claims
         case trustedAuthorities = "trusted_authorities"
+        case multiple
     }
     
-    public init(id: String, format: String, meta: Meta, claims: [Claim], trustedAuthorities: [TrustedAuthorities]? = nil) {
+    public init(id: String, format: String, meta: Meta, claims: [Claim], trustedAuthorities: [TrustedAuthorities]? = nil, multiple: Bool?) {
         self.id = id
         self.format = format
         self.meta = meta
         self.claims = claims
         self.trustedAuthorities = trustedAuthorities
+        self.multiple = multiple
     }
 }
 

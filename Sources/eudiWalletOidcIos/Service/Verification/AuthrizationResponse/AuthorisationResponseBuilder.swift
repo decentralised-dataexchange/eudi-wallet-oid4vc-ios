@@ -7,11 +7,10 @@
 
 import Foundation
 
-class AuthorisationResponseBuilder{
-    
+class AuthorisationResponseBuilder {
     
     static func buildResponse(
-        credentialsList: [String]?,
+        credentialsList: [[String]]?,
         presentationRequest: PresentationRequest?,
         did: String, keyHandler: SecureKeyProtocol
     ) async -> [String: Any] {
@@ -23,8 +22,12 @@ class AuthorisationResponseBuilder{
             params = await DCQLAuthorisationResponseBuilder().build(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
             return params
         }else{
+            var credentialsArray: [String]?
+            for item in credentialsList ?? [] {
+                credentialsArray?.append(item.first ?? "")
+            }
             let tokensAndPresentationSubmission = await createVPTokenAndPresentationSubmission(
-                credentialsList: credentialsList,
+                credentialsList: credentialsArray,
                 did: did,
                 presentationRequest: presentationRequest, keyHandler: keyHandler
             )
@@ -166,21 +169,21 @@ class AuthorisationResponseBuilder{
             }
             
             // creating w3c jwt vp token
-            var vpToken: String = await JWTVpTokenBuilder().build(credentials: jwtList, presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler) ?? ""
+            var vpToken: [String] = await JWTVpTokenBuilder().build(credentials: jwtList, presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler) ?? []
             
             // creating mdoc vp token
-            var mdocToken: String = ""
+            var mdocToken: [String] = []
             if !mdocList.isEmpty {
-                mdocToken = MDocVpTokenBuilder().build(credentials: credentialsList ?? [], presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler) ?? ""
+                mdocToken = MDocVpTokenBuilder().build(credentials: credentialsList ?? [], presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler) ?? []
             }
             
             if let index = vpTokenList.firstIndex(of: "JWT") {
-                vpTokenList[index] = vpToken ?? ""
+                vpTokenList[index] = vpToken.first ?? ""
             }
             
             if let index = vpTokenList.firstIndex(of: "MDOC") {
                 mdocProcessedIndex = index
-                vpTokenList[index] = mdocToken ?? ""
+                vpTokenList[index] = mdocToken.first ?? ""
             }
             
             
