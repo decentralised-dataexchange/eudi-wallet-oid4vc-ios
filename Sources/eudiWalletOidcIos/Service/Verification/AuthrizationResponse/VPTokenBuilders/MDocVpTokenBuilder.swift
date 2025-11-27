@@ -58,7 +58,7 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                         }
                         switch dcql.meta {
                         case .msoMdoc(let meta):
-                            limitDisclosure = false
+                            limitDisclosure = true
                             doc = meta.doctypeValue
                         case .dcSDJWT:
                             limitDisclosure = true
