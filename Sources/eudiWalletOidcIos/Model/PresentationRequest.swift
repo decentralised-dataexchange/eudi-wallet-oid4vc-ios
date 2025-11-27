@@ -256,9 +256,10 @@ public struct CredentialItems: Codable {
     public let id: String
     public let format: String
     public let meta: Meta
-    public let claims: [Claim]
+    public var claims: [Claim]
     public let trustedAuthorities: [TrustedAuthorities]?
     public let multiple: Bool?
+    public let claimSets: [[String]]?
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -267,15 +268,17 @@ public struct CredentialItems: Codable {
         case claims
         case trustedAuthorities = "trusted_authorities"
         case multiple
+        case claimSets = "claim_sets"
     }
     
-    public init(id: String, format: String, meta: Meta, claims: [Claim], trustedAuthorities: [TrustedAuthorities]? = nil, multiple: Bool?) {
+    public init(id: String, format: String, meta: Meta, claims: [Claim], trustedAuthorities: [TrustedAuthorities]? = nil, multiple: Bool?, claimSets: [[String]]?) {
         self.id = id
         self.format = format
         self.meta = meta
         self.claims = claims
         self.trustedAuthorities = trustedAuthorities
         self.multiple = multiple
+        self.claimSets = claimSets
     }
 }
 
@@ -372,6 +375,7 @@ public enum Claim: Codable {
 
     enum CodingKeys: String, CodingKey {
         case path
+        case id
         case namespace
         case claim_name
     }
@@ -379,7 +383,8 @@ public enum Claim: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if let path = try? container.decode([String?].self, forKey: .path) {
-            self = .pathClaim(PathClaim(path: path))
+            let id = try? container.decode(String.self, forKey: .id)
+            self = .pathClaim(PathClaim(path: path, id: id))
         } else if let namespace = try? container.decode(String.self, forKey: .namespace),
                   let claimName = try? container.decode(String.self, forKey: .claim_name) {
             self = .namespacedClaim(NamespacedClaim(namespace: namespace, claimName: claimName))
@@ -401,9 +406,11 @@ public enum Claim: Codable {
 }
 
 public struct PathClaim: Codable {
+    public let id: String?
     public let path: [String?]
     
-    public init(path: [String?]) {
+    public init(path: [String?], id: String?) {
+        self.id = id
         self.path = path
     }
 }

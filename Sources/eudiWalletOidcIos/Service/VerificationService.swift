@@ -437,6 +437,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 let paths = nonNilPaths.last
                 requestedParams.append(String(paths ?? ""))
             }
+        limitDisclosure = true
         }
         print("printing limitDisclosure from cbor: \(limitDisclosure)")
         if let data = Data(base64URLEncoded: credential) {
