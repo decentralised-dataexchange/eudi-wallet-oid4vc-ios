@@ -715,7 +715,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 }
             }
             
-            if issuerConfig.credentialRequestEncryption != nil {
+            if let dataSharing = issuerConfig.credentialsSupported?.dataSharing,
+               let firstValue = dataSharing.values.first,
+               firstValue.credentialMetadata != nil { {
                 params.removeValue(forKey: "proof")
                 var proofsDict: [String: Any] = [:]
                 proofsDict["jwt"] = [idToken]
