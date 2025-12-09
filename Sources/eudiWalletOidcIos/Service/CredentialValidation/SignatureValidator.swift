@@ -51,6 +51,11 @@ public class SignatureValidator {
                         jwksArray.append(publicKeyJwk)
                     }
                 }
+                if kid.hasPrefix("did:webvh:") {
+                    if let publicKeyJwk = try await ProcessWebVhFromKID.fetchDIDDocument(did: kid) {
+                        jwksArray.append(publicKeyJwk)
+                    }
+                }
             }
             if let jwksURI = jwksURI {
                 let kid = jsonObject["kid"] as? String

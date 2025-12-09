@@ -34,7 +34,6 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         var base64StringsWithoutPadding: [String] = []
         var requestedParams: [String] = []
         var limitDisclosure: Bool = false
-        var docFiltered: [Document] = []
         
         for (index, cred) in credentials.enumerated() {
             if !cred.contains(".") {
@@ -79,7 +78,7 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     } else if let docTypeValue = doc, !docTypeValue.isEmpty {
                         docType = docTypeValue
                     }
-                    docFiltered.append(contentsOf: [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))])
+                    let docFiltered = [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))]
                     
                     let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
                     let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
