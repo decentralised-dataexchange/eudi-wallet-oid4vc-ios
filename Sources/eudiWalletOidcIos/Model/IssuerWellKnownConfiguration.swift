@@ -117,7 +117,7 @@ public struct IssuerCredentialDefinition: Codable {
 // MARK: - DataSharing
 public struct DataSharing: Codable {
     public var format, scope: String?
-    public var cryptographicBindingMethodsSupported, cryptographicSuitesSupported: [String]?
+    public var cryptographicBindingMethodsSupported : [String]?
     public var display: [Display]?
     public var types: [String]?
     public var trustFramework: TrustFramework?
@@ -130,7 +130,6 @@ public struct DataSharing: Codable {
         format = from.format
         scope = from.scope
         cryptographicBindingMethodsSupported = from.cryptographicBindingMethodsSupported
-        cryptographicSuitesSupported = from.cryptographicSuitesSupported
         if let dataSharingDisplayList = from.display, dataSharingDisplayList.count > 0{
             display = dataSharingDisplayList.map({ Display(from: $0) })
         }
@@ -142,7 +141,6 @@ public struct DataSharing: Codable {
         format = from.format
         scope = from.scope
         cryptographicBindingMethodsSupported = from.cryptographicBindingMethodsSupported
-        cryptographicSuitesSupported = from.cryptographicSuitesSupported
         if let dataSharingDisplayList = from.display, dataSharingDisplayList.count > 0{
             display = dataSharingDisplayList.map({ Display(from: $0) })
         }

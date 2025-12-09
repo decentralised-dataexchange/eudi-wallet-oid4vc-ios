@@ -102,7 +102,7 @@ enum FormatResponse: String, Codable {
 // MARK: - DataSharing
 struct DataSharingResponse: Codable {
     var format, scope: String?
-    var cryptographicBindingMethodsSupported, cryptographicSuitesSupported: [String]?
+    var cryptographicBindingMethodsSupported: [String]?
     var display: [DisplayResponse]?
     var credentialDefinition: IssuerCredentialDefinitionResponse?
     var docType: String?
@@ -111,7 +111,6 @@ struct DataSharingResponse: Codable {
     enum CodingKeys: String, CodingKey {
         case format, scope
         case cryptographicBindingMethodsSupported = "cryptographic_binding_methods_supported"
-        case cryptographicSuitesSupported = "cryptographic_suites_supported"
         case display
         case credentialDefinition = "credential_definition"
         case docType = "doctype"
@@ -139,7 +138,7 @@ struct DataSharingOldFormatResponse: Codable {
 
 struct DataSharingResponseV2: Codable {
     var format, scope: String?
-    var cryptographicBindingMethodsSupported, cryptographicSuitesSupported: [String]?
+    var cryptographicBindingMethodsSupported: [String]?
     var display: [DisplayResponse]?
     var credentialDefinition: IssuerCredentialDefinitionResponse?
     var vct: String?
@@ -149,7 +148,6 @@ struct DataSharingResponseV2: Codable {
     enum CodingKeys: String, CodingKey {
         case format, scope, vct
         case cryptographicBindingMethodsSupported = "cryptographic_binding_methods_supported"
-        case cryptographicSuitesSupported = "credential_signing_alg_values_supported"
         case credentialDefinition = "credential_definition"
         case display
         case docType = "doctype"
