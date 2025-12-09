@@ -717,7 +717,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             if let dataSharing = issuerConfig.credentialsSupported?.dataSharing,
                let firstValue = dataSharing.values.first,
-               firstValue.credentialMetadata != nil { {
+               firstValue.credentialMetadata != nil {
                 params.removeValue(forKey: "proof")
                 var proofsDict: [String: Any] = [:]
                 proofsDict["jwt"] = [idToken]
@@ -1070,16 +1070,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
             } else {
                 return credentialSupported.credentialDefinition?.type
             }
-        } else {
-            return nil
-        }
-    }
-    
-    public func getCryptoFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> [String]? {
-        guard let issuerConfig = issuerConfig else { return nil }
-        
-        if let credentialSupported = issuerConfig.credentialsSupported?.dataSharing?[type ?? ""] {
-            return credentialSupported.cryptographicSuitesSupported
         } else {
             return nil
         }

@@ -169,21 +169,21 @@ class AuthorisationResponseBuilder {
             }
             
             // creating w3c jwt vp token
-            var vpToken: [String] = await JWTVpTokenBuilder().build(credentials: jwtList, presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler) ?? []
+            var vpToken: String = await JWTVpTokenBuilder().build2(credentials: jwtList, presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler) ?? ""
             
             // creating mdoc vp token
-            var mdocToken: [String] = []
+            var mdocToken: String = ""
             if !mdocList.isEmpty {
-                mdocToken = MDocVpTokenBuilder().build(credentials: credentialsList ?? [], presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler) ?? []
+                mdocToken = MDocVpTokenBuilder().build2(credentials: credentialsList ?? [], presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler) ?? ""
             }
             
             if let index = vpTokenList.firstIndex(of: "JWT") {
-                vpTokenList[index] = vpToken.first ?? ""
+                vpTokenList[index] = vpToken ?? ""
             }
             
             if let index = vpTokenList.firstIndex(of: "MDOC") {
                 mdocProcessedIndex = index
-                vpTokenList[index] = mdocToken.first ?? ""
+                vpTokenList[index] = mdocToken ?? ""
             }
             
             
