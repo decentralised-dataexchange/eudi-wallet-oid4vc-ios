@@ -22,7 +22,7 @@ class AuthorisationResponseBuilder {
             params = await DCQLAuthorisationResponseBuilder().build(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
             return params
         }else{
-            var credentialsArray: [String]?
+            var credentialsArray: [String]? = []
             for item in credentialsList ?? [] {
                 credentialsArray?.append(item.first ?? "")
             }
