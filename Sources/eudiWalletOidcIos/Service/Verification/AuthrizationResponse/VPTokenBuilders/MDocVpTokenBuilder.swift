@@ -100,6 +100,94 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         return base64StringsWithoutPadding
     }
     
+    func build2(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) -> String? {
+        
+        var queryItem: Any?
+        var doc: String?
+        if let pd = presentationRequest?.presentationDefinition, !pd.isEmpty {
+            var presentationDefinition :PresentationDefinitionModel? = nil
+            do {
+                presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
+            } catch {
+                presentationDefinition = nil
+            }
+            doc = presentationDefinition?.docType
+            queryItem = presentationDefinition?.inputDescriptors?[index ?? 0]
+        } else if let dcql = presentationRequest?.dcqlQuery {
+            queryItem = dcql.credentials[index ?? 0]
+        }
+        
+        var cborString: String = ""
+        var base64StringWithoutPadding = ""
+        var requestedParams: [String] = []
+        var limitDisclosure: Bool = false
+        var docFiltered: [Document] = []
+        
+        for (index, cred) in credentials.enumerated() {
+            if !cred.contains(".") {
+                if let issuerAuthData = getIssuerAuth(credential: cred), let cborNameSpace = getNameSpaces(credential: cred, query: queryItem) {
+                    if let inputDescriptor = queryItem as? InputDescriptor, let fields = inputDescriptor.constraints?.fields {
+                        for field in fields {
+                            let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
+                            
+                            let filteredComponents = components?.filter { !$0.isEmpty }
+                            
+                            if let identifier = filteredComponents?.last {
+                                requestedParams.append(String(identifier))
+                            }
+                        }
+                    } else if let dcql = queryItem as? CredentialItems {
+                        for (pathIndex, claim) in dcql.claims.enumerated() {
+                            guard case .pathClaim(let pathClaim) = claim else { continue }
+                let nonNilPaths = pathClaim.path.compactMap { $0 }
+                            let paths = nonNilPaths.last
+                            requestedParams.append(String(paths ?? ""))
+                        }
+                        switch dcql.meta {
+                        case .msoMdoc(let meta):
+                            limitDisclosure = false
+                            doc = meta.doctypeValue
+                        case .dcSDJWT:
+                            limitDisclosure = true
+                        case .jwt:
+                            limitDisclosure = false
+                        }
+                    }
+                    
+                    var nameSpaceData: CBOR? = nil
+                    if limitDisclosure {
+                        nameSpaceData = filterNameSpaces(nameSpacesValue: cborNameSpace, requestedParams: requestedParams)
+                    } else {
+                        nameSpaceData = cborNameSpace
+                    }
+                    var docType = ""
+                    if let docTypeValue = getDocTypeFromIssuerAuth(cborData: issuerAuthData), !docTypeValue.isEmpty {
+                        docType = docTypeValue
+                    } else if let docTypeValue = doc, !docTypeValue.isEmpty {
+                        docType = docTypeValue
+                    }
+                    docFiltered.append(contentsOf: [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))])
+                    
+                    let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
+                    let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
+                    let responseDict = deviceResponseToSend.toDictionary()
+                    if let cborData = encodeToCBOR(responseDict) {
+                        cborString = Data(cborData.encode()).base64EncodedString()
+                        
+                        base64StringWithoutPadding = cborString.replacingOccurrences(of: "=", with: "") ?? ""
+                        base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "+", with: "-")
+                        base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "/", with: "_")
+                        
+                        print(Data(cborData.encode()).base64EncodedString())
+                    } else {
+                        print("Failed to encode data")
+                    }
+                }
+            }
+        }
+        return base64StringWithoutPadding
+    }
+    
     public func getIssuerAuth(credential: String) -> CBOR? {
         if let data = Data(base64URLEncoded: credential) {
             do {

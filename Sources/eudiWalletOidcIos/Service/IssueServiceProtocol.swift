@@ -71,9 +71,6 @@ protocol IssueServiceProtocol {
     
     func getTypesFromCredentialOffer(credentialOffer: CredentialOffer?) -> [String]?
     func getTypesFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Any?
-    
-    func getCryptoFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> [String]?
-    
     func getCredentialDisplayFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> Display?
     func getDocTypeFromIssuerConfig(issuerConfig: IssuerWellKnownConfiguration?, type: String?) -> String?
     

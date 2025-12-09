@@ -62,6 +62,43 @@ class JWTVpTokenBuilder : VpTokenBuilder{
         return vpTokens
     }
     
+    func build2(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) async -> String? {
+        var jwtPayload: String? = nil
+        if credentials.first?.isEmpty == false {
+            let uuid4 = UUID().uuidString
+            let jwtVP =
+            ([
+                "@context": ["https://www.w3.org/2018/credentials/v1"],
+                "holder": did,
+                "id": "urn:uuid:\(uuid4)",
+                "type": [
+                    "VerifiablePresentation"
+                ],
+                "verifiableCredential": credentials
+            ] as [String : Any])
+            let currentTime = Int(Date().timeIntervalSince1970)
+            jwtPayload = ([
+                "aud": presentationRequest?.clientId ?? "",
+                "exp": currentTime + 3600,
+                "iat": currentTime,
+                "iss": "\(did)",
+                "jti": "urn:uuid:\(uuid4)",
+                "nbf": currentTime,
+                "nonce": presentationRequest?.nonce ?? "",
+                "sub": "\(did)",
+                "vp": jwtVP,
+            ] as [String : Any]).toString() ?? ""
+            
+            guard let secureData = keyHandler.generateSecureKey() else { return nil}
+            let jwk = generateJWKFromPrivateKey(secureKey: secureData, did: did)
+            let header = generateJWTHeader(jwk: jwk, did: did)
+            let vpToken = await generateVPToken(header: header, payload: jwtPayload ?? "", keyHandler: keyHandler)
+            return vpToken
+        } else {
+            return ""
+        }
+    }
+    
     private func generateJWKFromPrivateKey(secureKey: SecureKeyData, did: String) -> [String: Any] {
         let rawRepresentation = secureKey.publicKey
         let x = rawRepresentation[rawRepresentation.startIndex..<rawRepresentation.index(rawRepresentation.startIndex, offsetBy: 32)]
