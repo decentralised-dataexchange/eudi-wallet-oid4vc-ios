@@ -914,7 +914,11 @@ public class IssueService: NSObject, IssueServiceProtocol {
             if version == "v1" {
                 params = ["grant_type": grantType, "pre-authorized_code":preAuthCode, "user_pin": otpVal] as [String: Any]
             } else if version == "v2" {
-                params = ["grant_type": grantType, "pre-authorized_code":preAuthCode, "tx_code": otpVal] as [String: Any]
+                if !otpVal.isEmpty {
+                    params = ["grant_type": grantType, "pre-authorized_code":preAuthCode, "tx_code": otpVal] as [String: Any]
+                } else {
+                    params = ["grant_type": grantType, "pre-authorized_code":preAuthCode] as [String: Any]
+                }
             }
 //            if !clientIdAssertion.isEmpty {
 //                params["client_assertion"] = clientIdAssertion
