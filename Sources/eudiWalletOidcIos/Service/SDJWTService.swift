@@ -182,7 +182,11 @@ public class SDJWTService {
             var disclosureList: [String] = []
             // Extract requested parameters from the presentation definition
             var requestedParams: [String] = []
-            
+
+            guard !dcqlData.claims.isEmpty else {
+                // If no claims, return original credential
+                return credential
+            }
             for (pathIndex, claim) in dcqlData.claims.enumerated() {
                 guard case .pathClaim(let pathClaim) = claim else { continue }
             let nonNilPaths = pathClaim.path.compactMap { $0 }
