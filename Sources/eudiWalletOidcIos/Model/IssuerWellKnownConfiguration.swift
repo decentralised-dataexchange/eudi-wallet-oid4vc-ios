@@ -321,4 +321,9 @@ public struct CredentialRequestEncryption: Codable {
 
 public struct CredentialMetadata: Codable {
     public let display: [DisplayResponse]?
+    public let claims: [ClaimData]?
+}
+
+public struct ClaimData: Codable {
+    public var path: [String?]
 }
