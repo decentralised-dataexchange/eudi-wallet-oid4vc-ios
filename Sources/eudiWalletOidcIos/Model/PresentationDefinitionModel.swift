@@ -49,8 +49,17 @@ public struct Field: Codable {
 public struct Filter: Codable {
     public let type: String?
     public let contains: Contains?
-    public let const: String?
+    public let const: StringOrBool?
     public let pattern: String?
+    public let enumValues: [String]?   // renamed to avoid keyword conflict
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case contains
+        case const
+        case pattern
+        case enumValues = "enum"       // map JSON "enum" → Swift enumValues
+    }
 }
 // MARK: - Contains
 public struct Contains: Codable {
@@ -62,5 +71,33 @@ public struct InputDescriptorFormat: Codable {
     let jwtVc: JwtVp?
     enum CodingKeys: String, CodingKey {
         case jwtVc = "jwt_vc"
+    }
+}
+
+public enum StringOrBool: Codable {
+    case string(String)
+    case bool(Bool)
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let boolValue = try? container.decode(Bool.self) {
+            self = .bool(boolValue)
+        } else if let stringValue = try? container.decode(String.self) {
+            self = .string(stringValue)
+        } else {
+            throw DecodingError.typeMismatch(
+                StringOrBool.self,
+                DecodingError.Context(codingPath: decoder.codingPath,
+                                      debugDescription: "Expected String or Bool for const")
+            )
+        }
+    }
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        }
     }
 }

@@ -1,10 +1,3 @@
-//
-//  File.swift
-//  eudiWalletOidcIos
-//
-//  Created by oem on 18/06/25.
-//
-
 import Foundation
 
 class DCQLToPresentationExchange {
@@ -42,8 +35,9 @@ class DCQLToPresentationExchange {
                     filter: Filter(
                         type: "string",
                         contains: nil,
-                        const: vctValue,
-                        pattern: nil
+                        const: .string(vctValue),
+                        pattern: nil,
+                        enumValues: nil
                     )
                 )
                 metaFields.append(metaField)
