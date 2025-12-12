@@ -30,7 +30,7 @@ public class DCQLFiltering {
         credentialList: [String?]
     ) -> [MatchedCredential] {
         var filteredList: [MatchedCredential] = []
-        if credentialFilter.format == "dc+sd-jwt" {
+        if credentialFilter.format == "dc+sd-jwt" || credentialFilter.format == "vc+sd-jwt" {
             let updatedCredentials = FilterCredentialService().processCredentialsToJsonString(credentialList: credentialList)
             credentialLoop: for (credentialIndex, credentialString) in updatedCredentials.enumerated() {
                 guard let credentialData = credentialString.data(using: .utf8),
