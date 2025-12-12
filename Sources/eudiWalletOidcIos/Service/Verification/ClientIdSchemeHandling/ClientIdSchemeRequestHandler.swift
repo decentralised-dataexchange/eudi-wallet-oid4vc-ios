@@ -75,7 +75,7 @@ class ClientIdSchemeRequestHandler {
     
     public func getClientIDFromClientID(afterColon input: String) -> String {
         guard let range = input.range(of: ":") else {
-            return ""
+            return input
         }
         return String(input[range.upperBound...])
     }
