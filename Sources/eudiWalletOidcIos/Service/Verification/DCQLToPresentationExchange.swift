@@ -14,7 +14,7 @@ class DCQLToPresentationExchange {
             let descriptorId = credential.id
 
             // Claim fields
-            let claimFields: [Field] = credential.claims.compactMap { claim in
+            let claimFields: [Field] = (credential.claims ?? []).compactMap { claim in
                 switch claim {
                 case .namespacedClaim(let namespaced):
                     let path = "$['\(namespaced.namespace)']['\(namespaced.claimName)']"

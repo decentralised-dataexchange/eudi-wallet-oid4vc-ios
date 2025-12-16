@@ -49,9 +49,34 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                             }
                         }
                     } else if let dcql = queryItem as? CredentialItems {
-                        for (pathIndex, claim) in dcql.claims.enumerated() {
+                        guard let claims = dcql.claims else {
+                            var nameSpaceData: CBOR? = nil
+                            nameSpaceData = filterNameSpaces(nameSpacesValue: cborNameSpace, requestedParams: [])
+                            
+                            var docType = ""
+                            if let docTypeValue = getDocTypeFromIssuerAuth(cborData: issuerAuthData), !docTypeValue.isEmpty {
+                                docType = docTypeValue
+                            } else if let docTypeValue = doc, !docTypeValue.isEmpty {
+                                docType = docTypeValue
+                            }
+                            let docFiltered = [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))]
+                            
+                            let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
+                            let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
+                            let responseDict = deviceResponseToSend.toDictionary()
+                            if let cborData = encodeToCBOR(responseDict) {
+                                cborString = Data(cborData.encode()).base64EncodedString()
+                                
+                                base64StringWithoutPadding = cborString.replacingOccurrences(of: "=", with: "") ?? ""
+                                base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "+", with: "-")
+                                base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "/", with: "_")
+                                base64StringsWithoutPadding.append(base64StringWithoutPadding)
+                            }
+                            continue
+                        }
+                        for (pathIndex, claim) in claims.enumerated() {
                             guard case .pathClaim(let pathClaim) = claim else { continue }
-                let nonNilPaths = pathClaim.path.compactMap { $0 }
+                            let nonNilPaths = pathClaim.path.compactMap { $0 }
                             let paths = nonNilPaths.last
                             requestedParams.append(String(paths ?? ""))
                         }
@@ -96,6 +121,34 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     }
                 }
             }
+//            else if let dcqlQueryData = queryItem as? CredentialItems, dcqlQueryData.format == "mso_mdoc", dcqlQueryData.claims == nil {
+//                if let issuerAuthData = getIssuerAuth(credential: cred), let cborNameSpace = getNameSpaces(credential: cred, query: queryItem) {
+//                    
+//                    var nameSpaceData: CBOR? = nil
+//                    nameSpaceData = filterNameSpaces(nameSpacesValue: cborNameSpace, requestedParams: [])
+//                    
+//                    var docType = ""
+//                    if let docTypeValue = getDocTypeFromIssuerAuth(cborData: issuerAuthData), !docTypeValue.isEmpty {
+//                        docType = docTypeValue
+//                    } else if let docTypeValue = doc, !docTypeValue.isEmpty {
+//                        docType = docTypeValue
+//                    }
+//                    let docFiltered = [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))]
+//                    
+//                    let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
+//                    let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
+//                    let responseDict = deviceResponseToSend.toDictionary()
+//                    if let cborData = encodeToCBOR(responseDict) {
+//                        cborString = Data(cborData.encode()).base64EncodedString()
+//                        
+//                        base64StringWithoutPadding = cborString.replacingOccurrences(of: "=", with: "") ?? ""
+//                        base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "+", with: "-")
+//                        base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "/", with: "_")
+//                        base64StringsWithoutPadding.append(base64StringWithoutPadding)
+//                        print(Data(cborData.encode()).base64EncodedString())
+//                    }
+//                }
+//            }
         }
         return base64StringsWithoutPadding
     }
@@ -137,7 +190,10 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                             }
                         }
                     } else if let dcql = queryItem as? CredentialItems {
-                        for (pathIndex, claim) in dcql.claims.enumerated() {
+                        guard let claims = dcql.claims else {
+                            continue
+                        }
+                        for (pathIndex, claim) in claims.enumerated() {
                             guard case .pathClaim(let pathClaim) = claim else { continue }
                 let nonNilPaths = pathClaim.path.compactMap { $0 }
                             let paths = nonNilPaths.last
@@ -211,7 +267,7 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
     }
     
     func getNameSpaces(credential: String, query: Any?) -> CBOR? {
-        var requestedParams: [String] = []
+        var requestedParamse: [String] = []
         if let inputDescriptor = query as? InputDescriptor, let fields = inputDescriptor.constraints?.fields {
             for field in fields {
                 let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
@@ -219,16 +275,19 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                 let filteredComponents = components?.filter { !$0.isEmpty }
                 
                 if let identifier = filteredComponents?.last {
-                    requestedParams.append(String(identifier))
+                    requestedParamse.append(String(identifier))
                 }
             }
         } else if let dcql = query as? CredentialItems {
-            for (pathIndex, claim) in dcql.claims.enumerated() {
-                guard case .pathClaim(let pathClaim) = claim else { continue }
-        let nonNilPaths = pathClaim.path.compactMap { $0 }
-                let paths = nonNilPaths.last
-                requestedParams.append(String(paths ?? ""))
-            }
+//            guard let claims = dcql.claims else {
+//                return nil
+//            }
+//            for (pathIndex, claim) in claims.enumerated() {
+//                guard case .pathClaim(let pathClaim) = claim else { continue }
+//        let nonNilPaths = pathClaim.path.compactMap { $0 }
+//                let paths = nonNilPaths.last
+//                requestedParamse.append(String(paths ?? ""))
+//            }
         }
         // Convert the base64 URL encoded credential to Data
         if let data = Data(base64URLEncoded: credential) {
@@ -257,7 +316,6 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
     public func filterNameSpaces(nameSpacesValue: CBOR, requestedParams: [String]) -> CBOR? {
         if case let CBOR.map(nameSpaces) = nameSpacesValue {
             var filteredNameSpaces: OrderedDictionary<CBOR, CBOR> = [:]
-            print("printing nameSpaces cbor: \(nameSpaces)")
             for (key, namespaceValue) in nameSpaces {
                 var valuesArray: [CBOR] = []
                 
@@ -279,16 +337,12 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                             }
                         }
                     }
-                    print("printing cbor attributes array: \(valuesArray)")
-
                 }
                 
                 if !valuesArray.isEmpty {
-                    print("printing cbor valuesArray array: \(valuesArray)")
                     filteredNameSpaces[key] = CBOR.array(valuesArray)
                 }
             }
-            print("printing cbor data array: \(filteredNameSpaces)")
             return CBOR.map(filteredNameSpaces)
         }
         
