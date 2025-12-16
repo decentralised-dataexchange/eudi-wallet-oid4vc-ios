@@ -256,7 +256,7 @@ public struct CredentialItems: Codable {
     public let id: String
     public let format: String
     public let meta: Meta
-    public var claims: [Claim]
+    public var claims: [Claim]?
     public let trustedAuthorities: [TrustedAuthorities]?
     public let multiple: Bool?
     public let claimSets: [[String]]?

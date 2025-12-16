@@ -45,13 +45,24 @@ public class DCQLFiltering {
                 if case .dcSDJWT(let meta) = credentialFilter.meta {
                     vctValues = meta.vctValues
                 }
+                let vct = credentialJSON["vct"] as? String
+                if vct == nil {
+                    continue
+                }
+                
 
-                if let vct = credentialJSON["vct"] as? String,
+                if let vct = credentialJSON["vct"] as? String, !vct.isEmpty,
                    let vctValues = vctValues, !vctValues.contains(vct) {
                     continue
                 }
                 
-                for (pathIndex, claim) in credentialFilter.claims.enumerated() {
+                guard let claims = credentialFilter.claims else {
+                    filteredList.append(
+                        MatchedCredential(index: credentialIndex, fields: [])
+                    )
+                    continue
+                }
+                for (pathIndex, claim) in claims.enumerated() {
                     guard case .pathClaim(let pathClaim) = claim else { continue }
                     let paths = pathClaim.path
                     let nonNilPaths = paths.compactMap { $0 }
@@ -86,6 +97,10 @@ public class DCQLFiltering {
                     typeValues = meta.typeValues
                 }
                 
+                if credentialJSON["type"] == nil {
+                    continue
+                }
+                
                 if let types = credentialJSON["type"] as? [String],
                    let typeValues = typeValues {
                     let hasCommonType = typeValues.contains { innerArray in
@@ -96,8 +111,13 @@ public class DCQLFiltering {
                         continue
                     }
                 }
-                
-                for (pathIndex, claim) in credentialFilter.claims.enumerated() {
+                guard let claims = credentialFilter.claims else {
+                    filteredList.append(
+                        MatchedCredential(index: credentialIndex, fields: [])
+                    )
+                    continue
+                }
+                for (pathIndex, claim) in claims.enumerated() {
                     guard case .pathClaim(let pathClaim) = claim else { continue }
                     let paths = pathClaim.path
                     let nonNilPaths = paths.compactMap { $0 }
@@ -123,10 +143,26 @@ public class DCQLFiltering {
                       let credentialJSON = try? JSONSerialization.jsonObject(with: credentialData) as? [String: Any] else {
                     continue
                 }
-
+                var docType = ""
+                if let issuerAuth = MDocVpTokenBuilder().getIssuerAuth(credential: credentialList[credentialIndex] ?? "") {
+                     docType = MDocVpTokenBuilder().getDocTypeFromIssuerAuth(cborData: issuerAuth) ?? ""
+                }
                 var matchedFields: [MatchedField] = []
-
-                for (pathIndex, claim) in credentialFilter.claims.enumerated() {
+                
+                var docTypeValue: String? = nil
+                if case .msoMdoc(let meta) = credentialFilter.meta {
+                    docTypeValue = meta.doctypeValue
+                }
+                
+                guard let claims = credentialFilter.claims else {
+                    if docType == docTypeValue ?? "" {
+                        filteredList.append(
+                            MatchedCredential(index: credentialIndex, fields: [])
+                        )
+                    }
+                    continue
+                }
+                for (pathIndex, claim) in claims.enumerated() {
                     switch claim {
                       case .namespacedClaim(let namespacedClaim):
                         let namespace = namespacedClaim.namespace

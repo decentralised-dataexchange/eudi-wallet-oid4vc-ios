@@ -431,28 +431,37 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 limitDisclosure = true
             }
         } else if let dcql = query as? CredentialItems {
-            for (pathIndex, claim) in dcql.claims.enumerated() {
+            guard let claims = dcql.claims else {
+                var cborDataValue: CBOR? = nil
+                if let data = Data(base64URLEncoded: credential) {
+                    do {
+                        let decodedCBOR = try CBOR.decode([UInt8](data))
+                        if let dictionary = decodedCBOR {
+                            cborDataValue = filterCBORWithRequestedParams(cborData: dictionary, requestedParams: [])
+                        }
+                    } catch {
+                        
+                    }
+                }
+                return cborDataValue
+            }
+            for (pathIndex, claim) in claims.enumerated() {
                 guard case .pathClaim(let pathClaim) = claim else { continue }
                 let nonNilPaths = pathClaim.path.compactMap { $0 }
                 let paths = nonNilPaths.last
                 requestedParams.append(String(paths ?? ""))
             }
-        limitDisclosure = true
+            limitDisclosure = true
         }
-        print("printing limitDisclosure from cbor: \(limitDisclosure)")
         if let data = Data(base64URLEncoded: credential) {
             do {
                 let decodedCBOR = try CBOR.decode([UInt8](data))
                 if let dictionary = decodedCBOR {
-                    //if let nameSpacesValue = dictionary[CBOR.utf8String("nameSpaces")] {
                     if limitDisclosure {
                         return filterCBORWithRequestedParams(cborData: dictionary, requestedParams: requestedParams)
-                        print("printing decoded cbor in limitDisclosure: \(filterCBORWithRequestedParams(cborData: dictionary, requestedParams: requestedParams))")
                     } else {
                         return dictionary
                     }
-                    print("printing decoded cbor: \(dictionary)")
-                    // }
                 }
             } catch {
                 print("Error decoding CBOR: \(error)")
@@ -469,18 +478,12 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     
     public func filterCBORWithRequestedParams(cborData: CBOR, requestedParams: [String]) -> CBOR? {
         guard case let CBOR.map(cborMap) = cborData else { return nil }
-        
         var modifiedCBORMap = cborMap
-        print("printing modifiedCBORMap cbor: \(modifiedCBORMap)")
-
         if let namespacesValue = modifiedCBORMap[CBOR.utf8String("nameSpaces")] {
-            print("printing modifiedCBORMap nameSpaces: \(CBOR.map(modifiedCBORMap))")
             if let filteredNameSpaces = MDocVpTokenBuilder().filterNameSpaces(nameSpacesValue: namespacesValue, requestedParams: requestedParams) {
                 modifiedCBORMap[CBOR.utf8String("nameSpaces")] = filteredNameSpaces
-                print("printing modifiedCBORMap nameSpaces inside: \(filteredNameSpaces)")
             }
         }
-        print("printing modifiedCBORMap return: \(CBOR.map(modifiedCBORMap))")
         return CBOR.map(modifiedCBORMap)
     }
     
