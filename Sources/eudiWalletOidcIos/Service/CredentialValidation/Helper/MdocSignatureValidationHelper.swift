@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftCBOR
 
 public class MdocSignatureValidationHelper {
     public init() {}
@@ -109,7 +110,7 @@ public class MdocSignatureValidationHelper {
         return certs
     }
     
-    static func buildCoseSigStructure(
+    public func buildCoseSigStructure(
         protectedHeaders: Data,
         payload: Data
     ) -> Data {
@@ -208,6 +209,64 @@ public class MdocSignatureValidationHelper {
             payload: Data(payloadBytes),
             signature: Data(signatureBytes)
         )
+    }
+    
+    public func validateSignatureForMdoc(jwk: [Any], issuerAuth: CBOR, cborString: String) -> (Bool?, Bool) {
+        var validationResults: [Bool] = []
+        var isX5cSigNotValid: Bool = false
+        for data in jwk {
+            if let item = data as? [String] {
+                let isValid = verifyMdocIssuerSignatureForX509(issuerAuth: issuerAuth)
+                validationResults.append(isValid)
+                if !isValid {
+                    isX5cSigNotValid = true
+                }
+            } else {
+                var publicKey: Any?
+                var alg: String = ""
+                do {
+                    alg = try getCOSEAlgorithm(from: cborString)
+                } catch {
+                   
+                }
+                if alg == "EdDSA" {
+                    guard let jwkData = data as? [String: Any], let crv = jwkData["crv"] as? String, crv == "Ed25519" else {
+                        validationResults.append(false)
+                        continue
+                    }
+                    publicKey = SignatureValidator.extractPublicKey(from: jwkData, crv: crv)
+                } else {
+                    guard let jwkData = data as? [String: Any], let crv = jwkData["crv"] as? String else {
+                        validationResults.append(false)
+                        continue
+                    }
+                    let algToCrvMap: [String: String] = [
+                        "ES256": "P-256",
+                        "ES384": "P-384",
+                        "ES512": "P-521"
+                    ]
+                    if let expectedCrv = algToCrvMap[alg], expectedCrv != crv {
+                        validationResults.append(false)
+                        continue
+                    }
+                    publicKey = SignatureValidator.extractPublicKey(from: data as? [String: Any] ?? [:], crv: crv)
+                }
+                if publicKey == nil { validationResults.append(false)
+                    continue }
+                guard let coseParts = try extractCoseSign1Parts(from: issuerAuth) else {
+                    return (false, false)
+                }
+                let sigStructure = buildCoseSigStructure(
+                    protectedHeaders: coseParts.protectedHeaders,
+                    payload: coseParts.payload
+                )
+                let isVerified = SignatureValidator.verifySignature(signature: coseParts.signature, for: sigStructure, using: publicKey)
+                
+                validationResults.append(isVerified)
+
+            }
+        }
+        return (validationResults.contains(true), isX5cSigNotValid)
     }
     
 }
