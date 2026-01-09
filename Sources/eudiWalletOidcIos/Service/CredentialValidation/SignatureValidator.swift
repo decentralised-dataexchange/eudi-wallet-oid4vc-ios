@@ -38,6 +38,8 @@ public class SignatureValidator {
                   let jsonObject = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) else { return false }
             let x5cList = jsonObject["x5c"] as? [String]
             let kid = jsonObject["kid"] as? String
+            let jwlPayload = "\(split[1])".decodeBase64()
+            let jwlPayloadDict = UIApplicationUtils.shared.convertStringToDictionary(text: jwlPayload ?? "")
             var jwkArray = try await JWKResolver().resolve(kid: kid, x5cChain: x5cList)
 
             if let jwksURI = jwksURI {
@@ -46,6 +48,16 @@ public class SignatureValidator {
                 if !jwk.isEmpty {
                     jwkArray.append(jwk)
                 }
+            }
+            if let iss = jwlPayloadDict?["iss"] as? String,
+               let issURL = JWTVCIssuerMetadataResolver().validateIssuerURL(iss),
+               let metadataURL = JWTVCIssuerMetadataResolver().buildIssuerMetadataURL(from: issURL) {
+                
+                let metadata = try await JWTVCIssuerMetadataResolver().fetchIssuerMetadata(from: metadataURL)
+                let kid = jsonObject["kid"] as? String
+                
+                let issuerJwks = await JWTVCIssuerMetadataResolver().resolveJWKs(metadata: metadata, kid: kid)
+                jwksArray.append(contentsOf: issuerJwks)
             }
             let (isValidSignature, isX5cSigNotValid) = validateSignature(jwt: jwt, jwk: jwkArray)
             if let isValid = isValidSignature, isValid {
