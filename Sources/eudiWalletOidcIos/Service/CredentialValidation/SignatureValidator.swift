@@ -9,6 +9,8 @@ import Foundation
 import Base58Swift
 import Security
 import CryptoKit
+import SwiftCBOR
+import JOSESwift
 
 public class SignatureValidator {
     
@@ -16,55 +18,36 @@ public class SignatureValidator {
         var jwk: [String: Any] = [:]
         var jwksArray: [Any] = []
         if format == "mso_mdoc" {
-            return true
+            guard let issuerAuthData = MDocVpTokenBuilder().getIssuerAuth(credential: jwt ?? "") else {
+                return true
+            }
+            let x5cChain = FilterCredentialService().extractX5cFromIssuerAuth1(issuerAuth: issuerAuthData)
+            let kid = FilterCredentialService().extractKidOrDidFromIssuerAuth(issuerAuth: issuerAuthData).0
+            let jwkArray = try await JWKResolver().resolve(kid: kid, x5cChain: x5cChain)
+            let (isValidSignature, isX5cSigNotValid) = MdocSignatureValidationHelper().validateSignatureForMdoc(jwk: jwkArray, issuerAuth: issuerAuthData, cborString: jwt ?? "")
+            if let isValid = isValidSignature, isValid {
+                return true
+            } else if isX5cSigNotValid {
+                throw ValidationError.invalidKID
+            } else {
+                return false
+            }
         } else {
             guard let split = jwt?.split(separator: "."), split.count > 1 else { return true}
             guard let jsonString = "\(split[0])".decodeBase64(),
                   let jsonObject = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) else { return false }
-            if let x5cList = jsonObject["x5c"] as? [String]{
-                if let x5cList = extractX5C(data: jsonObject) {
-                    jwksArray.append(x5cList)
-                }
-            }
-            if var kid = jsonObject["kid"] as? String {
-                if kid.hasPrefix("did:jwk:") {
-                    if let parsedJWK = ProcessJWKFromKID.parseDIDJWK(kid) {
-                        jwksArray.append(parsedJWK)
-                    }
-                }
-                if kid.hasPrefix("did:key:z") {
-                    jwk = ProcessKeyJWKFromKID.processJWKfromKid(did: kid)
-                    jwksArray.append(jwk)
-                }
-                if kid.hasPrefix("did:ebsi:z") {
-                    jwk = await ProcessEbsiJWKFromKID.processJWKforEBSI(kid: kid)
-                    jwksArray.append(jwk)
-                }
-                if kid.hasPrefix("did:web:") {
-                    if let publicKeyJwk = try? await ProcessWebJWKFromKID.fetchDIDDocument(did: kid){
-                        jwk = publicKeyJwk
-                        jwksArray.append(jwk)
-                    }
-                }
-                if kid.hasPrefix("did:tdw:") {
-                    if let publicKeyJwk = try await ProcessTrustWebJwkFromKid.fetchDIDDocument(did: kid) {
-                        jwksArray.append(publicKeyJwk)
-                    }
-                }
-                if kid.hasPrefix("did:webvh:") {
-                    if let publicKeyJwk = try await ProcessWebVhFromKID.fetchDIDDocument(did: kid) {
-                        jwksArray.append(publicKeyJwk)
-                    }
-                }
-            }
+            let x5cList = jsonObject["x5c"] as? [String]
+            let kid = jsonObject["kid"] as? String
+            var jwkArray = try await JWKResolver().resolve(kid: kid, x5cChain: x5cList)
+
             if let jwksURI = jwksURI {
                 let kid = jsonObject["kid"] as? String
                 jwk = await ProcessJWKFromJwksUri.processJWKFromJwksURI2(kid: kid, jwksURI: jwksURI)
                 if !jwk.isEmpty {
-                    jwksArray.append(jwk)
+                    jwkArray.append(jwk)
                 }
             }
-            let (isValidSignature, isX5cSigNotValid) = validateSignature(jwt: jwt, jwk: jwksArray)
+            let (isValidSignature, isX5cSigNotValid) = validateSignature(jwt: jwt, jwk: jwkArray)
             if let isValid = isValidSignature, isValid {
                 return true
             } else if isX5cSigNotValid {
@@ -218,7 +201,7 @@ public class SignatureValidator {
         return encoded
     }
     
-    static private func extractPublicKey(from jwk: [String: Any], crv: String? = "ES") -> Any? {
+    static func extractPublicKey(from jwk: [String: Any], crv: String? = "ES") -> Any? {
         
         var publicKeyData = Data()
         if let crv = jwk["crv"] as? String, crv == "Ed25519"{
@@ -261,7 +244,7 @@ public class SignatureValidator {
         }
     }
     
-    static private func verifySignature(signature: Data, for data: Data, using publicKey: Any) -> Bool {
+    static func verifySignature(signature: Data, for data: Data, using publicKey: Any) -> Bool {
         do {
             switch publicKey {
             case let publicKey as P256.Signing.PublicKey:
@@ -325,4 +308,6 @@ public class SignatureValidator {
         }
         return x5cData
     }
+    
 }
+
