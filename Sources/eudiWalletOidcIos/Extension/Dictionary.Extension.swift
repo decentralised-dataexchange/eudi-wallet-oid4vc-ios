@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AnyCodable
 
 public extension Dictionary
 {
@@ -37,5 +38,15 @@ public extension Dictionary
         }
         
         return String(data: jsonData, encoding: .utf8)
+    }
+}
+
+extension Dictionary where Key == String, Value == AnyCodable {
+    func toAnyDictionary() -> [String: Any] {
+        var result: [String: Any] = [:]
+        for (key, value) in self {
+            result[key] = value.value
+        }
+        return result
     }
 }

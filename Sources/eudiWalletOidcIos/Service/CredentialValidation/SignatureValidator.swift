@@ -52,12 +52,13 @@ public class SignatureValidator {
             if let iss = jwlPayloadDict?["iss"] as? String,
                let issURL = JWTVCIssuerMetadataResolver().validateIssuerURL(iss),
                let metadataURL = JWTVCIssuerMetadataResolver().buildIssuerMetadataURL(from: issURL) {
-                
-                let metadata = try await JWTVCIssuerMetadataResolver().fetchIssuerMetadata(from: metadataURL)
-                let kid = jsonObject["kid"] as? String
-                
-                let issuerJwks = await JWTVCIssuerMetadataResolver().resolveJWKs(metadata: metadata, kid: kid)
-                jwksArray.append(contentsOf: issuerJwks)
+                if let metadata = try await JWTVCIssuerMetadataResolver()
+                    .fetchIssuerMetadata(from: metadataURL) {
+                    let kid = jsonObject["kid"] as? String
+                    let issuerJwks = await JWTVCIssuerMetadataResolver()
+                        .resolveJWKs(metadata: metadata, kid: kid)
+                    jwksArray.append(contentsOf: issuerJwks)
+                }
             }
             let (isValidSignature, isX5cSigNotValid) = validateSignature(jwt: jwt, jwk: jwkArray)
             if let isValid = isValidSignature, isValid {

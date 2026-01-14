@@ -24,9 +24,7 @@ class VerifierAttestationSchemeHandler: ClientIdSchemeHandler {
         let headerSegment = String(segments[0])
         guard let headerJson = headerSegment.decodeBase64(),
               let headerData = headerJson.data(using: .utf8),
-              let headerDict = try? JSONSerialization.jsonObject(with: headerData, options: []) as? [String: Any],
-              let typ = headerDict["typ"] as? String,
-              typ == "verifier-attestation+jwt" else {
+              let headerDict = try? JSONSerialization.jsonObject(with: headerData, options: []) as? [String: Any] else {
             print("Invalid or missing 'typ'")
             return false
         }
@@ -41,6 +39,12 @@ class VerifierAttestationSchemeHandler: ClientIdSchemeHandler {
         let nestedSegments = verifierAttestationJWT.split(separator: ".")
         guard nestedSegments.count == 3 else {
             print("Invalid Verifier Attestation JWT format")
+            return false
+        }
+        let jwtHeaderSeg = String(nestedSegments[0])
+        guard let jwtHeaderSegJson = jwtHeaderSeg.decodeBase64(),
+              let jwtHeaderSegData = jwtHeaderSegJson.data(using: .utf8),
+              let jwtHeaderSegDict = try? JSONSerialization.jsonObject(with: jwtHeaderSegData, options: []) as? [String: Any], let typ = jwtHeaderSegDict["typ"] as? String, typ == "verifier-attestation+jwt" else {
             return false
         }
 
