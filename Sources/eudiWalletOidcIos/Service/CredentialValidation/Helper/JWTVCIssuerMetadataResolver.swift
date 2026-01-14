@@ -36,8 +36,14 @@ public class JWTVCIssuerMetadataResolver {
         return components?.url
     }
     
-    func fetchIssuerMetadata(from url: URL) async throws -> JwtVcIssuerMetadata {
-        let (data, _) = try await URLSession.shared.data(from: url)
+    func fetchIssuerMetadata(from url: URL) async throws -> JwtVcIssuerMetadata? {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            return nil
+        }
+        guard httpResponse.statusCode < 400 else {
+            return nil
+        }
         return try JSONDecoder().decode(JwtVcIssuerMetadata.self, from: data)
     }
     
