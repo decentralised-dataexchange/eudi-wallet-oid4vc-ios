@@ -196,7 +196,7 @@ public class SDJWTService {
             for disclosure in disclosures {
                 if let decodedDisclosure = disclosure.decodeBase64(),
                    let list = try? JSONSerialization.jsonObject(with: Data(decodedDisclosure.utf8), options: []) as? [Any],
-                   list.count >= 3 {
+                   list.count == 3 {
                     if let paramName = list[1] as? String,
                        requestedParams.contains(paramName){
                         disclosureList.append(disclosure)
@@ -210,6 +210,7 @@ public class SDJWTService {
                         }
                     }
                 }
+                // need to check the flow when list.count == 3
             }
             var verificationHandler : eudiWalletOidcIos.VerificationService?
             verificationHandler = eudiWalletOidcIos.VerificationService(keyhandler: keyHandler)
