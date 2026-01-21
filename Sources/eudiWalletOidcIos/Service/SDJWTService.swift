@@ -174,9 +174,9 @@ public class SDJWTService {
             guard let credential = credential, let dcqlData = dcqlCredential  else { return nil }
             
             // Split the credential into disclosures and the issued JWT
-            guard let disclosures = SDJWTService.shared.getDisclosuresFromSDJWT(credential), !disclosures.isEmpty
+            guard let disclosures = SDJWTService.shared.getDisclosuresFromSDJWT(credential), !disclosures.isEmpty,
                   var issuedJwt = SDJWTService.shared.getIssuerJwtFromSDJWT(credential) else {
-                return nil
+                return SDJWTService.shared.getIssuerJwtFromSDJWT(credential)
             }
           
             var disclosureList: [String] = []
