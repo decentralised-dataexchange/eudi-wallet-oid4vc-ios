@@ -28,6 +28,12 @@ public class CredentialRevocationService {
                 if let vc = dict?["vc"] as? [String: Any], let statusListArray = vc["credentialStatus"] as? [String: Any] {
                     statusList2021.append(item)
                 }
+            } else {
+                guard let issuerAuth = MDocVpTokenBuilder().getIssuerAuth(credential: item) else { return  [] }
+                let status = MDOCRevocationHelper().getStatusFromIssuerAuth(cborData: issuerAuth)
+                if let status = status as? [String: Any] {
+                    statusList.append(item)
+                }
             }
         }
         if !statusList.isEmpty {
