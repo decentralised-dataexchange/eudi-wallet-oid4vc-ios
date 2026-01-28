@@ -16,7 +16,6 @@ public class SignatureValidator {
     
     static func validateSign(jwt: String?, jwksURI: String?, format: String) async throws-> Bool? {
         var jwk: [String: Any] = [:]
-        var jwksArray: [Any] = []
         if format == "mso_mdoc" {
             guard let issuerAuthData = MDocVpTokenBuilder().getIssuerAuth(credential: jwt ?? "") else {
                 return true
@@ -57,7 +56,7 @@ public class SignatureValidator {
                     let kid = jsonObject["kid"] as? String
                     let issuerJwks = await JWTVCIssuerMetadataResolver()
                         .resolveJWKs(metadata: metadata, kid: kid)
-                    jwksArray.append(contentsOf: issuerJwks)
+                    jwkArray.append(contentsOf: issuerJwks)
                 }
             }
             let (isValidSignature, isX5cSigNotValid) = validateSignature(jwt: jwt, jwk: jwkArray)
