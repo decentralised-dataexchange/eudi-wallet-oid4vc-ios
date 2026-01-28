@@ -18,7 +18,10 @@ class AuthorisationResponseHandler {
             var params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
             if var presentationSubmission = params["presentation_submission"] as? [String: Any]{
                  // For encoding the format we have encoded the presentation submission
-                let encodedPresentationSubmission = presentationSubmission.toString()?.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "+")).subtracting(CharacterSet(charactersIn: "+")))?.replacingOccurrences(of: "+", with: "%2B")
+                let allowedCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+                let encodedPresentationSubmission =
+                presentationSubmission.toString()?
+                    .addingPercentEncoding(withAllowedCharacters: allowedCharacters)
                 params["presentation_submission"] = encodedPresentationSubmission
             }
             return params
