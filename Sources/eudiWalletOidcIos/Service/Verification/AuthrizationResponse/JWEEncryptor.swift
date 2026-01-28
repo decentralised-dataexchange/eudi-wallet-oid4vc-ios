@@ -26,7 +26,7 @@ class JWEEncryptor {
                 print("")
             }
         }
-
+        let supportedEncryptions = clientMetaData["encrypted_response_enc_values_supported"] as? [String]
         if let jwksURI = clientMetaData["jwks_uri"] as? String {
             jwk = try await fetchJWKFromURI(jwksURI)
         } else if let jwks = clientMetaData["jwks"] as? [String: Any],
@@ -40,22 +40,24 @@ class JWEEncryptor {
         return try await encrypt(payload: payload,
                        jwks: jwk,
                        nonce: presentationRequest?.nonce,
-                       clientID: presentationRequest?.clientId)
+                                 clientID: presentationRequest?.clientId, supportedEncryptions: supportedEncryptions)
     }
     
     func encrypt(
         payload: [String: Any],
         jwks: [String: Any]?,
         nonce: String? = nil,
-        clientID: String? = nil
+        clientID: String? = nil,
+        supportedEncryptions: [String]? = nil
     ) async throws -> String {
         guard let x = jwks?["x"] as? String,
               let y = jwks?["y"] as? String,
               let kid = jwks?["kid"] as? String else {
             throw NSError(domain: "JWE", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid JWK"])
         }
+     let selectedEncryptionMethod = try selectEncryptionMethod(supported: supportedEncryptions ?? [])
         let ecKeyData = ECPublicKey(crv: .P256, x: x, y: y, additionalParameters: ["kid": kid])
-        var header = JWEHeader(keyManagementAlgorithm: .ECDH_ES, contentEncryptionAlgorithm: .A128CBCHS256)
+        var header = JWEHeader(keyManagementAlgorithm: .ECDH_ES, contentEncryptionAlgorithm: selectedEncryptionMethod)
         header.kid = kid
         if let nonce = nonce, !nonce.isEmpty {
             let apvData = nonce.data(using: .utf8)
@@ -71,49 +73,59 @@ class JWEEncryptor {
 
         // 5. Encrypt
         let payloadEncrypted = Payload(payloadData)
-        let encrypter = try Encrypter(keyManagementAlgorithm: .ECDH_ES, contentEncryptionAlgorithm: .A128CBCHS256, encryptionKey: ecKeyData)
+        let encrypter = try Encrypter(keyManagementAlgorithm: .ECDH_ES, contentEncryptionAlgorithm: selectedEncryptionMethod, encryptionKey: ecKeyData)
         guard let encrypter = encrypter else { return ""}
         let jwe = try JWE(header: header, payload: payloadEncrypted, encrypter: encrypter)
 
         return jwe.compactSerializedString
     }
     
-    func base64UrlDecode(_ str: String) -> Data? {
-        var base64 = str
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        
-        let paddingLength = 4 - base64.count % 4
-        if paddingLength < 4 {
-            base64 += String(repeating: "=", count: paddingLength)
+    private func toEncryptionMethod(_ enc: String) -> ContentEncryptionAlgorithm? {
+        switch enc {
+        case "A128CBC-HS256":
+            return .A128CBCHS256
+        case "A128GCM":
+            return .A128GCM
+        case "A256GCM":
+            return .A256GCM
+        default:
+            return nil
         }
-        return Data(base64Encoded: base64)
     }
-    
-    func ecPublicKeyWithoutKid(x: String, y: String) throws -> SecKey {
-        guard
-            let xData = base64UrlDecode(x),
-            let yData = base64UrlDecode(y)
-        else {
-            throw NSError(domain: "JWE", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid base64url x/y"])
-        }
 
-        // P-256 uncompressed key = 0x04 + x + y
-        var keyBytes = Data([0x04])
-        keyBytes.append(xData)
-        keyBytes.append(yData)
-
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrKeyClass as String: kSecAttrKeyClassPublic,
-            kSecAttrKeySizeInBits as String: 256
+    private func selectEncryptionMethod(
+        supported: [String]
+    ) throws -> ContentEncryptionAlgorithm {
+        
+        let preferenceOrder = [
+            "A128CBC-HS256",
+            "A128GCM",
+            "A256GCM"
         ]
-
-        guard let secKey = SecKeyCreateWithData(keyBytes as CFData, attributes as CFDictionary, nil) else {
-            throw NSError(domain: "JWE", code: 400, userInfo: [NSLocalizedDescriptionKey: "Failed to create EC key"])
+        
+        guard let selected = preferenceOrder.first(where: { supported.contains($0) }) else {
+            throw NSError(
+                domain: "EncryptionMethodSelection",
+                code: 0,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "No supported encryption method found. Verifier supports: \(supported)"
+                ]
+            )
         }
-
-        return secKey
+        
+        guard let method = toEncryptionMethod(selected) else {
+            throw NSError(
+                domain: "EncryptionMethodSelection",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Unsupported enc method: \(selected)"
+                ]
+            )
+        }
+        
+        return method
     }
     
     func generateEphemeralEncryptionJWK(privateKey: ECPrivateKey?) -> Any? {
@@ -134,26 +146,10 @@ class JWEEncryptor {
 
         return jwk
     }
-
-    // Helper: Convert base64url strings to EC public key (CryptoKit)
-    struct EphemeralPublicKey {
-        let x: String
-        let y: String
-
-        var rawRepresentation: Data {
-            let xData = Data(base64URLEncoded: x)!
-            let yData = Data(base64URLEncoded: y)!
-            return Data([0x04]) + xData + yData // Uncompressed EC point format
-        }
-
-        init(x: String, y: String) throws {
-            self.x = x
-            self.y = y
-        }
-    }
-
+    
     // Helper: Fetch JWK from URI (you need to implement async network fetch)
     private func fetchJWKFromURI(_ uri: String) async -> [String: Any] {
         return await ProcessJWKFromJwksUri.fetchJwkData(kid: nil, jwksUri: uri, keyUse: "enc")
     }
+    
 }

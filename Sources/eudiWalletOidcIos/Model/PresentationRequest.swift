@@ -103,6 +103,7 @@ public struct ClientMetaData: Codable {
     public var version: String?
     public var subject_syntax_types_supported: [String]?
     public var jwks: JWKS?
+    public var encryptedResponseEncValuesSupported: [String]?
     
     enum CodingKeys: String, CodingKey {
         case clientName = "client_name"
@@ -121,6 +122,7 @@ public struct ClientMetaData: Codable {
         case id_token_signed_response_alg = "id_token_signed_response_alg"
         case jwks = "jwks"
         case version = "version"
+        case encryptedResponseEncValuesSupported = "encrypted_response_enc_values_supported"
     }
     
     public init(clientName: String?, coverUri: String?, description: String?, location: String?, logoUri: String?, legalPidAttestation: String?, legalPidAttestationPop: String?, authorizationEncryptedResponseAlg: String? = nil, authorizationEncryptedResponseEnc: String? = nil, idTokenEncryptedResponseAlg: String? = nil, id_token_encrypted_response_enc: String? = nil, jwks_uri: String? = nil,subject_syntax_types_supported: [String]? = nil, id_token_signed_response_alg: String? = nil, jwks: JWKS? = nil, version: String? = nil) {
@@ -160,6 +162,7 @@ public struct ClientMetaData: Codable {
         id_token_signed_response_alg = try container.decodeIfPresent(String.self, forKey: .id_token_signed_response_alg)
         jwks = try container.decodeIfPresent(JWKS.self, forKey: .jwks)
         version = try container.decodeIfPresent(String.self, forKey: .version)
+        encryptedResponseEncValuesSupported = try container.decodeIfPresent([String].self, forKey: .encryptedResponseEncValuesSupported)
     }
     
 }
