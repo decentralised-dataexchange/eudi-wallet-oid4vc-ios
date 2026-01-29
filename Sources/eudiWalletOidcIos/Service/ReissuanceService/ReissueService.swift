@@ -154,7 +154,8 @@ public class ReissueService {
                 let credentialRequestEncryptionJwks = issuerConfig.credentialRequestEncryption?.jwks?.first?.dictionary
                 var encryptRequest = ""
                 do {
-                    encryptRequest = try await JWEEncryptor().encrypt(payload: params, jwks: credentialRequestEncryptionJwks)
+                    let supportedEncryptions = issuerConfig.credentialResponseEncryption?.encValuesSupported
+                    encryptRequest = try await JWEEncryptor().encrypt(payload: params, jwks: credentialRequestEncryptionJwks, supportedEncryptions: supportedEncryptions)
                 } catch {
                     encryptRequest = ""
                 }
