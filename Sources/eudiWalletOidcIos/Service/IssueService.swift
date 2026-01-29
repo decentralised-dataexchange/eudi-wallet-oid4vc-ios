@@ -744,7 +744,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 let credentialRequestEncryptionJwks = issuerConfig.credentialRequestEncryption?.jwks?.first?.dictionary
                 var encryptRequest = ""
                 do {
-                    encryptRequest = try await JWEEncryptor().encrypt(payload: params, jwks: credentialRequestEncryptionJwks)
+                    let supportedEncryptions = issuerConfig.credentialResponseEncryption?.encValuesSupported
+                    encryptRequest = try await JWEEncryptor().encrypt(payload: params, jwks: credentialRequestEncryptionJwks, supportedEncryptions: supportedEncryptions)
                 } catch {
                     encryptRequest = ""
                 }
@@ -815,7 +816,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
     
     public func processDeferredCredentialRequest(
         acceptanceToken: String,
-        deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?, jwks: [String: Any]?, encryptionRequired: Bool?) async -> CredentialResponse? {
+        deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?, jwks: [String: Any]?, encryptionRequired: Bool?, encValuesSupported: [String]?) async -> CredentialResponse? {
             
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: deferredCredentialEndPoint) else { return nil }
@@ -839,7 +840,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 if encryptionRequired == true {
                     var encryptRequest = ""
                     do {
-                        encryptRequest = try await JWEEncryptor().encrypt(payload: params, jwks: jwks)
+                        encryptRequest = try await JWEEncryptor().encrypt(payload: params, jwks: jwks, supportedEncryptions: encValuesSupported)
                     } catch {
                         encryptRequest = ""
                     }
