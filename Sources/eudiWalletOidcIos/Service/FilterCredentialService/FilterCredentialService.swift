@@ -14,6 +14,20 @@ public class FilterCredentialService {
     public init() {
     }
     
+    public func filterCredentials(
+            credentialList: [String?],
+            queryItems: Any
+        ) async -> [[String]] {
+
+            await withCheckedContinuation { continuation in
+                self.filterCredentials(
+                    credentialList: credentialList,
+                    queryItems: queryItems
+                ) { response in
+                    continuation.resume(returning: response)
+                }
+            }
+        }
     
     public func filterCredentials(credentialList: [String?], queryItems: Any, completion: @escaping ([[String]]) -> Void) {
         var response: [[String]] = []
