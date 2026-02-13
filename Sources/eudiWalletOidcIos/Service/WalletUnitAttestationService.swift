@@ -13,7 +13,7 @@ public class WalletUnitAttestationService {
     public init() {}
     var baseURL = ""
     
-    public func initiateWalletUnitAttestation(walletProviderUrl: String) async throws -> (String, String){
+    public func initiateWalletUnitAttestation(walletProviderUrl: String) async throws -> (String, WalletUnitAttestationResponse?){
             baseURL = walletProviderUrl
             let service = DCAppAttestService.shared
             let inputString = await fetchNonceForDeviceIntegrityToken(nonceEndPoint:  "\(baseURL)/nonce")
@@ -168,8 +168,9 @@ public class WalletUnitAttestationService {
         }
     }
     
-    func processWalletUnitAttestationRequest(attestation: String, nonce: String, keyId: String, clientAssertion: String) async -> String {
+    func processWalletUnitAttestationRequest(attestation: String, nonce: String, keyId: String, clientAssertion: String) async -> WalletUnitAttestationResponse? {
         var credentialOfferUri: String = ""
+        var response: WalletUnitAttestationResponse?
         let url = "\(baseURL)/wallet-unit/request"
         var request = URLRequest(url: URL(string: url)!)
         request.httpMethod = "POST"
@@ -187,12 +188,15 @@ public class WalletUnitAttestationService {
             let jsonObject = try JSONSerialization.jsonObject(with: data, options: [])
             let dictionary = jsonObject as? [String: Any]
             var credentialOffer = dictionary?["credentialOffer"] as? String
+            var walletUnitAttestation = dictionary?["walletUnitAttestation"] as? String
+            var credentialIssuer = dictionary?["credentialIssuer"] as? String
             credentialOfferUri = credentialOffer ?? ""
+            response = WalletUnitAttestationResponse(credentialOffer: credentialOffer ?? "", walletUnitAttestation: walletUnitAttestation ?? "", credentialIssuer: credentialIssuer ?? "")
             print("data: \(responseData)")
         } catch {
             print("Error")
         }
-        return credentialOfferUri
+        return response
     }
     
     public func generateWUAProofOfPossession(keyHandler: SecureKeyProtocol, aud: String? = nil) async -> String {
@@ -217,4 +221,10 @@ public class WalletUnitAttestationService {
         return popToken
     }
     
+}
+
+public struct WalletUnitAttestationResponse {
+    public let credentialOffer: String?
+    public let walletUnitAttestation: String?
+    public let credentialIssuer: String?
 }
