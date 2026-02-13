@@ -71,6 +71,18 @@ public class DCQLFiltering {
                     guard let matchedValue = getValue(from: credentialJSON, forPath: joinedPath) else {
                         continue credentialLoop
                     }
+                    // Apply values filter (ONLY if values is present)
+                       if let expectedValues = pathClaim.values {
+                           guard
+                               let actualValue = toClaimValue(matchedValue),
+                               matchesValuesConstraint(
+                                   expected: expectedValues,
+                                   actual: actualValue
+                               )
+                           else {
+                               continue credentialLoop
+                           }
+                       }
                     
                     matchedFields.append(MatchedField(
                         index: credentialIndex,
@@ -126,6 +138,19 @@ public class DCQLFiltering {
                     guard let matchedValue = getValue(from: credentialJSON, forPath: joinedPath) else {
                         continue credentialLoop
                     }
+                    
+                    // Apply values filter (ONLY if values is present)
+                       if let expectedValues = pathClaim.values {
+                           guard
+                               let actualValue = toClaimValue(matchedValue),
+                               matchesValuesConstraint(
+                                   expected: expectedValues,
+                                   actual: actualValue
+                               )
+                           else {
+                               continue credentialLoop
+                           }
+                       }
                     
                     matchedFields.append(MatchedField(
                         index: credentialIndex,
@@ -189,7 +214,19 @@ public class DCQLFiltering {
                         guard let matchedValue = getValue(from: credentialJSON, forPath: joinedPath) else {
                             continue credentialLoop
                         }
-
+                        // Apply values filter (ONLY if values is present)
+                        if let expectedValues = pathClaim.values {
+                            guard
+                                let actualValue = toClaimValue(matchedValue),
+                                matchesValuesConstraint(
+                                    expected: expectedValues,
+                                    actual: actualValue
+                                )
+                            else {
+                                continue credentialLoop
+                            }
+                        }
+                        
                         matchedFields.append(MatchedField(
                             index: credentialIndex,
                             path: MatchedPath(path: joinedPath, index: pathIndex, value: matchedValue)
@@ -222,6 +259,29 @@ public class DCQLFiltering {
             }
         }
         return current
+    }
+    
+    static func matchesValuesConstraint(
+        expected: [ClaimValue],
+        actual: ClaimValue
+    ) -> Bool {
+        expected.contains(actual)
+    }
+    
+    static func toClaimValue(_ value: Any) -> ClaimValue? {
+        switch value {
+        case let string as String:
+            return .string(string)
+        case let int as Int:
+            return .int(int)
+        case let bool as Bool:
+            return .bool(bool)
+        // JSON numbers sometimes arrive as Double
+        case let double as Double where double.rounded() == double:
+            return .int(Int(double))
+        default:
+            return nil
+        }
     }
     
 }
