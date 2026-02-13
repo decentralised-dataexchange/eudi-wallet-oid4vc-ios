@@ -381,13 +381,15 @@ public enum Claim: Codable {
         case id
         case namespace
         case claim_name
+        case values
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if let path = try? container.decode([String?].self, forKey: .path) {
             let id = try? container.decode(String.self, forKey: .id)
-            self = .pathClaim(PathClaim(path: path, id: id))
+           let values = try container.decodeIfPresent([ClaimValue].self, forKey: .values)
+            self = .pathClaim(PathClaim(path: path, id: id, values: values))
         } else if let namespace = try? container.decode(String.self, forKey: .namespace),
                   let claimName = try? container.decode(String.self, forKey: .claim_name) {
             self = .namespacedClaim(NamespacedClaim(namespace: namespace, claimName: claimName))
@@ -411,10 +413,12 @@ public enum Claim: Codable {
 public struct PathClaim: Codable {
     public let id: String?
     public let path: [String?]
+    public let values: [ClaimValue]?
     
-    public init(path: [String?], id: String?) {
+    public init(path: [String?], id: String?,  values: [ClaimValue]? = nil) {
         self.id = id
         self.path = path
+        self.values = values
     }
 }
 
@@ -427,3 +431,41 @@ public struct NamespacedClaim: Codable {
         self.claimName = claimName
     }
 }
+
+public enum ClaimValue: Codable, Equatable {
+    case string(String)
+    case int(Int)
+    case bool(Bool)
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .int(value)
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else {
+            throw DecodingError.typeMismatch(
+                ClaimValue.self,
+                .init(codingPath: decoder.codingPath,
+                      debugDescription: "Unsupported claim value type")
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .int(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        }
+    }
+}
+
