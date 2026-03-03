@@ -12,14 +12,14 @@ class AuthorisationResponseBuilder {
     static func buildResponse(
         credentialsList: [[String]]?,
         presentationRequest: PresentationRequest?,
-        did: String, keyHandler: SecureKeyProtocol
+        did: String, keyHandler: SecureKeyProtocol, isSca: Bool
     ) async -> [String: Any] {
         
         var params: [String: Any] = [:]
         
         if let dcql = presentationRequest?.dcqlQuery {
             //Fixme: handle DCQL response
-            params = await DCQLAuthorisationResponseBuilder().build(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
+            params = await DCQLAuthorisationResponseBuilder().build(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca)
             return params
         }else{
             var credentialsArray: [String]? = []

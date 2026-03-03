@@ -13,7 +13,7 @@ class JWTVpTokenBuilder : VpTokenBuilder{
                presentationRequest: PresentationRequest?,
                did: String,
                index: Int?,
-               keyHandler: SecureKeyProtocol) async -> [String]? {
+               keyHandler: SecureKeyProtocol, isSca: Bool = false) async -> [String]? {
         
         var vpTokens: [String] = []
         

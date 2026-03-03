@@ -26,7 +26,7 @@ extension URL {
 }
 
 extension String {
-    func decodeBase64() -> String? {
+    public func decodeBase64() -> String? {
         do {
             var st = self
                 .replacingOccurrences(of: "_", with: "/")

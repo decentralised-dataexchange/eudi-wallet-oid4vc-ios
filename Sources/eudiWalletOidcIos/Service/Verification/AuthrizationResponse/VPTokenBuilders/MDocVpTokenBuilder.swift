@@ -12,7 +12,7 @@ import OrderedCollections
 public class MDocVpTokenBuilder : VpTokenBuilder{
     public init() {}
     
-    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) -> [String]? {
+    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol, isSca: Bool = false) -> [String]? {
         
         var queryItem: Any?
         var doc: String?

@@ -10,7 +10,7 @@ import CryptoKit
 
 class SDJWTVpTokenBuilder : VpTokenBuilder{
         
-    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) async -> [String]? {
+    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol, isSca: Bool) async -> [String]? {
         let item = credentials.first ?? ""
         guard !item.isEmpty else { return nil }
         var claims: [String: Any] = [:]
@@ -36,6 +36,16 @@ class SDJWTVpTokenBuilder : VpTokenBuilder{
             if checkTransactionDataWithMultipleInputDescriptors(queryItem: queryItem, transactionDataItem: transactionData) {
                 claims["transaction_data_hashes"] = [self.generateHash(input: transactionData ?? "")]
                 claims["transaction_data_hashes_alg"] = "sha-256"
+            }
+            
+            if isSca {
+                claims["response_mode"] = presentationRequest?.responseMode
+                claims["jti"] = UUID().uuidString
+                let amr: [[String: String]] = [
+                    ["possession": "key_in_local_native_wscd"],
+                    ["inherence": "fingerprint_device"]
+                ]
+                claims["amr"] = amr
             }
         }
         var processedResults: [String] = []
@@ -78,4 +88,5 @@ class SDJWTVpTokenBuilder : VpTokenBuilder{
         
         return hash.map { String(format: "%02x", $0) }.joined()
     }
+    
 }
