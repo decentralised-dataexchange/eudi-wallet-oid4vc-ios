@@ -11,11 +11,11 @@ class AuthorisationResponseHandler {
     
     func prepareAuthorisationResponse(credentialsList: [[String]]?,
                                       presentationRequest: PresentationRequest?,
-                                      did: String, keyHandler: SecureKeyProtocol) async -> [String: Any]?{
+                                      did: String, keyHandler: SecureKeyProtocol, isSca: Bool) async -> [String: Any]?{
         guard let responseMode = ResponseMode(from: presentationRequest?.responseMode ?? "") else { return nil}
         switch responseMode {
         case .directPost:
-            var params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
+            var params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca)
             if var presentationSubmission = params["presentation_submission"] as? [String: Any]{
                  // For encoding the format we have encoded the presentation submission
                 let allowedCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
@@ -26,7 +26,7 @@ class AuthorisationResponseHandler {
             }
             return params
         case .iarPost :
-            var params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
+            var params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca)
             if var presentationSubmission = params["presentation_submission"] as? [String: Any] {
                  // For encoding the format we have encoded the presentation submission
                 let encodedPresentationSubmission = presentationSubmission.toString()?.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "+")).subtracting(CharacterSet(charactersIn: "+")))?.replacingOccurrences(of: "+", with: "%2B")
@@ -41,7 +41,7 @@ class AuthorisationResponseHandler {
             
             return iarPostParameters
         case .iarPostJWT:
-            let params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
+            let params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca)
             do {
                 let encrypted = try await JWEEncryptor().encrypt(payload: params, presentationRequest: presentationRequest)
                 var encryptedResponseParams: [String: Any] = [:]
@@ -58,7 +58,7 @@ class AuthorisationResponseHandler {
                 print("")
             }
         case .directPostJWT:
-            let params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler)
+            let params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca)
             do {
                 let encrypted = try await JWEEncryptor().encrypt(payload: params, presentationRequest: presentationRequest)
                 var encryptedResponseParams: [String: Any] = [:]

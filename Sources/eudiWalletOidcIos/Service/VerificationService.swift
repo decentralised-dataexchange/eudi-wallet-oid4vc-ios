@@ -32,9 +32,9 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         presentationRequest: PresentationRequest?,
         credentialsList: [[String]]?,
         wua: String,
-        pop: String) async -> WrappedVerificationResponse? {
+        pop: String, isSca: Bool = false) async -> WrappedVerificationResponse? {
             
-            let params = await AuthorisationResponseHandler().prepareAuthorisationResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler) ?? [:]
+            let params = await AuthorisationResponseHandler().prepareAuthorisationResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca) ?? [:]
             guard let redirectURL = presentationRequest?.redirectUri else {return nil}
             return await sendVPRequest(params: params, redirectURI: presentationRequest?.redirectUri ?? "", wua: wua, pop: pop)
         }

@@ -182,15 +182,14 @@ public struct TransactionData: Codable {
     public var type: String?
     public var credentialIDs: [String]?
     public var paymentData: PaymentData?
+    public var payload: PayloadData?
+    
+    
     enum CodingKeys: String, CodingKey {
         case type = "type"
         case credentialIDs = "credential_ids"
         case paymentData = "payment_data"
-    }
-    public init(type: String?, credentialIDs: [String]?, paymentData: PaymentData?) {
-        self.type = type
-        self.credentialIDs = credentialIDs
-        self.paymentData = paymentData
+        case payload
     }
     
     public init(from decoder: Decoder) throws {
@@ -198,9 +197,39 @@ public struct TransactionData: Codable {
         type = try container.decodeIfPresent(String.self, forKey: .type)
         credentialIDs = try container.decodeIfPresent([String].self, forKey: .credentialIDs)
         paymentData = try container.decodeIfPresent(PaymentData.self, forKey: .paymentData)
+        payload = try container.decodeIfPresent(PayloadData.self, forKey: .payload)
     }
     
 }
+
+public struct PayloadData: Codable {
+    public var currency: String?
+    public var amount: Double?
+    public var payee: Payee?
+    public var transactionId: String?
+    public var dateTime: String?
+    public var service: String?
+    public var action: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case currency
+        case amount
+        case payee
+        case transactionId = "transaction_id"
+        case dateTime = "date_time"
+        case service
+        case action
+    }
+}
+
+
+public struct Payee: Codable {
+    public let name: String
+    public let id: String
+    public let logo: String?
+    public let website: String?
+}
+
 public struct PaymentData: Codable {
     public var payee: String?
     public var currencyAmount: CurrencyAmount?
@@ -466,6 +495,53 @@ public enum ClaimValue: Codable, Equatable {
         case .bool(let value):
             try container.encode(value)
         }
+    }
+}
+
+// MARK: - Root Model
+public struct PaymentActionLabels: Codable {
+    public let affirmativeActionLabel: [LocalizedLabel]?
+    public let denialActionLabel: [LocalizedLabel]?
+    public let transactionTitle: [LocalizedLabel]?
+    public let security_hint: [LocalizedLabel]?
+
+    enum CodingKeys: String, CodingKey {
+        case affirmativeActionLabel = "affirmative_action_label"
+        case denialActionLabel = "denial_action_label"
+        case transactionTitle = "transaction_title"
+        case security_hint = "security_hint"
+    }
+}
+
+// MARK: - Localized Label Model
+public struct LocalizedLabel: Codable {
+    public let lang: String
+    public let value: String
+}
+
+extension [LocalizedLabel] {
+    @available(iOS 16, *)
+    public func localizedValue(for locale: Locale = .current) -> String {
+        
+        var fallBackValue = ""
+        let fullIdentifier = locale.identifier.replacingOccurrences(of: "_", with: "-")
+        if let match = first(where: { $0.lang == fullIdentifier }) {
+            return match.value
+        }
+
+        let languageCode = locale.language.languageCode?.identifier ?? ""
+        if let match = first(where: { $0.lang == languageCode }) {
+            return match.value
+        }
+
+        // Fall back to English
+        if let match = first(where: { $0.lang.hasPrefix("en") }) {
+            fallBackValue = match.value
+            return match.value
+        }
+        
+
+        return fallBackValue
     }
 }
 

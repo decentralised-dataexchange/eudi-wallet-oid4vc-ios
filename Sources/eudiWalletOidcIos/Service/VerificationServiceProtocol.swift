@@ -22,7 +22,7 @@ protocol VerificationServiceProtocol {
         presentationRequest: PresentationRequest?,
         credentialsList: [[String]]?,
         wua: String,
-        pop: String) async -> WrappedVerificationResponse?
+        pop: String, isSca: Bool ) async -> WrappedVerificationResponse?
     /**
      Processes an authorization request and extracts a PresentationRequest object asynchronously.
      - Parameter data: The authorization request data.
