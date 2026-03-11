@@ -74,7 +74,8 @@ public class RequestedCredentialsValidator {
                 for (index, creds) in filteredCredentials.enumerated() {
                     if creds.isEmpty {
                         isValid = false
-                        missing.append("Credential at index \(index)")
+                        let name = index < dcqlQuery.credentials.count ? dcqlQuery.credentials[index].id : ""
+                        missing.append(name)
                     }
                 }
             }
