@@ -48,6 +48,74 @@ public class MdocSignatureValidationHelper {
         )
     }
     
+    func extractJWKFromIssuerAuth(issuerAuth: CBOR) -> [String: Any]? {
+    guard case let CBOR.array(coseArray) = issuerAuth,
+          coseArray.count >= 2 else {
+        return nil
+    }
+    
+    if case let CBOR.map(unprotectedHeaders) = coseArray[1] {
+        let jwkCBOR = unprotectedHeaders[CBOR.utf8String("jwk")]
+            ?? unprotectedHeaders[CBOR.negativeInt(1)]
+        
+        if let jwkCBOR = jwkCBOR, let jwk = extractJWKFromCBOR(jwkCBOR) {
+            return jwk
+        }
+    }
+    
+    if case let CBOR.byteString(protectedBytes) = coseArray[0] {
+        let data = Data(protectedBytes)
+        if let protectedCBOR = try? CBOR.decode(Array(data)),
+           case let CBOR.map(protectedHeaders) = protectedCBOR {
+            
+            let jwkCBOR = protectedHeaders[CBOR.utf8String("jwk")]
+                ?? protectedHeaders[CBOR.negativeInt(1)]
+            
+            if let jwkCBOR = jwkCBOR, let jwk = extractJWKFromCBOR(jwkCBOR) {
+                return jwk
+            }
+        }
+    }
+    
+    return nil
+}
+
+    // MARK: - Private CBOR JWK Parser
+    private func extractJWKFromCBOR(_ cbor: CBOR) -> [String: Any]? {
+        switch cbor {
+        // Case 1: JWK encoded as a native CBOR map
+        case .map(let cborMap):
+            var jwkDict: [String: Any] = [:]
+            for (key, value) in cborMap {
+                guard let keyString = cborKeyToString(key) else { continue }
+                jwkDict[keyString] = cborValueToSwift(value)
+            }
+            return jwkDict.isEmpty ? nil : jwkDict
+            
+        // Case 2: JWK embedded as raw JSON bytes
+        case .byteString(let bytes):
+            guard let parsed = try? JSONSerialization.jsonObject(
+                with: Data(bytes)
+            ) as? [String: Any] else {
+                return nil
+            }
+            return parsed
+            
+        // Case 3: JWK embedded as a JSON string
+        case .utf8String(let str):
+            guard let data = str.data(using: .utf8),
+                  let parsed = try? JSONSerialization.jsonObject(
+                    with: data
+                  ) as? [String: Any] else {
+                return nil
+            }
+            return parsed
+            
+        default:
+            return nil
+        }
+    }
+    
     
     public  func verifyCoseSignature(
         publicKey: SecKey,
@@ -108,6 +176,37 @@ public class MdocSignatureValidationHelper {
         }
         
         return certs
+    }
+
+    private func cborKeyToString(_ cbor: CBOR) -> String? {
+        switch cbor {
+        case .utf8String(let str): return str
+        case .unsignedInt(let i):  return String(i)
+        case .negativeInt(let i):  return String(-1 - Int(i))
+        default:                   return nil
+        }
+    }
+
+    private func cborValueToSwift(_ cbor: CBOR) -> Any {
+        switch cbor {
+        case .utf8String(let str):   return str
+        case .unsignedInt(let i):    return i
+        case .negativeInt(let i):    return -1 - Int(i)
+        case .boolean(let b):        return b
+        case .float(let f):          return f
+        case .double(let d):         return d
+        case .byteString(let bytes): return Data(bytes).base64URLEncodedString()
+        case .array(let arr):        return arr.map { cborValueToSwift($0) }
+        case .map(let map):
+            var dict: [String: Any] = [:]
+            for (k, v) in map {
+                if let key = cborKeyToString(k) {
+                    dict[key] = cborValueToSwift(v)
+                }
+            }
+            return dict
+        default: return "\(cbor)"
+        }
     }
     
     public func buildCoseSigStructure(

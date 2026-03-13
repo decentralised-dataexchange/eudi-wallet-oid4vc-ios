@@ -55,6 +55,9 @@ public class SignatureValidator {
                     jwkArray.append(jwk)
                 }
             }
+            if let embeddedJWK = jsonObject["jwk"] as? [String: Any]  {
+                jwkArray.append(embeddedJWK)
+            }
             if let iss = jwlPayloadDict?["iss"] as? String,
                let issURL = JWTVCIssuerMetadataResolver().validateIssuerURL(iss),
                let metadataURL = JWTVCIssuerMetadataResolver().buildIssuerMetadataURL(from: issURL) {
