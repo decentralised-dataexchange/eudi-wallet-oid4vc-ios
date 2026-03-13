@@ -27,6 +27,7 @@ public class ExpiryValidator {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
         dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
         guard let expiryDate = dateFormatter.date(from: expirationDate) else { return false}
         let currentDate = Date()
         if currentDate <= expiryDate {
