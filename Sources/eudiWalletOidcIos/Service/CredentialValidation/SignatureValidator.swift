@@ -23,16 +23,12 @@ public class SignatureValidator {
             let x5cChain = FilterCredentialService().extractX5cFromIssuerAuth1(issuerAuth: issuerAuthData)
             let kid = FilterCredentialService().extractKidOrDidFromIssuerAuth(issuerAuth: issuerAuthData).0
             var jwkArray = try await JWKResolver().resolve(kid: kid, x5cChain: x5cChain)
-            var jwkData = MdocSignatureValidationHelper().extractJWKFromIssuerAuth(issuerAuth: issuerAuthData)
             if let jwksURI = jwksURI {
                 let kid = kid
                 jwk = await ProcessJWKFromJwksUri.processJWKFromJwksURI2(kid: kid, jwksURI: jwksURI)
                 if !jwk.isEmpty {
                     jwkArray.append(jwk)
                 }
-            }
-            if let jwkData = jwkData {
-                jwkArray.append(jwkData)
             }
             let (isValidSignature, isX5cSigNotValid) = MdocSignatureValidationHelper().validateSignatureForMdoc(jwk: jwkArray, issuerAuth: issuerAuthData, cborString: jwt ?? "")
             if let isValid = isValidSignature, isValid {
