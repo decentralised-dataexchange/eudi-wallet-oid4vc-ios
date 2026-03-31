@@ -317,6 +317,26 @@ public struct CredentialRequestEncryption: Codable {
         case jwks = "jwks"
         case encryptionRequired = "encryption_required"
     }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        encryptionRequired = try container.decodeIfPresent(Bool.self, forKey: .encryptionRequired)
+        
+        // Try decoding as array first
+        if let array = try? container.decodeIfPresent([JWKData].self, forKey: .jwks) {
+            jwks = array
+        }
+        // If not array, try as object with "keys" property
+        else if let jwksObject = try? container.decodeIfPresent(JWKSObject.self, forKey: .jwks) {
+            jwks = jwksObject.keys
+        } else {
+            jwks = nil
+        }
+    }
+}
+
+private struct JWKSObject: Codable {
+    let keys: [JWKData]?
 }
 
 public struct CredentialMetadata: Codable {
