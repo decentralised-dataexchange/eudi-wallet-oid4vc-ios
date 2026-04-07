@@ -83,10 +83,13 @@ class SDJWTVpTokenBuilder : VpTokenBuilder{
     
     func generateHash(input: String) -> String? {
         guard let data = input.data(using: .utf8) else { return nil }
-        
+
         let hash = Data(SHA256.hash(data: data))
-        
-        return hash.map { String(format: "%02x", $0) }.joined()
+
+        // Per OpenID4VP "A profile of Transaction Data", transaction_data_hashes
+        // are base64url-encoded (no padding) SHA-256 over the original
+        // base64url-encoded transaction_data value.
+        return hash.urlSafeBase64EncodedString()
     }
     
 }
