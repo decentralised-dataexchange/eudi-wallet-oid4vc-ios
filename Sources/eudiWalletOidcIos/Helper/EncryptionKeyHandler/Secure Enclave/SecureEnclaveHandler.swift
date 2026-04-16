@@ -92,4 +92,9 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
         return jwk
     }
     
+    public func getSecurePrivateKey() -> SecKey? {
+        let privateKey = secureEnclaveHandler?.keyPair.privateKey
+        return privateKey
+    }
+    
 }

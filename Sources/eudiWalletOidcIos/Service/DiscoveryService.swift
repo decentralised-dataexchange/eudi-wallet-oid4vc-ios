@@ -34,13 +34,13 @@ public class DiscoveryService: DiscoveryServiceProtocol {
                 return nil
                 
             }
-            if jsonObject["credentials_supported"] != nil {
-                let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponse.self, from: data)
-                return IssuerWellKnownConfiguration(from: model)
-            } else if jsonObject["credential_configurations_supported"] != nil {
+             if jsonObject["credential_configurations_supported"] != nil {
                 let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponseV2.self, from: data)
                 return IssuerWellKnownConfiguration(from: model)
-            } else {
+             } else if jsonObject["credentials_supported"] != nil {
+                 let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponse.self, from: data)
+                 return IssuerWellKnownConfiguration(from: model)
+             } else {
                 return nil
             }
         } catch {

@@ -22,10 +22,10 @@ class ProofService {
             "alg": "ES256"
         ]) as [String : Any]
         
-        if cryptographicBindingMethodsSupported.contains("jwk") {
-            header["jwk"] = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
-        } else  {
+        if cryptographicBindingMethodsSupported.first?.starts(with: "did") == true {
             header["kid"] = keyId
+        } else  {
+            header["jwk"] = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
         }
         
         let headerString = header.toString() ?? ""
