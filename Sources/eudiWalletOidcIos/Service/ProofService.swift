@@ -14,15 +14,14 @@ class ProofService {
     
     static func generateProof(nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, did: String, keyHandler: SecureKeyProtocol, credentialTypes: [String]) async -> String? {
         let cryptographicBindingMethodsSupported = getCryptographicBindingMethodsFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
-        let keyId = generateKeyId(credentialOffer: credentialOffer, bindingMethod: cryptographicBindingMethodsSupported, did: did, keyHandler: keyHandler)
         // Generate JWT Header
-        
         var header = ([
             "typ": "openid4vci-proof+jwt",
             "alg": "ES256"
         ]) as [String : Any]
         
-        if cryptographicBindingMethodsSupported.first?.starts(with: "did") == true {
+        if let didBindingMethod = cryptographicBindingMethodsSupported.first(where: { $0.starts(with: "did") }) {
+            let keyId = generateKeyId(credentialOffer: credentialOffer, bindingMethod: didBindingMethod, did: did, keyHandler: keyHandler)
             header["kid"] = keyId
         } else  {
             header["jwk"] = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
@@ -46,15 +45,15 @@ class ProofService {
     }
     
     static func generateKeyId(credentialOffer: CredentialOffer,
-                              bindingMethod: [String], did: String, keyHandler: SecureKeyProtocol) -> String? {
+                              bindingMethod: String, did: String, keyHandler: SecureKeyProtocol) -> String? {
         
         var keyId: String? = nil
         let methodSpecificId = did.replacingOccurrences(of: "did:key:", with: "")
-        if bindingMethod.contains("did:jwk") {
+        if bindingMethod == "did:jwk" {
             guard let jwk = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data()) else { return nil }
             let base64JWK = base64URLEncodeJWK(jwk) ?? ""
             keyId = "did:jwk:\(base64JWK)"
-        } else if bindingMethod.contains("jwk") {
+        } else if bindingMethod == "jwk" {
             let jwk = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
             do {
                 let jsonData = try JSONSerialization.data(withJSONObject: jwk, options: [.sortedKeys])
