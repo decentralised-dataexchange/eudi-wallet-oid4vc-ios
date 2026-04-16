@@ -204,6 +204,7 @@ public class WalletUnitAttestationService {
         let did = await createDIDforWUA(keyHandler: keyHandler)
         let header = ([
             "alg": "ES256",
+            "typ": "oauth-client-attestation-pop+jwt",
         ] as [String: Any]).toString() ?? ""
         let now = Int(Date().timeIntervalSince1970)
         let exp = now + 3600
@@ -213,6 +214,7 @@ public class WalletUnitAttestationService {
             "exp": exp,
             "iss": did,
             "jti": "urn:uuid:\(jti)",
+            "iat": now,
             "nbf": now
         ] as [String: Any]).toString() ?? ""
         
