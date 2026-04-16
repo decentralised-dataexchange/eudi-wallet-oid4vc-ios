@@ -197,79 +197,20 @@ struct IssuerSigned : CustomCborConvertible{
     }
 }
 
-// Model for DeviceSigned part
-struct DeviceSigned: Codable, CustomCborConvertible {
-    let nameSpaces: String
-    let deviceAuth: DeviceAuth
-    
+struct DeviceSigned: CustomCborConvertible {
+
+    let nameSpaces: CBOR
+    let deviceAuth: CBOR
+
+    init(nameSpaces: CBOR, deviceAuth: CBOR) {
+        self.nameSpaces = nameSpaces
+        self.deviceAuth = deviceAuth
+    }
+
     func toCBOR() -> CBOR {
         var cborMap: OrderedDictionary<CBOR, CBOR> = [:]
-        cborMap[CBOR.utf8String("nameSpaces")] = CBOR.utf8String(nameSpaces)
-        cborMap[CBOR.utf8String("deviceAuth")] = deviceAuth.toCBOR()
-        
-        return CBOR.map(cborMap)
-    }
-}
-
-//struct IssuerAuth: Codable {
-//    let byteString: ByteString?
-//    let dictionary: [String: ByteString]?
-//}
-
-struct DeviceAuth: Codable, CustomCborConvertible {
-    let deviceSignature: [DeviceSignature]
-    
-    func toCBOR() -> CBOR {
-        var cborArray: [CBOR] = []
-        for signature in deviceSignature {
-            cborArray.append(signature.toCBOR())
-        }
-        return CBOR.array(cborArray)
-    }
-}
-
-enum DeviceSignature: Codable, CustomCborConvertible {
-    case byteString(String)
-    case dictionary([String: String])
-    case null
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let byteString = try? container.decode(String.self) {
-            self = .byteString(byteString)
-        } else if let dict = try? container.decode([String: String].self) {
-            self = .dictionary(dict)
-        } else if container.decodeNil() {
-            self = .null
-        } else {
-            throw DecodingError.typeMismatch(DeviceSignature.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Type mismatch"))
-        }
-    }
-    
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .byteString(let byteString):
-            try container.encode(byteString)
-        case .dictionary(let dict):
-            try container.encode(dict)
-        case .null:
-            try container.encodeNil()
-        }
-    }
-    
-    func toCBOR() -> CBOR {
-        switch self {
-        case .byteString(let byteString):
-            return CBOR.byteString(Array(byteString.utf8))
-        case .dictionary(let dict):
-            var cborMap: OrderedDictionary<CBOR, CBOR> = [:]
-            for (key, value) in dict {
-                cborMap[CBOR.utf8String(key)] = CBOR.utf8String(value)
-            }
-            return CBOR.map(cborMap)
-        case .null:
-            return CBOR.null
-        }
+        cborMap[.utf8String("nameSpaces")] = nameSpaces
+        cborMap[.utf8String("deviceAuth")]  = deviceAuth
+        return .map(cborMap)
     }
 }

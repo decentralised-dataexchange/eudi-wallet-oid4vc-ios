@@ -12,7 +12,7 @@ import OrderedCollections
 public class MDocVpTokenBuilder : VpTokenBuilder{
     public init() {}
     
-    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol, isSca: Bool = false) -> [String]? {
+    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol, isSca: Bool = false) async -> [String]? {
         
         var queryItem: Any?
         var doc: String?
@@ -103,7 +103,24 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     } else if let docTypeValue = doc, !docTypeValue.isEmpty {
                         docType = docTypeValue
                     }
-                    let docFiltered = [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))]
+                    let clientJWK = await VerifierJwk().deriveVerifiersJWKFromClientMetadata(presentationRequest: presentationRequest)
+                    
+                    var jwkThumbprint: [UInt8]? = []
+                    if let clientJWK = clientJWK {
+                        jwkThumbprint = computeJwkThumbprintBytes(jwk: clientJWK)
+                    }
+                    let (sessionTranscript, _) = buildSessionTranscriptForOpenID4VP(
+                        clientId: presentationRequest?.clientId ?? "",
+                        nonce: presentationRequest?.nonce ?? "",
+                        responseUri: presentationRequest?.responseUri ?? presentationRequest?.redirectUri,
+                        jwkThumbprint: jwkThumbprint
+                    )
+                    
+                    let emptyNameSpace = encodeEmptyDeviceNameSpaces()
+                    let generatedKey = keyHandler.generateSecureKey()
+                    let privateKey: SecKey? = keyHandler.getSecurePrivateKey()
+                    let deviceSigned = buildDeviceSigned(privateKey: privateKey, sessionTranscript: sessionTranscript, docType: docType)
+                    let docFiltered = [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData), deviceSigned: deviceSigned)]
                     
                     let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
                     let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
@@ -121,34 +138,6 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     }
                 }
             }
-//            else if let dcqlQueryData = queryItem as? CredentialItems, dcqlQueryData.format == "mso_mdoc", dcqlQueryData.claims == nil {
-//                if let issuerAuthData = getIssuerAuth(credential: cred), let cborNameSpace = getNameSpaces(credential: cred, query: queryItem) {
-//                    
-//                    var nameSpaceData: CBOR? = nil
-//                    nameSpaceData = filterNameSpaces(nameSpacesValue: cborNameSpace, requestedParams: [])
-//                    
-//                    var docType = ""
-//                    if let docTypeValue = getDocTypeFromIssuerAuth(cborData: issuerAuthData), !docTypeValue.isEmpty {
-//                        docType = docTypeValue
-//                    } else if let docTypeValue = doc, !docTypeValue.isEmpty {
-//                        docType = docTypeValue
-//                    }
-//                    let docFiltered = [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))]
-//                    
-//                    let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
-//                    let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
-//                    let responseDict = deviceResponseToSend.toDictionary()
-//                    if let cborData = encodeToCBOR(responseDict) {
-//                        cborString = Data(cborData.encode()).base64EncodedString()
-//                        
-//                        base64StringWithoutPadding = cborString.replacingOccurrences(of: "=", with: "") ?? ""
-//                        base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "+", with: "-")
-//                        base64StringWithoutPadding = base64StringWithoutPadding.replacingOccurrences(of: "/", with: "_")
-//                        base64StringsWithoutPadding.append(base64StringWithoutPadding)
-//                        print(Data(cborData.encode()).base64EncodedString())
-//                    }
-//                }
-//            }
         }
         return base64StringsWithoutPadding
     }
@@ -279,15 +268,6 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                 }
             }
         } else if let dcql = query as? CredentialItems {
-//            guard let claims = dcql.claims else {
-//                return nil
-//            }
-//            for (pathIndex, claim) in claims.enumerated() {
-//                guard case .pathClaim(let pathClaim) = claim else { continue }
-//        let nonNilPaths = pathClaim.path.compactMap { $0 }
-//                let paths = nonNilPaths.last
-//                requestedParamse.append(String(paths ?? ""))
-//            }
         }
         // Convert the base64 URL encoded credential to Data
         if let data = Data(base64URLEncoded: credential) {
@@ -476,6 +456,45 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         return CBOR.array(cborArray)
     }
     
+    func buildFullJWK(publicJWK: [String: Any], privateKeyData: Data) -> [String: Any] {
+        var fullJWK = publicJWK
+        // Base64URL-encode the raw private scalar
+        let dBase64 = privateKeyData.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        fullJWK["d"] = dBase64
+        return fullJWK
+    }
+    
+    private func buildDeviceSigned(
+        privateKey: SecKey?,
+        sessionTranscript: CBOR,
+        docType: String
+    ) -> DeviceSigned? {
+        // DeviceNameSpacesBytes = #6.24(bstr .cbor {})
+        let emptyNamespaces = encodeEmptyDeviceNameSpaces()
+
+        var deviceAuthMap: OrderedDictionary<CBOR, CBOR> = [:]
+
+        if let key = privateKey {
+            let deviceAuthBytes = buildDeviceAuthenticationBytes(
+                sessionTranscript: sessionTranscript,
+                docType: docType,
+                deviceNameSpacesBytes: emptyNamespaces)
+
+            if let coseSign1 = buildDeviceSignatureCoseSign1(
+                deviceAuthenticationBytes: deviceAuthBytes,
+                privateKey: key) {
+                deviceAuthMap[.utf8String("deviceSignature")] = coseSign1
+            }
+        }
+
+        return DeviceSigned(
+            nameSpaces: emptyNamespaces,
+            deviceAuth: .map(deviceAuthMap))
+    }
+    
     func convertCBORtoJson(credential: String) -> String? {
         if let data = Data(base64URLEncoded: credential) {
             do {
@@ -554,52 +573,4 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         }
     }
     
-//    func convertCBORtoJson(credential: String) -> String? {
-//        if let data = Data(base64URLEncoded: credential) {
-//            do {
-//                let decodedCBOR = try CBOR.decode([UInt8](data))
-//                if let dictionary = decodedCBOR {
-//
-//                    if let nameSpacesValue = dictionary[CBOR.utf8String("nameSpaces")],
-//                       case let CBOR.map(nameSpaces) = nameSpacesValue {
-//
-//                        var resultDict: [String: [String: String]] = [:]
-//                        for (key, namespaceValue) in nameSpaces {
-//                            var valuesDict: [String: String] = [:]
-//                            if case let CBOR.array(orgValues) = namespaceValue {
-//                                for value in orgValues {
-//                                    if case let CBOR.tagged(tag, taggedValue) = value, tag.rawValue == 24 {
-//                                        if case let CBOR.byteString(byteString) = taggedValue {
-//                                            let data = Data(byteString)
-//
-//                                            if let decodedInnerCBOR = try? CBOR.decode([UInt8](data)),
-//                                               case let CBOR.map(decodedMap) = decodedInnerCBOR {
-//                                                if let identifier = decodedMap[CBOR.utf8String("elementIdentifier")],
-//                                                   let value = decodedMap[CBOR.utf8String("elementValue")],
-//                                                   case let CBOR.utf8String(identifierString) = identifier {
-//
-//                                                    valuesDict[identifierString] = cborToString(value)
-//                                                }
-//                                            }
-//                                        }
-//                                    }
-//                                }
-//                            }
-//                            resultDict[cborToString(key)] = valuesDict
-//                        }
-//
-//                        // Convert the result dictionary to JSON
-//                        let jsonData = try JSONSerialization.data(withJSONObject: resultDict, options: .prettyPrinted)
-//                        let jsonString = String(data: jsonData, encoding: .utf8)
-//                        return jsonString?.replacingOccurrences(of: "\n", with: "")
-//                    } else {
-//                        print("Key 'nameSpaces' not found or not a valid map.")
-//                    }
-//                }
-//            } catch {
-//                print("Error decoding CBOR: \(error)")
-//            }
-//        }
-//        return nil
-//    }
 }

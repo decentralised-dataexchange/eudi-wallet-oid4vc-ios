@@ -29,9 +29,11 @@ public protocol SecureKeyProtocol: NSObjectProtocol{
     func generateSecureKey() -> SecureKeyData? //for generating new private & public keys
     func sign(payload: String, header: Data, withKey privateKey: Data?) -> String? //sign data
     func getJWK(publicKey:Data) -> [String:Any]? //get the json web key for did generation
+    func getSecurePrivateKey() -> SecKey?
 }
 
 extension SecureKeyProtocol{
     public func getJWK(publicKey:Data) -> [String:Any]? {return nil}
+    public func getSecurePrivateKey() -> SecKey? {return nil}
 
 }
