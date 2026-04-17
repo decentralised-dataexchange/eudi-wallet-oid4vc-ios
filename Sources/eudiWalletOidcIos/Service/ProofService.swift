@@ -23,6 +23,9 @@ class ProofService {
         if let didBindingMethod = cryptographicBindingMethodsSupported.first(where: { $0.starts(with: "did") }) {
             let keyId = generateKeyId(credentialOffer: credentialOffer, bindingMethod: didBindingMethod, did: did, keyHandler: keyHandler)
             header["kid"] = keyId
+        } else if credentialOffer.credentials?.first?.trustFramework != nil {
+            let keyId = generateKeyId(credentialOffer: credentialOffer, bindingMethod: cryptographicBindingMethodsSupported.first ?? "", did: did, keyHandler: keyHandler)
+            header["kid"] = keyId
         } else  {
             header["jwk"] = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
         }
