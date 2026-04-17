@@ -210,6 +210,8 @@ public struct PayloadData: Codable {
     public var dateTime: String?
     public var service: String?
     public var action: String?
+
+    public init() {}
     
     enum CodingKeys: String, CodingKey {
         case currency
