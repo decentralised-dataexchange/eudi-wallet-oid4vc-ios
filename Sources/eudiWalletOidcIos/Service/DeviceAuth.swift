@@ -21,8 +21,12 @@ func buildSessionTranscriptForOpenID4VP(
     clientId: String,
     nonce: String,
     responseUri: String? = nil,
-    jwkThumbprint: [UInt8]? = nil
+    jwkThumbprint: [UInt8]? = nil,
+    responseMode: String? = nil
 ) -> (cbor: CBOR, bytes: [UInt8]) {
+
+    let isDcApi = responseMode == ResponseMode.dcApi.rawValue
+        || responseMode == ResponseMode.dcApiJWT.rawValue
 
     // Step 1: HandoverInfo = [clientId, nonce, jwkThumbprint?, responseUri?]
     var handoverInfoItems: [CBOR] = [
@@ -39,9 +43,10 @@ func buildSessionTranscriptForOpenID4VP(
     // Step 2: SHA-256 hash of HandoverInfo bytes
     let handoverInfoHash = Array(SHA256.hash(data: Data(handoverInfoBytes)))
 
-    // Step 3: OpenID4VPHandover = ["OpenID4VPHandover", hash]
+    // Step 3: OpenID4VPHandover / OpenID4VPDCAPIHandover = [<label>, hash]
+    let handoverLabel = isDcApi ? "OpenID4VPDCAPIHandover" : "OpenID4VPHandover"
     let handoverArray: CBOR = .array([
-        .utf8String("OpenID4VPHandover"),
+        .utf8String(handoverLabel),
         .byteString(handoverInfoHash)
     ])
 
