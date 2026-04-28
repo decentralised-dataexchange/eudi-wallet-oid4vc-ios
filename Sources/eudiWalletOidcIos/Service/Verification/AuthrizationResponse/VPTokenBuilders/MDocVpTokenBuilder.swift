@@ -109,11 +109,19 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     if let clientJWK = clientJWK {
                         jwkThumbprint = computeJwkThumbprintBytes(jwk: clientJWK)
                     }
+                    let isDcApi = presentationRequest?.responseMode == ResponseMode.dcApi.rawValue
+                        || presentationRequest?.responseMode == ResponseMode.dcApiJWT.rawValue
+                    let rawClientId = presentationRequest?.clientId ?? ""
+                    let handoverClientId: String = {
+                        guard isDcApi, rawClientId.hasPrefix("origin:") else { return rawClientId }
+                        return String(rawClientId.dropFirst("origin:".count))
+                    }()
                     let (sessionTranscript, _) = buildSessionTranscriptForOpenID4VP(
-                        clientId: presentationRequest?.clientId ?? "",
+                        clientId: handoverClientId,
                         nonce: presentationRequest?.nonce ?? "",
-                        responseUri: presentationRequest?.responseUri ?? presentationRequest?.redirectUri,
-                        jwkThumbprint: jwkThumbprint
+                        responseUri: isDcApi ? nil : (presentationRequest?.responseUri ?? presentationRequest?.redirectUri),
+                        jwkThumbprint: jwkThumbprint,
+                        responseMode: presentationRequest?.responseMode
                     )
                     
                     let emptyNameSpace = encodeEmptyDeviceNameSpaces()
