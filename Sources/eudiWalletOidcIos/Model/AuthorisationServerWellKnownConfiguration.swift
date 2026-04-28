@@ -9,7 +9,7 @@ import Foundation
 public struct AuthorisationServerWellKnownConfiguration: Codable {
     public var redirectUris: [String]?
     public var issuer, authorizationEndpoint, tokenEndpoint, jwksURI: String?
-    public var scopesSupported, responseTypesSupported, responseModesSupported, grantTypesSupported: [String]?
+    public var scopesSupported, responseTypesSupported, responseModesSupported, grantTypesSupported, dpopSigningAlgValuesSupported: [String]?
     public var subjectTypesSupported, idTokenSigningAlgValuesSupported, requestObjectSigningAlgValuesSupported: [String]?
     public var requestParameterSupported, requestURIParameterSupported: Bool?
     public var tokenEndpointAuthMethodsSupported: [String]?
@@ -46,6 +46,7 @@ public struct AuthorisationServerWellKnownConfiguration: Codable {
         case requirePushedAuthorizationRequests = "require_pushed_authorization_requests"
         case pushedAuthorizationRequestEndpoint = "pushed_authorization_request_endpoint"
         case interactiveAuthorizationEndpoint = "interactive_authorization_endpoint"
+        case dpopSigningAlgValuesSupported = "dpop_signing_alg_values_supported"
     }
 }
 // MARK: - RequestAuthenticationMethodsSupported
