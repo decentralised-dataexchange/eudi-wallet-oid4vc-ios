@@ -28,19 +28,31 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         request.httpMethod = "GET"
         
         let (data, _) = try await URLSession.shared.data(for: request)
-        
-        do {
-            guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+        let rawString = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let jsonData: Data
+        if rawString.components(separatedBy: ".").count == 3 {
+            let parts = rawString.components(separatedBy: ".")
+            let payloadBase64 = parts[1]
+            
+            guard let decodedString = payloadBase64.decodeBase64(),
+                  let payloadData = decodedString.data(using: .utf8) else {
                 return nil
-                
             }
-             if jsonObject["credential_configurations_supported"] != nil {
-                let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponseV2.self, from: data)
+            jsonData = payloadData
+        } else {
+            jsonData = data
+        }
+        do {
+            guard let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
+                return nil
+            }
+            if jsonObject["credential_configurations_supported"] != nil {
+                let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponseV2.self, from: jsonData)
                 return IssuerWellKnownConfiguration(from: model)
-             } else if jsonObject["credentials_supported"] != nil {
-                 let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponse.self, from: data)
-                 return IssuerWellKnownConfiguration(from: model)
-             } else {
+            } else if jsonObject["credentials_supported"] != nil {
+                let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponse.self, from: jsonData)
+                return IssuerWellKnownConfiguration(from: model)
+            } else {
                 return nil
             }
         } catch {
