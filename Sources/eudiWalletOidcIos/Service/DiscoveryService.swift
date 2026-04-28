@@ -77,12 +77,12 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         debugPrint("### Attempting with authServerUrl url:\(authURL)")
         
         do {
-            let (config, response) = try await fetchConfig2(from: authURL)
+            let (config, response) = try await fetchConfig(from: authURL)
             if let config = config {
                 return config
             } else if let response = response, response.statusCode >= 400 {
                 do {
-                    let (config, _) = try await fetchConfig2(from: authUrl)
+                    let (config, _) = try await fetchConfig(from: authUrl)
                     if let config = config {
                         return config
                     }
@@ -101,7 +101,7 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         return nil
     }
     
-    func fetchConfig2(from urlString: String) async throws -> (AuthorisationServerWellKnownConfiguration?, HTTPURLResponse?) {
+    func fetchConfig(from urlString: String) async throws -> (AuthorisationServerWellKnownConfiguration?, HTTPURLResponse?) {
         let jsonDecoder = JSONDecoder()
         guard let url = URL(string: urlString) else { return (nil, nil) }
         var request = URLRequest(url: url)
@@ -114,7 +114,24 @@ public class DiscoveryService: DiscoveryServiceProtocol {
             return (nil, httpResponse)
         }
         
-        let model = try jsonDecoder.decode(AuthorisationServerWellKnownConfiguration.self, from: data)
+        let rawString = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        
+        let jsonData: Data
+        
+        if rawString.components(separatedBy: ".").count == 3 {
+            let parts = rawString.components(separatedBy: ".")
+            let payloadBase64 = parts[1]
+            
+            guard let decodedString = payloadBase64.decodeBase64(),
+                  let payloadData = decodedString.data(using: .utf8) else {
+                return (nil, httpResponse)
+            }
+            jsonData = payloadData
+        } else {
+            jsonData = data
+        }
+        
+        let model = try jsonDecoder.decode(AuthorisationServerWellKnownConfiguration.self, from: jsonData)
         return (model, httpResponse)
     }
 }
