@@ -562,7 +562,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         clientIdAssertion: String = "",
         wua: String,
         pop: String,
-        redirectURI: String?) async -> TokenResponse? {
+        redirectURI: String?, isDPOPSupported: Bool = false) async -> TokenResponse? {
             
             if isPreAuthorisedCodeFlow {
                 let tokenResponse =
@@ -572,7 +572,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                                          version: version,
                                                          clientIdAssertion: clientIdAssertion,
                                                          wua: wua,
-                                                         pop: pop)
+                                                         pop: pop, isDPOPSupported: isDPOPSupported)
                 return tokenResponse
             } else {
                 let codeVal = code.removingPercentEncoding ?? ""
@@ -584,7 +584,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                      clientIdAssertion: clientIdAssertion,
                                      wua: wua,
                                      pop: pop,
-                                     redirectURI: redirectURI)
+                                     redirectURI: redirectURI, isDPOPSupported: isDPOPSupported)
                 return tokenResponse
             }
         }
@@ -904,11 +904,11 @@ public class IssueService: NSObject, IssueServiceProtocol {
         version: String?,
         clientIdAssertion: String = "",
         wua: String,
-        pop: String) async -> TokenResponse? {
+        pop: String, isDPOPSupported: Bool = false) async -> TokenResponse? {
             
             let jsonDecoder = JSONDecoder()
             let grantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
-            
+            let dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "")
             // Constructing parameters for the token request
             var params: [String: Any] = [:]
             // Constructing parameters for the token request
@@ -935,7 +935,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
             request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
             request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
             request.httpBody = postString.data(using: .utf8)
-            
+            if isDPOPSupported {
+                request.setValue(dpopProof, forHTTPHeaderField: "DPoP")
+            }
             // Performing the token request
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
@@ -974,11 +976,11 @@ public class IssueService: NSObject, IssueServiceProtocol {
         clientIdAssertion: String = "",
         wua: String,
         pop: String,
-        redirectURI: String?) async -> TokenResponse? {
+        redirectURI: String?, isDPOPSupported: Bool = false) async -> TokenResponse? {
             
             let jsonDecoder = JSONDecoder()
             let grantType = "authorization_code"
-            
+            let dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "")
             // Constructing parameters for the token request
             //let clientAssertion = !clientIdAssertion.isEmpty ? clientIdAssertion : nil
             var params: [String: Any] = [
@@ -1004,6 +1006,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
                 request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
                 
+            }
+            
+            if isDPOPSupported {
+                request.setValue(dpopProof, forHTTPHeaderField: "DPoP")
             }
             
             request.httpBody = postString.data(using: .utf8)
