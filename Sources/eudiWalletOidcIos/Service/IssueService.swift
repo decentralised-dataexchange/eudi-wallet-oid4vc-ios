@@ -253,8 +253,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let parameter = postString.replacingOccurrences(of: "+", with: "%2B")
             request.httpBody =  parameter.data(using: .utf8)
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
             if wua != "" {
-                request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+                request.setValue(sanitisedWUA, forHTTPHeaderField: "OAuth-Client-Attestation")
                 request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
             }
             
@@ -323,8 +324,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let parameter = postString.replacingOccurrences(of: "+", with: "%2B")
             request.httpBody =  parameter.data(using: .utf8)
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
             if wua != "" {
-                request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+                request.setValue(sanitisedWUA, forHTTPHeaderField: "OAuth-Client-Attestation")
                 request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
             }
             
@@ -932,7 +934,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+            let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
+            request.setValue(sanitisedWUA, forHTTPHeaderField: "OAuth-Client-Attestation")
             request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
             request.httpBody = postString.data(using: .utf8)
             if isDPOPSupported {
@@ -1002,8 +1005,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
             if wua != "" {
-                request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+                request.setValue(sanitisedWUA, forHTTPHeaderField: "OAuth-Client-Attestation")
                 request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
                 
             }
