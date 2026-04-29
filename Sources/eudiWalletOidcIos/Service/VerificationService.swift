@@ -259,11 +259,11 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     private func sendVPRequest(params: [String: Any], redirectURI: String, wua: String, pop: String) async -> WrappedVerificationResponse? {
         let postString = UIApplicationUtils.shared.getPostString(params: params)
         let paramsData = postString.data(using: .utf8)
-        
+        let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
         var request = URLRequest(url: URL(string: redirectURI)!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.setValue(wua, forHTTPHeaderField: "OAuth-Client-Attestation")
+        request.setValue(sanitisedWUA, forHTTPHeaderField: "OAuth-Client-Attestation")
         request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
         request.httpBody = paramsData
         
