@@ -148,7 +148,13 @@ public class ReissueService {
             } else {
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             }
-            request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            if tokenResponse?.tokenType == "DPoP" {
+                let dpopProof = DPoPProofService.generateProof(tokenEndpoint: issuerConfig.credentialEndpoint ?? "", dpopKey: tokenResponse?.dpopKey, claims: ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken ?? "")])
+                request.setValue( "DPoP \(accessToken)", forHTTPHeaderField: "Authorization")
+                request.setValue( dpopProof, forHTTPHeaderField: "DPoP")
+            } else {
+                request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            }
             request.httpMethod = "POST"
             if issuerConfig.credentialRequestEncryption?.encryptionRequired == true {
                 let credentialRequestEncryptionJwks = issuerConfig.credentialRequestEncryption?.jwks?.first?.dictionary
