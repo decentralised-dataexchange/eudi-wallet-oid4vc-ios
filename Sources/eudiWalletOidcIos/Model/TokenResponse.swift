@@ -5,6 +5,8 @@
 //  Created by Mumthasir mohammed on 11/03/24.
 //
 import Foundation
+import CryptoKit
+
 // MARK: - TokenResponse (getAccessToken() Api call response model))
 public struct TokenResponse: Codable {
     public var accessToken: String?
@@ -19,6 +21,8 @@ public struct TokenResponse: Codable {
     public var lpid: String?
     public var lpidPop: String?
     public var authorizationDetails: [AuthorizationDetails]?
+    public var dpopKey: P256.Signing.PrivateKey?
+    
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
         case tokenType = "token_type"
@@ -31,15 +35,10 @@ public struct TokenResponse: Codable {
         case authorizationDetails = "authorization_details"
     }
     
-    
-    // Initializer to handle the case when an error occurs
-//    init(error: error) {
-//        self.error = error
-//        // Other properties will be nil by default
-//    }
 }
 
 public struct AuthorizationDetails : Codable {
+    
     public var type: String?
     public var credentialConfigId: String?
     public var credentialIdentifiers: [String]?
@@ -49,4 +48,5 @@ public struct AuthorizationDetails : Codable {
         case credentialConfigId = "credential_configuration_id"
         case credentialIdentifiers = "credential_identifiers"
     }
+    
 }

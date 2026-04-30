@@ -39,7 +39,7 @@ protocol IssueServiceProtocol {
      
      - Returns: A `TokenResponse` object if the request is successful, otherwise `nil`.
      */
-    func processTokenRequest(did: String, tokenEndPoint: String?, code: String, codeVerifier: String, isPreAuthorisedCodeFlow: Bool, userPin: String?, version: String?,  clientIdAssertion: String, wua: String, pop: String, redirectURI: String?, isDPOPSupported: Bool) async -> TokenResponse?
+    func processTokenRequest(did: String, tokenEndPoint: String?, code: String, codeVerifier: String, isPreAuthorisedCodeFlow: Bool, userPin: String?, version: String?,  clientIdAssertion: String, wua: String, pop: String, redirectURI: String?, isDPOPSupported: Bool, dpopKey: P256.Signing.PrivateKey?) async -> TokenResponse?
     
     
     // Processes a credential request to the specified credential endpoint.
@@ -53,7 +53,7 @@ protocol IssueServiceProtocol {
      - accessToken: The access token for authentication.
      - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
      */
-    func processCredentialRequest(did: String, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String, credentialTypes: [String], tokenResponse: TokenResponse?, authDetails: AuthorizationDetails?, privateKey: ECPrivateKey?) async -> CredentialResponse?
+    func processCredentialRequest(did: String, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String, credentialTypes: [String], tokenResponse: TokenResponse?, authDetails: AuthorizationDetails?, privateKey: ECPrivateKey?, isDpopSUpported: Bool, dpopKey: P256.Signing.PrivateKey?) async -> CredentialResponse?
     
     // Processes a deferred credential request to obtain the credential response in deffered manner.
     /** - Parameters

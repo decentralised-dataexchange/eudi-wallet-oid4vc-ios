@@ -564,7 +564,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         clientIdAssertion: String = "",
         wua: String,
         pop: String,
-        redirectURI: String?, isDPOPSupported: Bool = false) async -> TokenResponse? {
+        redirectURI: String?, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> TokenResponse? {
             
             if isPreAuthorisedCodeFlow {
                 let tokenResponse =
@@ -574,7 +574,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                                          version: version,
                                                          clientIdAssertion: clientIdAssertion,
                                                          wua: wua,
-                                                         pop: pop, isDPOPSupported: isDPOPSupported)
+                                                         pop: pop, isDPOPSupported: isDPOPSupported, dpopKey: dpopKey)
                 return tokenResponse
             } else {
                 let codeVal = code.removingPercentEncoding ?? ""
@@ -586,7 +586,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                      clientIdAssertion: clientIdAssertion,
                                      wua: wua,
                                      pop: pop,
-                                     redirectURI: redirectURI, isDPOPSupported: isDPOPSupported)
+                                     redirectURI: redirectURI, isDPOPSupported: isDPOPSupported, dpopKey: dpopKey)
                 return tokenResponse
             }
         }
@@ -610,7 +610,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
         format: String,
-        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?) async -> CredentialResponse? {
+        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, isDpopSUpported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> CredentialResponse? {
             
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
@@ -740,7 +740,13 @@ public class IssueService: NSObject, IssueServiceProtocol {
             } else {
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             }
-            request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            if isDpopSUpported {
+                let dpopProof = DPoPProofService.generateProof(tokenEndpoint: issuerConfig.credentialEndpoint ?? "", dpopKey: dpopKey, claims: ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken)])
+                request.setValue( "DPoP \(accessToken)", forHTTPHeaderField: "Authorization")
+                request.setValue( dpopProof, forHTTPHeaderField: "DPoP")
+            } else {
+                request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            }
             request.httpMethod = "POST"
             if issuerConfig.credentialRequestEncryption?.encryptionRequired == true {
                 let credentialRequestEncryptionJwks = issuerConfig.credentialRequestEncryption?.jwks?.first?.dictionary
@@ -906,11 +912,11 @@ public class IssueService: NSObject, IssueServiceProtocol {
         version: String?,
         clientIdAssertion: String = "",
         wua: String,
-        pop: String, isDPOPSupported: Bool = false) async -> TokenResponse? {
+        pop: String, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> TokenResponse? {
             
             let jsonDecoder = JSONDecoder()
             let grantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
-            let dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "")
+            let dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "", dpopKey: dpopKey)
             // Constructing parameters for the token request
             var params: [String: Any] = [:]
             // Constructing parameters for the token request
@@ -957,6 +963,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                     var model = try jsonDecoder.decode(TokenResponse.self, from: data)
                     model.lpid = lpid
                     model.lpidPop = lpidPop
+                    model.dpopKey = dpopKey
                     return model
                 }
             } catch {
@@ -979,11 +986,11 @@ public class IssueService: NSObject, IssueServiceProtocol {
         clientIdAssertion: String = "",
         wua: String,
         pop: String,
-        redirectURI: String?, isDPOPSupported: Bool = false) async -> TokenResponse? {
+        redirectURI: String?, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> TokenResponse? {
             
             let jsonDecoder = JSONDecoder()
             let grantType = "authorization_code"
-            let dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "")
+            let dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "", dpopKey: dpopKey)
             // Constructing parameters for the token request
             //let clientAssertion = !clientIdAssertion.isEmpty ? clientIdAssertion : nil
             var params: [String: Any] = [
@@ -1032,6 +1039,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                     let lpidPop = httpsResponse?.value(forHTTPHeaderField: "legal-pid-attestation-pop")
                     model.lpid = lpid
                     model.lpidPop = lpidPop
+                    model.dpopKey = dpopKey
                     return model
                 }
             } catch {
