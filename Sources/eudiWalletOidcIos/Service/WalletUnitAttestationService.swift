@@ -136,7 +136,7 @@ public class WalletUnitAttestationService {
        return idToken
     }
     
-    func generateKeyId() async throws -> String {
+    public func generateKeyId() async throws -> String {
         let service = DCAppAttestService.shared
         return try await withCheckedThrowingContinuation { continuation in
             service.generateKey { keyId, error in
