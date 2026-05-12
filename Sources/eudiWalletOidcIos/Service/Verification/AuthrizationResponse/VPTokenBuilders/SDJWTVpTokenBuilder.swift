@@ -10,7 +10,7 @@ import CryptoKit
 
 class SDJWTVpTokenBuilder : VpTokenBuilder{
         
-    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol, isSca: Bool) async -> [String]? {
+    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol, isSca: Bool, keyIds: [String]) async -> [String]? {
         let item = credentials.first ?? ""
         guard !item.isEmpty else { return nil }
         var claims: [String: Any] = [:]
@@ -49,14 +49,15 @@ class SDJWTVpTokenBuilder : VpTokenBuilder{
             }
         }
         var processedResults: [String] = []
-        for item in credentials {
-               
+        for (index,item) in credentials.enumerated() {
+               var updtedKeyHandler = keyHandler
+                updtedKeyHandler = SecureEnclaveHandler(keyID: keyIds[index])
                let itemWithTilda = item.hasSuffix("~") ? item : "\(item)~"
                
                if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(
                    issuerSignedJwt: itemWithTilda,
                    claims: claims,
-                   keyHandler: keyHandler
+                   keyHandler: updtedKeyHandler
                ) {
                    processedResults.append("\(itemWithTilda)\(keyBindingJwt)")
                } else {

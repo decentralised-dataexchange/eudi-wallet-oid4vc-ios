@@ -12,24 +12,28 @@ class AuthorisationResponseBuilder {
     static func buildResponse(
         credentialsList: [[String]]?,
         presentationRequest: PresentationRequest?,
-        did: String, keyHandler: SecureKeyProtocol, isSca: Bool
+        did: String, keyHandler: SecureKeyProtocol, isSca: Bool, keyIds: [[String]] = []
     ) async -> [String: Any] {
         
         var params: [String: Any] = [:]
         
         if let dcql = presentationRequest?.dcqlQuery {
             //Fixme: handle DCQL response
-            params = await DCQLAuthorisationResponseBuilder().build(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca)
+            params = await DCQLAuthorisationResponseBuilder().build(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds)
             return params
         }else{
             var credentialsArray: [String]? = []
+            var credentialKeyIDs: [String] = []
             for item in credentialsList ?? [] {
                 credentialsArray?.append(item.first ?? "")
+            }
+            for keyId in keyIds {
+                credentialKeyIDs.append((keyId.first ?? ""))
             }
             let tokensAndPresentationSubmission = await createVPTokenAndPresentationSubmission(
                 credentialsList: credentialsArray,
                 did: did,
-                presentationRequest: presentationRequest, keyHandler: keyHandler
+                presentationRequest: presentationRequest, keyHandler: keyHandler, keyIds: credentialKeyIDs
             )
             
             // Handle vp_token
@@ -90,7 +94,7 @@ class AuthorisationResponseBuilder {
         }
     }
     
-    static func createVPTokenAndPresentationSubmission(credentialsList: [String]?, did: String, presentationRequest: PresentationRequest?, keyHandler: SecureKeyProtocol) async -> ([String], PresentationSubmissionModel?, String){
+    static func createVPTokenAndPresentationSubmission(credentialsList: [String]?, did: String, presentationRequest: PresentationRequest?, keyHandler: SecureKeyProtocol, keyIds: [String]) async -> ([String], PresentationSubmissionModel?, String){
         // Fixme: set nonce when processing authorisation request itself
         let nonce = presentationRequest?.nonce ?? UUID().uuidString
         
@@ -149,8 +153,9 @@ class AuthorisationResponseBuilder {
                 } else {
                     itemWithTilda = "\(item)~"
                 }
-                
-                if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(issuerSignedJwt: itemWithTilda, claims: claims, keyHandler: keyHandler), let vct = dict["vct"] as? String, !vct.isEmpty {
+                var updatedKeyHandler = keyHandler
+                 updatedKeyHandler = SecureEnclaveHandler(keyID: keyIds[index])
+                if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(issuerSignedJwt: itemWithTilda, claims: claims, keyHandler: updatedKeyHandler), let vct = dict["vct"] as? String, !vct.isEmpty {
                     //Fixme: need to update the vp_token creation using SDJWTVpTokenBuilder
                     var updatedCred = "\(itemWithTilda ?? "")\(keyBindingJwt)"
                     vpTokenList.append(updatedCred)
