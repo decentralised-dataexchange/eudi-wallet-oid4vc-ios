@@ -22,12 +22,10 @@ class ProcessJWKFromJwksUri {
             let (data, response) = try await URLSession.shared.data(from: url)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return [:]}
             guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any], let keys = jsonObject["keys"] as? [[String: Any]] else { return [:]}
-            
-            var jwkKey: [String: Any]? = keys.first { $0["use"] as? String == keyUse }
-            
-            if jwkKey == nil, let kid = kid {
-                jwkKey = keys.first { $0["kid"] as? String == kid }
-            } else {
+            var jwkKey: [String: Any]? = keys.first(where: { $0["use"] as? String == keyUse })
+            if let kid = kid {
+                jwkKey = keys.first(where: {$0["kid"] as? String == kid })
+            } else if jwkKey == nil {
                 jwkKey = keys.first
             }
             return jwkKey ?? [:]
@@ -37,4 +35,5 @@ class ProcessJWKFromJwksUri {
         }
         return [:]
     }
+    
 }
