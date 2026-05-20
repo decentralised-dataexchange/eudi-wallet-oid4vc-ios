@@ -11,7 +11,7 @@ class DCQLAuthorisationResponseBuilder {
     
     func build(credentialsList: [[String]]?,
                presentationRequest: PresentationRequest?,
-               did: String, keyHandler: SecureKeyProtocol, isSca: Bool, keyIds: [[String]]) async -> [String: Any]{
+               did: String, keyHandler: SecureKeyProtocol, isSca: Bool, keyIds: [[String]], isEncrypted: Bool = false) async -> [String: Any]{
         
         var params: [String: Any] = [:]
         
@@ -56,8 +56,11 @@ class DCQLAuthorisationResponseBuilder {
         }
         // Example: embed this dictionary in a vp_token structure
         let mainVpToken = generateMainVPToken(from: credentialMap)
-        
-        params["vp_token"] = mainVpToken
+        if isEncrypted {
+            params["vp_token"] = credentialMap
+        } else {
+            params["vp_token"] = mainVpToken
+        }
         params["state"] = presentationRequest?.state ?? ""
         
         return params

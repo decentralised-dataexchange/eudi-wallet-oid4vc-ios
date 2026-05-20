@@ -41,7 +41,7 @@ class AuthorisationResponseHandler {
             
             return iarPostParameters
         case .iarPostJWT:
-            let params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds)
+            let params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds, isEncrypted: true)
             do {
                 let encrypted = try await JWEEncryptor().encrypt(payload: params, presentationRequest: presentationRequest)
                 var encryptedResponseParams: [String: Any] = [:]
@@ -58,7 +58,7 @@ class AuthorisationResponseHandler {
                 print("")
             }
         case .directPostJWT:
-            let params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds)
+            let params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds, isEncrypted: true)
             do {
                 let encrypted = try await JWEEncryptor().encrypt(payload: params, presentationRequest: presentationRequest)
                 var encryptedResponseParams: [String: Any] = [:]
