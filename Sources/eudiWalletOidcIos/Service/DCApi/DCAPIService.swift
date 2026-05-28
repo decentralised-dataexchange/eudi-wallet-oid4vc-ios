@@ -26,6 +26,49 @@ public class DCAPIService {
         credentials: [String],
         keyHandler: SecureKeyProtocol
     ) async -> Result<String, DCAPIError> {
+        switch encryptResponse(requestJSON: requestJSON, origin: origin,
+                               credentials: credentials, keyHandler: keyHandler) {
+        case .success(let encryptionResult):
+            guard let responseString = DCAPIResponseBuilder.buildResponseJSONString(
+                encryptionResult: encryptionResult
+            ) else {
+                return .failure(.cborEncodingFailed)
+            }
+            return .success(responseString)
+        case .failure(let error):
+            return .failure(error)
+        }
+    }
+
+    /// Same flow as `processRequest`, but returns the raw encrypted response CBOR bytes
+    /// (`["dcapi", {"enc":..., "cipherText":...}]`) instead of the JSON envelope.
+    ///
+    /// Use this for the iOS DC API where `ISO18013MobileDocumentResponse(responseData:)`
+    /// expects the raw response bytes and the platform handles envelope wrapping.
+    public func processRequestRawResponse(
+        requestJSON: String,
+        origin: String,
+        credentials: [String],
+        keyHandler: SecureKeyProtocol
+    ) async -> Result<Data, DCAPIError> {
+        switch encryptResponse(requestJSON: requestJSON, origin: origin,
+                               credentials: credentials, keyHandler: keyHandler) {
+        case .success(let encryptionResult):
+            return .success(DCAPIResponseBuilder.buildEncryptedResponseBytes(
+                encryptionResult: encryptionResult
+            ))
+        case .failure(let error):
+            return .failure(error)
+        }
+    }
+
+    /// Shared core: parse request → match credentials → build DeviceResponse → HPKE encrypt.
+    private func encryptResponse(
+        requestJSON: String,
+        origin: String,
+        credentials: [String],
+        keyHandler: SecureKeyProtocol
+    ) -> Result<HPKEEncryptionResult, DCAPIError> {
         do {
             // 1. Parse the request JSON
             let (deviceRequestB64, encryptionInfoB64) = try parseRequestJSON(requestJSON)
@@ -73,19 +116,64 @@ public class DCAPIService {
                 sessionTranscriptBytes: sessionTranscriptBytes
             )
 
-            // 8. Build response JSON
-            guard let responseString = DCAPIResponseBuilder.buildResponseJSONString(
-                encryptionResult: encryptionResult
-            ) else {
-                return .failure(.cborEncodingFailed)
-            }
-
-            return .success(responseString)
+            return .success(encryptionResult)
 
         } catch let error as DCAPIError {
             return .failure(error)
         } catch {
             return .failure(.invalidRequestJSON(error.localizedDescription))
+        }
+    }
+
+    /// Extracts decoded element values from a base64url-encoded mDOC credential.
+    ///
+    /// - Returns: A dictionary keyed by element identifier (e.g. "family_name",
+    ///   "age_over_18") with a human-displayable string value (booleans become
+    ///   "Yes"/"No", tagged dates unwrap to their inner string).
+    public func extractElementValues(credential: String) -> [String: String] {
+        guard let nameSpaces = mdocBuilder.getNameSpaces(credential: credential, query: nil),
+              case let CBOR.map(nameSpaceMap) = nameSpaces else {
+            return [:]
+        }
+
+        var result: [String: String] = [:]
+        for (_, namespaceValue) in nameSpaceMap {
+            guard case let CBOR.array(elements) = namespaceValue else { continue }
+            for element in elements {
+                guard case let CBOR.tagged(tag, taggedValue) = element, tag.rawValue == 24,
+                      case let CBOR.byteString(byteString) = taggedValue,
+                      let decoded = try? CBOR.decode([UInt8](Data(byteString))),
+                      case let CBOR.map(decodedMap) = decoded,
+                      let identifier = decodedMap[CBOR.utf8String("elementIdentifier")],
+                      case let CBOR.utf8String(identifierString) = identifier,
+                      let value = decodedMap[CBOR.utf8String("elementValue")] else {
+                    continue
+                }
+                result[identifierString] = Self.displayString(for: value)
+            }
+        }
+        return result
+    }
+
+    /// Converts a CBOR element value into a human-displayable string.
+    private static func displayString(for value: CBOR) -> String {
+        switch value {
+        case .utf8String(let s):
+            return s
+        case .boolean(let b):
+            return b ? "Yes" : "No"
+        case .unsignedInt(let u):
+            return String(u)
+        case .negativeInt(let n):
+            return String(-1 - Int(n))
+        case .tagged(_, let inner):
+            return displayString(for: inner)
+        case .byteString(let bytes):
+            return "\(bytes.count) bytes"
+        case .double(let d):
+            return String(d)
+        default:
+            return ""
         }
     }
 
@@ -97,14 +185,25 @@ public class DCAPIService {
             throw DCAPIError.invalidRequestJSON("Failed to parse JSON")
         }
 
-        // Support both {"requests":[...]} and direct {"protocol":...,"data":{...}} formats
+        // Supported request envelopes:
+        //  1. iOS DC API (direct):  {"deviceRequest":"...","encryptionInfo":"..."}
+        //  2. {"protocol":"org-iso-mdoc","data":{"deviceRequest":"...","encryptionInfo":"..."}}
+        //  3. {"requests":[{"protocol":"org-iso-mdoc","data":{...}}]}
+
+        // 1. iOS hands the inner data directly — no protocol/data wrapper.
+        if let deviceRequestB64 = parsed["deviceRequest"] as? String,
+           let encryptionInfoB64 = parsed["encryptionInfo"] as? String {
+            return (deviceRequestB64, encryptionInfoB64)
+        }
+
+        // 2/3. Browser DC API envelope with protocol + data.
         let firstRequest: [String: Any]
         if let requests = parsed["requests"] as? [[String: Any]], let first = requests.first {
             firstRequest = first
         } else if parsed["protocol"] != nil {
             firstRequest = parsed
         } else {
-            throw DCAPIError.invalidRequestJSON("Missing 'requests' array or 'protocol' field")
+            throw DCAPIError.invalidRequestJSON("Missing 'deviceRequest'/'encryptionInfo', 'requests' array, or 'protocol' field")
         }
 
         guard let protocol_ = firstRequest["protocol"] as? String else {

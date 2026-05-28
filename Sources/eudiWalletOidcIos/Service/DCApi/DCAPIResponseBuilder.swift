@@ -5,16 +5,16 @@ import OrderedCollections
 @available(iOS 17.0, *)
 class DCAPIResponseBuilder {
 
-    /// Builds the encrypted response CBOR and wraps it in the DC API JSON format.
+    /// Builds the raw encrypted response CBOR bytes.
     ///
     /// Encrypted response CBOR:
     ///   ["dcapi", {"enc": <encapsulatedKey bytes>, "cipherText": <cipherText bytes>}]
     ///
-    /// Response JSON:
-    ///   {"protocol": "org-iso-mdoc", "data": {"response": "<base64url>"}}
-    static func buildResponseJSON(
+    /// This is what the iOS DC API (`ISO18013MobileDocumentResponse.responseData`)
+    /// expects — the platform performs the protocol/data envelope wrapping itself.
+    static func buildEncryptedResponseBytes(
         encryptionResult: HPKEEncryptionResult
-    ) -> [String: Any]? {
+    ) -> Data {
         let encryptedResponseMap: OrderedDictionary<CBOR, CBOR> = [
             .utf8String("enc"): .byteString(Array(encryptionResult.encapsulatedKey)),
             .utf8String("cipherText"): .byteString(Array(encryptionResult.cipherText))
@@ -25,8 +25,22 @@ class DCAPIResponseBuilder {
             .map(encryptedResponseMap)
         ])
 
-        let encryptedResponseBytes = encodeCBOR(encryptedResponseCBOR)
-        let responseBase64 = Data(encryptedResponseBytes).base64URLEncodedString()
+        return Data(encodeCBOR(encryptedResponseCBOR))
+    }
+
+    /// Builds the encrypted response CBOR and wraps it in the DC API JSON format.
+    ///
+    /// Encrypted response CBOR:
+    ///   ["dcapi", {"enc": <encapsulatedKey bytes>, "cipherText": <cipherText bytes>}]
+    ///
+    /// Response JSON:
+    ///   {"protocol": "org-iso-mdoc", "data": {"response": "<base64url>"}}
+    static func buildResponseJSON(
+        encryptionResult: HPKEEncryptionResult
+    ) -> [String: Any]? {
+        let responseBase64 = buildEncryptedResponseBytes(
+            encryptionResult: encryptionResult
+        ).base64URLEncodedString()
 
         let responseJSON: [String: Any] = [
             "protocol": "org-iso-mdoc",
