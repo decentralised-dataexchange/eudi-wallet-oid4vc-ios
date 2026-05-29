@@ -1,4 +1,4 @@
-// swift-tools-version: 5.7
+// swift-tools-version: 5.9
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 import PackageDescription
 let package = Package(
@@ -18,12 +18,14 @@ let package = Package(
         .package(url: "https://github.com/airsidemobile/JOSESwift.git", from: "3.0.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from:"3.5.2"),
         .package(url: "https://github.com/niscy-eudiw/SwiftCBOR.git", from: "0.5.7"),
-        .package(url: "https://github.com/1024jp/GzipSwift", from: "6.0.0")
+        .package(url: "https://github.com/1024jp/GzipSwift", from: "6.0.0"),
+        .package(url: "https://github.com/Flight-School/AnyCodable.git", from: "0.6.7"),
+        .package(url: "https://github.com/filom/ASN1Decoder.git", from: "1.8.0")
     ],
     targets: [
         .target(
             name: "eudiWalletOidcIos",
-            dependencies: ["Base58Swift", "CryptoSwift", "PresentationExchangeSdkiOS", "JOSESwift", "SwiftCBOR", .product(name: "Crypto", package: "swift-crypto"), .product(name: "Gzip", package: "GzipSwift")],
+            dependencies: ["Base58Swift", "CryptoSwift", "PresentationExchangeSdkiOS", "JOSESwift", "SwiftCBOR", .product(name: "Crypto", package: "swift-crypto"), .product(name: "Gzip", package: "GzipSwift"), "AnyCodable", "ASN1Decoder"],
             path: "Sources"),
         .testTarget(
             name: "eudi-wallet-oidc-iosTests",
