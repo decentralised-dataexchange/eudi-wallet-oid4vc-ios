@@ -91,7 +91,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                     }
                 }
                 
-                if presentationDefinition != "" || presentationDefinitionUri != "" {
+                if presentationDefinition != "" || presentationDefinitionUri != "" || dcql != "" {
                     var presentationRequest =  PresentationRequest(state: state,
                                                                    clientId: clientID,
                                                                    redirectUri: redirectUri ?? responseUri,
