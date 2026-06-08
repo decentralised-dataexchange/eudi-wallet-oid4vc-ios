@@ -218,6 +218,7 @@ public class SDJWTService {
             var tempCredentialList: [String?] = []
             var credentialList: [String] = []
             var sdList: [String] = []
+            var arrayDigestHashes: [String] = []
             credentialList.append(credential)
             
             var credentialFormat: String = ""
@@ -244,8 +245,31 @@ public class SDJWTService {
                             }
                         }
                     }
+                    if let arrayValue = value as? [Any] {
+                        for element in arrayValue {
+                            if let hashString = element as? String {
+                                arrayDigestHashes.append(hashString)
+                            }
+                        }
+                    }
                 }
             }
+            
+            // Second pass: match count == 2 array-element disclosures via SHA256 hash
+            for disclosure in disclosures {
+                if let decodedDisclosure = disclosure.decodeBase64(),
+                   let list = try? JSONSerialization.jsonObject(with: Data(decodedDisclosure.utf8), options: []) as? [Any],
+                   list.count == 2 {
+                    let disclosureHash = SDJWTService.shared.calculateSHA256Hash(inputString: disclosure) ?? ""
+                    let arrayElement = list[1] as? String
+                    if arrayDigestHashes.contains(arrayElement ?? "") {
+                        if !disclosureList.contains(disclosure) {
+                            disclosureList.append(disclosure)
+                        }
+                    }
+                }
+            }
+            
             for dis in disclosures {
                 let sdData = SDJWTService.shared.calculateSHA256Hash(inputString: dis) ?? ""
                 if sdList.contains(sdData) {
@@ -353,7 +377,7 @@ public class SDJWTService {
                 if isStringPresentInJSONArray(jsonArray: sdList, searchString: hash) {
                     
                     if let disclosure = disclosures[index].decodeBase64() {
-                        let (decodedKey, decodedValue) = extractKeyValue(from: disclosure) ?? ("","" as Any)
+                        let (decodedKey, decodedValue) = extractKeyValue(from: disclosure) ?? ("", "" as Any)
                         if let decodedValue = decodedValue as? [String: Any] {
                             modifiedJsonElement[decodedKey] = decodedValue as Any
                         } else if let decodedValue = decodedValue as? [Any] {
@@ -366,13 +390,92 @@ public class SDJWTService {
             }
         }
         
+        // Handle array fields with {"...": hash} digest elements
+        var keysToUpdate: [String: [Any]] = [:]
+        
         for (key, value) in modifiedJsonElement {
-            if(value is [String: Any]){
-                modifiedJsonElement[key] = addDisclosuresToCredential(jsonElement: value as! [String : Any], disclosures: disclosures, hashList: hashList)
+            if let arrayValue = value as? [Any] {
+                // Check if any element in the array is a digest object {"...": hash}
+                let hasDigestElements = arrayValue.contains { element in
+                    if let obj = element as? [String: Any] {
+                        return obj["..."] != nil
+                    }
+                    return false
+                }
+                
+                if hasDigestElements {
+                    var resolvedArray: [Any] = []
+                    
+                    for arrayElement in arrayValue {
+                        if let digestObject = arrayElement as? [String: Any],
+                           let digestValue = digestObject["..."] as? String {
+                            // Find matching hash in hashList
+                            if let matchIndex = hashList.firstIndex(of: digestValue) {
+                                if let disclosure = disclosures[matchIndex].decodeBase64() {
+                                    // Array element disclosure format: [salt, value]
+                                    if let disclosureArray = parseJSONArray(from: disclosure),
+                                       disclosureArray.count > 1 {
+                                        resolvedArray.append(disclosureArray[1])
+                                    }
+                                }
+                                // If decoding fails, omit element (not disclosed)
+                            }
+                            // If no match found, omit (not disclosed)
+                        } else {
+                            // Plain element — recurse if object, keep as-is otherwise
+                            if let nestedObject = arrayElement as? [String: Any] {
+                                let resolved = addDisclosuresToCredential(
+                                    jsonElement: nestedObject,
+                                    disclosures: disclosures,
+                                    hashList: hashList
+                                )
+                                resolvedArray.append(resolved)
+                            } else {
+                                resolvedArray.append(arrayElement)
+                            }
+                        }
+                    }
+                    
+                    keysToUpdate[key] = resolvedArray
+                } else {
+                    // No digest elements — recurse into each object element (existing behavior)
+                    let resolvedArray = arrayValue.map { element -> Any in
+                        if let nestedObject = element as? [String: Any] {
+                            return addDisclosuresToCredential(
+                                jsonElement: nestedObject,
+                                disclosures: disclosures,
+                                hashList: hashList
+                            )
+                        }
+                        return element
+                    }
+                    keysToUpdate[key] = resolvedArray
+                }
+            } else if let nestedObject = value as? [String: Any] {
+                // Recurse into nested objects (existing behavior)
+                modifiedJsonElement[key] = addDisclosuresToCredential(
+                    jsonElement: nestedObject,
+                    disclosures: disclosures,
+                    hashList: hashList
+                )
             }
         }
         
+        // Apply resolved arrays back to the object
+        for (key, resolvedArray) in keysToUpdate {
+            modifiedJsonElement[key] = resolvedArray
+        }
+        
         return modifiedJsonElement
+    }
+
+    // Helper to parse a JSON string into an array
+    private func parseJSONArray(from jsonString: String) -> [Any]? {
+        guard let data = jsonString.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [Any] else {
+            return nil
+        }
+        return array
     }
     
     private func isStringPresentInJSONArray(jsonArray: [String], searchString: String) -> Bool {
