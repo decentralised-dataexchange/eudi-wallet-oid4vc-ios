@@ -12,54 +12,17 @@ public class TrustMechanismService: TrustMechanismServiceProtocol {
     public static var shared = TrustMechanismService()
     public init() {}
     
-    public func isIssuerOrVerifierTrusted(url: String?, x5c: String?, jwksURI: String?, completion: @escaping (Bool?) -> Void){
-        var isValidOrganization: Bool? = nil
-        var validationResults: [Bool?] = []
-        parseXmlDataToJson(url: url) { data in
-            if let data = data {
-                for item in data.trustServiceProviders ?? [] {
-                    for service in item.tspServices {
-                        if let identities = service.serviceDigitalIdentities {
-                            for identity in identities {
-                                if identity.x509Certificate == x5c {
-                                    validationResults.append(true)
-                                
-                                } else if identity.x509SKI == x5c {
-                                    validationResults.append(true)
-                                } else if identity.DID == x5c {
-                                    validationResults.append(true)
-                                } else if identity.KID == x5c && identity.JwksURI == jwksURI {
-                                    validationResults.append(true)
-                                } else if identity.KID == x5c {
-                                    validationResults.append(true)
-                                }
-                            }
-                        }
-                    }
-                }
-                if validationResults.contains(true) {
-                    completion(true)
-                } else {
-                    completion(nil)
-                }
-            } else {
-                completion(nil)
-            }
-            
-        }
-    }
-
-public func fetchTrustDetails(url: String?, x5c: String?, jwksURI: String?, completion: @escaping (TrustServiceProvider?) -> Void) {
-    parseXmlDataToJson(url: url) { data in
-        guard let data = data else {
-            completion(nil)
-            return
-        }
-
-        for item in data.trustServiceProviders ?? [] {
+    public func fetchTrustDetails(url: String?, data: TrustServiceStatusList? = nil, x5c: String?, jwksURI: String?, completion: @escaping (TrustServiceProvider?) -> Void) {
+    
+    func search(_ trustList: TrustServiceStatusList) {
+        for item in trustList.trustServiceProviders ?? [] {
             for service in item.tspServices {
                 let hasMatchingId = service.serviceDigitalIdentities?.contains {
-                    $0.x509Certificate == x5c || $0.x509SKI == x5c || ($0.KID == x5c && $0.JwksURI == jwksURI) || $0.DID == x5c || $0.KID == x5c
+                    $0.x509Certificate == x5c ||
+                    $0.x509SKI == x5c ||
+                    ($0.KID == x5c && $0.JwksURI == jwksURI) ||
+                    $0.DID == x5c ||
+                    $0.KID == x5c
                 } ?? false
 
                 if hasMatchingId {
@@ -72,6 +35,47 @@ public func fetchTrustDetails(url: String?, x5c: String?, jwksURI: String?, comp
         }
 
         completion(nil)
+    }
+    
+    if let data = data {
+        search(data)
+    } else {
+        parseXmlDataToJson(url: url) { fetched in
+            guard let fetched = fetched else { completion(nil); return }
+            search(fetched)
+        }
+    }
+}
+
+public func isIssuerOrVerifierTrusted(url: String?, data: TrustServiceStatusList? = nil, x5c: String?, jwksURI: String?, completion: @escaping (Bool?) -> Void) {
+    
+    func validate(_ trustList: TrustServiceStatusList) {
+        var validationResults: [Bool] = []
+        for item in trustList.trustServiceProviders ?? [] {
+            for service in item.tspServices {
+                if let identities = service.serviceDigitalIdentities {
+                    for identity in identities {
+                        if identity.x509Certificate == x5c ||
+                           identity.x509SKI == x5c ||
+                           identity.DID == x5c ||
+                           (identity.KID == x5c && identity.JwksURI == jwksURI) ||
+                           identity.KID == x5c {
+                            validationResults.append(true)
+                        }
+                    }
+                }
+            }
+        }
+        completion(validationResults.contains(true) ? true : nil)
+    }
+    
+    if let data = data {
+        validate(data)
+    } else {
+        parseXmlDataToJson(url: url) { fetched in
+            guard let fetched = fetched else { completion(nil); return }
+            validate(fetched)
+        }
     }
 }
     
