@@ -81,7 +81,7 @@ class DCQLAuthorisationResponseBuilder {
                                                         did: String,
                                                         isMdoc: Bool, index: Int, keyHandler: SecureKeyProtocol, format: String, isSca: Bool, keyIds: [String]) async -> [String] {
         if format == "mso_mdoc"  {
-            return await MDocVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest ?? nil, did: did, index: index, keyHandler: keyHandler) ?? []
+            return await MDocVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest ?? nil, did: did, index: index, keyHandler: keyHandler, keyIds: keyIds) ?? []
         } else if format == "jwt_vc_json"  {
             return await JWTVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler) ?? []
         } else {

@@ -178,7 +178,7 @@ class AuthorisationResponseBuilder {
             // creating mdoc vp token
             var mdocToken: String = ""
             if !mdocList.isEmpty {
-                mdocToken = MDocVpTokenBuilder().build2(credentials: credentialsList ?? [], presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler) ?? ""
+                mdocToken = await MDocVpTokenBuilder().build2(credentials: credentialsList ?? [], presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler, keyIds: keyIds) ?? ""
             }
             
             if let index = vpTokenList.firstIndex(of: "JWT") {

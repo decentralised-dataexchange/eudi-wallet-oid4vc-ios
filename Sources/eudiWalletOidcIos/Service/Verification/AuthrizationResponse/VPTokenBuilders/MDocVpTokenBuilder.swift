@@ -105,7 +105,10 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     }
                     let clientJWK = await VerifierJwk().deriveVerifiersJWKFromClientMetadata(presentationRequest: presentationRequest)
                     
-                    var jwkThumbprint: [UInt8]? = []
+                    // Must default to nil (not []): with no verifier encryption key the handover
+                    // entry has to be CBOR null, matching Android and the verifier. An empty []
+                    // would emit byteString(h'') instead of null and break the binding hash.
+                    var jwkThumbprint: [UInt8]? = nil
                     if let clientJWK = clientJWK {
                         jwkThumbprint = computeJwkThumbprintBytes(jwk: clientJWK)
                     }
@@ -116,17 +119,40 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                         guard isDcApi, rawClientId.hasPrefix("origin:") else { return rawClientId }
                         return String(rawClientId.dropFirst("origin:".count))
                     }()
-                    let (sessionTranscript, _) = buildSessionTranscriptForOpenID4VP(
-                        clientId: handoverClientId,
-                        nonce: presentationRequest?.nonce ?? "",
-                        responseUri: isDcApi ? nil : (presentationRequest?.responseUri ?? presentationRequest?.redirectUri),
-                        jwkThumbprint: jwkThumbprint,
-                        responseMode: presentationRequest?.responseMode
-                    )
+                    // Select session transcript by request type: presentation_definition /
+                    // presentation_definition_uri → ISO/IEC TS 18013-7 §B.4.4 (Annex B);
+                    // otherwise (e.g. DCQL) → the existing OpenID4VP handover.
+                    let usesPresentationDefinition =
+                        (presentationRequest?.presentationDefinition?.isEmpty == false) ||
+                        (presentationRequest?.presentationDefinitionUri?.isEmpty == false)
+                    let sessionTranscript: CBOR
+                    if usesPresentationDefinition {
+                        sessionTranscript = buildSessionTranscriptForAnnexB18013_7(
+                            clientId: handoverClientId,
+                            nonce: presentationRequest?.nonce ?? "",
+                            responseUri: presentationRequest?.responseUri ?? presentationRequest?.redirectUri ?? ""
+                        ).cbor
+                    } else {
+                        sessionTranscript = buildSessionTranscriptForOpenID4VP(
+                            clientId: handoverClientId,
+                            nonce: presentationRequest?.nonce ?? "",
+                            responseUri: isDcApi ? nil : (presentationRequest?.responseUri ?? presentationRequest?.redirectUri),
+                            jwkThumbprint: jwkThumbprint,
+                            responseMode: presentationRequest?.responseMode
+                        ).cbor
+                    }
                     
                     let emptyNameSpace = encodeEmptyDeviceNameSpaces()
-                    let generatedKey = keyHandler.generateSecureKey()
-                    let privateKey: SecKey? = keyHandler.getSecurePrivateKey()
+                    // Sign DeviceAuth with the credential's bound device key — the key whose public
+                    // half the issuer put in the MSO deviceKeyInfo.deviceKey — resolved via its keyId.
+                    // Mirrors SD-JWT key binding (SecureEnclaveHandler(keyID: keyIds[index])) and the
+                    // Android builder (which signs with the credential's device JWK). Falls back to the
+                    // generic keyHandler when no per-credential keyId was supplied.
+                    let signingKeyHandler: SecureKeyProtocol = index < keyIds.count
+                        ? SecureEnclaveHandler(keyID: keyIds[index])
+                        : keyHandler
+                    _ = signingKeyHandler.generateSecureKey()
+                    let privateKey: SecKey? = signingKeyHandler.getSecurePrivateKey()
                     let deviceSigned = buildDeviceSigned(privateKey: privateKey, sessionTranscript: sessionTranscript, docType: docType)
                     let docFiltered = [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData), deviceSigned: deviceSigned)]
                     
@@ -150,7 +176,7 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         return base64StringsWithoutPadding
     }
     
-    func build2(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol) -> String? {
+    func build2(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol, keyIds: [String] = []) async -> String? {
         
         var queryItem: Any?
         var doc: String?
@@ -172,16 +198,51 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         var requestedParams: [String] = []
         var limitDisclosure: Bool = false
         var docFiltered: [Document] = []
-        
+
+        // Build the session transcript + device key once for all documents in this response.
+        let clientJWK = await VerifierJwk().deriveVerifiersJWKFromClientMetadata(presentationRequest: presentationRequest)
+        var jwkThumbprint: [UInt8]? = nil
+        if let clientJWK = clientJWK {
+            jwkThumbprint = computeJwkThumbprintBytes(jwk: clientJWK)
+        }
+        let isDcApi = presentationRequest?.responseMode == ResponseMode.dcApi.rawValue
+            || presentationRequest?.responseMode == ResponseMode.dcApiJWT.rawValue
+        let rawClientId = presentationRequest?.clientId ?? ""
+        let handoverClientId: String = {
+            guard isDcApi, rawClientId.hasPrefix("origin:") else { return rawClientId }
+            return String(rawClientId.dropFirst("origin:".count))
+        }()
+        // Select session transcript by request type: presentation_definition /
+        // presentation_definition_uri → ISO/IEC TS 18013-7 §B.4.4 (Annex B);
+        // otherwise (e.g. DCQL) → the existing OpenID4VP handover.
+        let usesPresentationDefinition =
+            (presentationRequest?.presentationDefinition?.isEmpty == false) ||
+            (presentationRequest?.presentationDefinitionUri?.isEmpty == false)
+        let sessionTranscript: CBOR
+        if usesPresentationDefinition {
+            sessionTranscript = buildSessionTranscriptForAnnexB18013_7(
+                clientId: handoverClientId,
+                nonce: presentationRequest?.nonce ?? "",
+                responseUri: presentationRequest?.responseUri ?? presentationRequest?.redirectUri ?? ""
+            ).cbor
+        } else {
+            sessionTranscript = buildSessionTranscriptForOpenID4VP(
+                clientId: handoverClientId,
+                nonce: presentationRequest?.nonce ?? "",
+                responseUri: isDcApi ? nil : (presentationRequest?.responseUri ?? presentationRequest?.redirectUri),
+                jwkThumbprint: jwkThumbprint,
+                responseMode: presentationRequest?.responseMode
+            ).cbor
+        }
         for (index, cred) in credentials.enumerated() {
             if !cred.contains(".") {
                 if let issuerAuthData = getIssuerAuth(credential: cred), let cborNameSpace = getNameSpaces(credential: cred, query: queryItem) {
                     if let inputDescriptor = queryItem as? InputDescriptor, let fields = inputDescriptor.constraints?.fields {
                         for field in fields {
                             let components = field.path?.first?.components(separatedBy: ["[", "]", "'"])
-                            
+
                             let filteredComponents = components?.filter { !$0.isEmpty }
-                            
+
                             if let identifier = filteredComponents?.last {
                                 requestedParams.append(String(identifier))
                             }
@@ -219,7 +280,16 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     } else if let docTypeValue = doc, !docTypeValue.isEmpty {
                         docType = docTypeValue
                     }
-                    docFiltered.append(contentsOf: [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData))])
+                    // Sign DeviceAuth with the credential's bound device key, resolved via its keyId
+                    // (same key the issuer placed in MSO deviceKeyInfo.deviceKey). Falls back to the
+                    // generic keyHandler when no per-credential keyId was supplied.
+                    let signingKeyHandler: SecureKeyProtocol = index < keyIds.count
+                        ? SecureEnclaveHandler(keyID: keyIds[index])
+                        : keyHandler
+                    _ = signingKeyHandler.generateSecureKey()
+                    let devicePrivateKey: SecKey? = signingKeyHandler.getSecurePrivateKey()
+                    let deviceSigned = buildDeviceSigned(privateKey: devicePrivateKey, sessionTranscript: sessionTranscript, docType: docType)
+                    docFiltered.append(contentsOf: [Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: nameSpaceData ?? nil, issuerAuth: issuerAuthData), deviceSigned: deviceSigned)])
                     
                     let documentsToAdd = docFiltered.count == 0 ? nil : docFiltered
                     let deviceResponseToSend = DeviceResponse(version: "1.0", documents: documentsToAdd,status: 0)
