@@ -39,15 +39,19 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         // Strip existing suffix if present to find base
         let baseIssuer = uri.replacingOccurrences(of: "/.well-known/openid-credential-issuer", with: "")
 
-        // 1. Primary traditional URL strategy
-        let primaryUrl = baseIssuer + "/.well-known/openid-credential-issuer"
-        if let config = try await executeIssuerFetch(from: primaryUrl) {
-            return config
+        // 1. Primary strategy: RFC 8414 Section 3 URL (.well-known inserted between host and path)
+        let primaryUrl = buildRfc8414Url(inputUri: baseIssuer, wellKnownSuffix: ".well-known/openid-credential-issuer")
+        if let primaryUrl = primaryUrl {
+            debugPrint("### Attempting RFC 8414 Issuer URL:\(primaryUrl)")
+            if let config = try await executeIssuerFetch(from: primaryUrl) {
+                return config
+            }
         }
 
-        // 2. Fallback RFC 8414 URL strategy
-        if let fallbackUrl = buildRfc8414Url(inputUri: baseIssuer, wellKnownSuffix: ".well-known/openid-credential-issuer") {
-            debugPrint("### Falling back to RFC 8414 Issuer URL:\(fallbackUrl)")
+        // 2. Fallback strategy: suffix-style URL (.well-known appended to the end)
+        let fallbackUrl = baseIssuer + "/.well-known/openid-credential-issuer"
+        if fallbackUrl != primaryUrl {
+            debugPrint("### Falling back to suffix-style Issuer URL:\(fallbackUrl)")
             if let config = try await executeIssuerFetch(from: fallbackUrl) {
                 return config
             }
@@ -113,17 +117,19 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         // Dynamic array to maintain resolution sequence safely
         var urlsToTry: [String] = []
 
-        // 1. Traditional Suffix Locations
-        urlsToTry.append(baseAuthServer + "/.well-known/oauth-authorization-server")
-        urlsToTry.append(baseAuthServer + "/.well-known/openid-configuration")
-
-        // 2. RFC 8414 Structured Locations
+        // 1. RFC 8414 Structured Locations (.well-known inserted between host and path)
         if let rfcOauth = buildRfc8414Url(inputUri: baseAuthServer, wellKnownSuffix: ".well-known/oauth-authorization-server") {
-            urlsToTry.append(rfcOauth)
+            if !urlsToTry.contains(rfcOauth) { urlsToTry.append(rfcOauth) }
         }
         if let rfcOpenId = buildRfc8414Url(inputUri: baseAuthServer, wellKnownSuffix: ".well-known/openid-configuration") {
-            urlsToTry.append(rfcOpenId)
+            if !urlsToTry.contains(rfcOpenId) { urlsToTry.append(rfcOpenId) }
         }
+
+        // 2. Traditional Suffix Locations (.well-known appended to the end)
+        let suffixOauth = baseAuthServer + "/.well-known/oauth-authorization-server"
+        if !urlsToTry.contains(suffixOauth) { urlsToTry.append(suffixOauth) }
+        let suffixOpenId = baseAuthServer + "/.well-known/openid-configuration"
+        if !urlsToTry.contains(suffixOpenId) { urlsToTry.append(suffixOpenId) }
 
         var finalNetworkError: Error?
 
