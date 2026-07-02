@@ -269,11 +269,13 @@ public class IssueService: NSObject, IssueServiceProtocol {
                         let type = jsonDict["type"] as? String
                         let status = jsonDict["status"] as? String
                         if let openid4vpRequest = jsonDict["openid4vp_request"] as? [String: Any] {
+                            var updatedOpenid4vpRequest = openid4vpRequest
+                            updatedOpenid4vpRequest["client_id"] = "iar:\(iarEndpoint)"
                             let authSession = jsonDict["auth_session"] as? String
                             authorizationURLComponents = URLComponents(string: authorizationEndpoint)
                             authorizationURLComponents?.queryItems = [
                                 URLQueryItem(name: "type", value: type),
-                                URLQueryItem(name: "openid4vp_request", value: openid4vpRequest.toString()),
+                                URLQueryItem(name: "openid4vp_request", value: updatedOpenid4vpRequest.toString()),
                                 URLQueryItem(name: "request_uri", value: requestURI),
                                 URLQueryItem(name: "auth_session", value: authSession),
                                 URLQueryItem(name: "client_id", value: did)
