@@ -61,6 +61,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 var authSession = URL(string: code)?.queryParameters?["auth_session"] ?? ""
                 var openid4vpRequest = URL(string: code)?.queryParameters?["openid4vp_request"] ?? ""
                 var request = ""
+                var clientIDValue = ""
                 var dcqlQueryModel: DCQLQuery? = nil
                 if URL(string: code)?.queryParameters?["type"] == "openid4vp_presentation" {
                     if let openid4vpRequest = URL(string: code)?.queryParameters?["openid4vp_request"] as? String,
@@ -71,6 +72,11 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                             if let requestString = requestDict?["request"] as? String {
                                 request = requestString ?? ""
                             }
+
+                            if let clientIdString = requestDict?["client_id"] as? String {
+                                clientIDValue = clientIdString
+                            }
+            
                             if let dcqlData = requestDict?["dcql_query"] as? [String: Any] {
                                 dcql = dcqlData.toString() ?? ""
                             }
@@ -140,11 +146,8 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                             }
                         }
                     }
-                    let resolvedClientID = presentationRquestDataModel?.clientId?.replacingOccurrences(of: "redirect_uri:", with: "")
-                    let split = resolvedClientID?.components(separatedBy: "/")
-                    let splitValue = split?.dropLast()
-                    let updatedClientID = "iar:\(splitValue?.joined(separator: "/") ?? "")/iar"
-                    presentationRquestDataModel?.clientId = updatedClientID
+                    let resolvedClientID = clientIDValue.replacingOccurrences(of: "redirect_uri:", with: "")
+                    presentationRquestDataModel?.clientId = resolvedClientID
                     presentationRquestDataModel?.authSession = authSession
                     presentationRquestDataModel?.type = URL(string: code)?.queryParameters?["type"] ?? ""
                     presentationRquestDataModel?.request = request
