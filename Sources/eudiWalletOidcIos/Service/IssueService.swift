@@ -563,7 +563,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
         isPreAuthorisedCodeFlow: Bool = false,
         userPin: String?,
         version: String?,
-        clientIdAssertion: String = "",
         wua: String,
         pop: String,
         redirectURI: String?, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> TokenResponse? {
@@ -574,7 +573,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                                          otpVal: userPin ?? "",
                                                          tokenEndpoint: tokenEndPoint ?? "",
                                                          version: version,
-                                                         clientIdAssertion: clientIdAssertion,
                                                          wua: wua,
                                                          pop: pop, isDPOPSupported: isDPOPSupported, dpopKey: dpopKey)
                 return tokenResponse
@@ -585,7 +583,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                      codeVerifier: codeVerifier,
                                      authCode: codeVal,
                                      tokenEndpoint: tokenEndPoint ?? "",
-                                     clientIdAssertion: clientIdAssertion,
                                      wua: wua,
                                      pop: pop,
                                      redirectURI: redirectURI, isDPOPSupported: isDPOPSupported, dpopKey: dpopKey)
@@ -912,7 +909,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
         otpVal: String,
         tokenEndpoint: String?,
         version: String?,
-        clientIdAssertion: String = "",
         wua: String,
         pop: String, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> TokenResponse? {
             
@@ -931,10 +927,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
                     params = ["grant_type": grantType, "pre-authorized_code":preAuthCode] as [String: Any]
                 }
             }
-//            if !clientIdAssertion.isEmpty {
-//                params["client_assertion"] = clientIdAssertion
-//                params["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-//            }
             let postString = UIApplicationUtils.shared.getPostString(params: params)
             
             guard let urlString = tokenEndpoint, let url =  URL(string: urlString) else { return TokenResponse(error: EUDIError(from: ErrorResponse(message: "Invalid url")))}
@@ -985,7 +977,6 @@ public class IssueService: NSObject, IssueServiceProtocol {
         codeVerifier: String,
         authCode: String,
         tokenEndpoint: String?,
-        clientIdAssertion: String = "",
         wua: String,
         pop: String,
         redirectURI: String?, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> TokenResponse? {
@@ -994,7 +985,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let grantType = "authorization_code"
             let dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "", dpopKey: dpopKey)
             // Constructing parameters for the token request
-            //let clientAssertion = !clientIdAssertion.isEmpty ? clientIdAssertion : nil
+            
             var params: [String: Any] = [
                 "grant_type": grantType,
                 "code": authCode,
@@ -1003,10 +994,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 "redirect_uri": redirectURI ?? "openid://callback"
             ]
             
-            if !clientIdAssertion.isEmpty {
-                params["client_assertion"] = clientIdAssertion
-                params["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-            }
+            
             let postString = UIApplicationUtils.shared.getPostString(params: params)
             
             // Creating the request
