@@ -38,26 +38,16 @@ public class ExpiryValidator {
     }
     static func getIssuerAuth(credential: String) -> CBOR? {
         // Convert the base64 URL encoded credential to Data
-        if let data = Data(base64URLEncoded: credential) {
-            do {
-                // Decode the CBOR data into a dictionary
-                let decodedCBOR = try CBOR.decode([UInt8](data))
-                
-                if let dictionary = decodedCBOR {
-                    // Check for the presence of "issuerAuth" in the dictionary
-                    if let issuerAuthValue = dictionary[CBOR.utf8String("issuerAuth")] {
-                        return issuerAuthValue // Return the issuerAuth value directly
-                    }
-                }
-            } catch {
-                print("Error decoding CBOR: \(error)")
-                return nil
-            }
-        } else {
+        guard let data = Data(base64URLEncoded: credential) else {
             print("Invalid base64 URL encoded credential.")
             return nil
         }
-        
+        // Decode via SafeCBOR so a malformed credential that declares an
+        // implausible collection length cannot trigger an allocation abort.
+        if let dictionary = SafeCBOR.decode([UInt8](data)),
+           let issuerAuthValue = dictionary[CBOR.utf8String("issuerAuth")] {
+            return issuerAuthValue // Return the issuerAuth value directly
+        }
         return nil // Return nil if "issuerAuth" is not found
     }
     
@@ -67,39 +57,24 @@ public class ExpiryValidator {
             return nil
         }
         var expiryValue: String? = ""
-        
-        // FIX: Limit byte string size before attempting CBOR decode to prevent
-        // runaway recursive decoding of malformed/deeply nested CBOR data (crash fix)
-        let maxDecodableSize = 1_000_000 // 1MB guard
-        
+        // Decode every nested byte string via SafeCBOR. A malformed COSE_Sign1
+        // element could otherwise declare an array/map length near Int.max, which
+        // makes SwiftCBOR reserve that capacity before reading and abort the process
+        // with a non-catchable allocation fatalError (`try?` cannot intercept it).
         for element in elements {
             if case let CBOR.byteString(byteString) = element {
-                // FIX: Guard against oversized or empty byte strings
-                guard !byteString.isEmpty, byteString.count <= maxDecodableSize else {
-                    print("ByteString skipped: size \(byteString.count) out of safe bounds.")
-                    continue
-                }
-                // FIX: Wrapped in do/catch — previously a throw here was uncaught at call site
-                do {
-                    if let nestedCBOR = try? CBOR.decode(byteString) {
-                        if case let CBOR.tagged(tag, item) = nestedCBOR, tag.rawValue == 24 {
-                            if case let CBOR.byteString(data) = item {
-                                // FIX: Guard inner byte string size too
-                                guard !data.isEmpty, data.count <= maxDecodableSize else {
-                                    print("Inner ByteString skipped: size \(data.count) out of safe bounds.")
-                                    continue
-                                }
-                                if let decodedInnerCBOR = try? CBOR.decode([UInt8](data)) {
-                                    expiryValue = extractExpiry(cborData: decodedInnerCBOR)
-                                } else {
-                                    print("Failed to decode inner ByteString under Tag 24.")
-                                }
+                if let nestedCBOR = SafeCBOR.decode(byteString) {
+                    if case let CBOR.tagged(tag, item) = nestedCBOR, tag.rawValue == 24 {
+                        if case let CBOR.byteString(data) = item {
+                            if let decodedInnerCBOR = SafeCBOR.decode([UInt8](data)) {
+                                expiryValue = extractExpiry(cborData: decodedInnerCBOR)
+                            } else {
+                                print("Failed to decode inner ByteString under Tag 24.")
                             }
                         }
-                    } else {
-                        print("Could not decode ByteString as CBOR, inspecting data directly.")
-                        print("ByteString data: \(byteString)")
                     }
+                } else {
+                    print("Could not decode ByteString as CBOR, inspecting data directly.")
                 }
             } else {
                 print("Element: \(element)")
