@@ -38,7 +38,7 @@ public class FilterCredentialService {
                 presentationDefinition: presentationDefinition,
                 credentialList: credentialList
             )
-            
+
             for item in matchesString {
                 var filteredCredentialList: [String] = []
                 for data in item {
@@ -128,27 +128,15 @@ public class FilterCredentialService {
             return
         }
 
-        var currentIndex = 0
-
-        func processNext() {
-            if currentIndex >= values.count {
-                completion(false)
-                return
-            }
-
-            let value = values[currentIndex]
-            currentIndex += 1
-            validateIdentifiers(url: value, x5cList: x5cData, kid: kid, did: did, jwksURI: "") { isTrusted in
-                if isTrusted == true {
-                    completion(true)
-                } else {
-                    processNext()
-                }
-                
-            }
+        // Filter by the SPECIFIC requested trust list(s): look up the credential's issuer once, get
+        // the trust list it matched (entry.trustList.url), and keep the credential only if that URL
+        // is among the requested trusted_authorities values. If the issuer is in the OWS trust store
+        // but not in the requested list, it is filtered out.
+        let identifier = x5cData?.first ?? did ?? kid
+        ServerTrustMechanismService.shared.matchedTrustListURL(x5c: identifier) { matchedURL in
+            let keep = matchedURL != nil && values.contains(matchedURL!)
+            completion(keep)
         }
-
-        processNext()
     }
     
     private func validateIdentifiers(url: String,
@@ -172,7 +160,7 @@ public class FilterCredentialService {
         // Validate kid if present
         if let kid = kid {
             group.enter()
-            TrustMechanismService.shared.isIssuerOrVerifierTrusted(url: url, x5c: kid, jwksURI: jwksURI) { result in
+            TrustMechanismProvider.shared.isIssuerOrVerifierTrusted(url: url, data: nil, x5c: kid, jwksURI: jwksURI) { result in
                 defer { group.leave() }
                 if let result = result { validationResults.append(result) }
             }
@@ -181,7 +169,7 @@ public class FilterCredentialService {
         // Validate did if present
         if let did = did {
             group.enter()
-            TrustMechanismService.shared.isIssuerOrVerifierTrusted(url: url, x5c: did, jwksURI: jwksURI) { result in
+            TrustMechanismProvider.shared.isIssuerOrVerifierTrusted(url: url, data: nil, x5c: did, jwksURI: jwksURI) { result in
                 defer { group.leave() }
                 if let result = result { validationResults.append(result) }
             }
@@ -198,7 +186,7 @@ public class FilterCredentialService {
                                     group: DispatchGroup,
                                     completion: @escaping (Bool?) -> Void) {
         group.enter()
-        TrustMechanismService.shared.isIssuerOrVerifierTrusted(url: url, x5c: certificate, jwksURI: jwksURI) { result in
+        TrustMechanismProvider.shared.isIssuerOrVerifierTrusted(url: url, data: nil, x5c: certificate, jwksURI: jwksURI) { result in
             defer { group.leave() }
             if let result = result {
                 completion(result)
@@ -212,7 +200,7 @@ public class FilterCredentialService {
             }
             
             group.enter()
-            TrustMechanismService.shared.isIssuerOrVerifierTrusted(url: url, x5c: ski, jwksURI: jwksURI) { skiResult in
+            TrustMechanismProvider.shared.isIssuerOrVerifierTrusted(url: url, data: nil, x5c: ski, jwksURI: jwksURI) { skiResult in
                 defer { group.leave() }
                 if let skiResult = skiResult {
                     completion(skiResult)
@@ -226,7 +214,7 @@ public class FilterCredentialService {
                 }
                 
                 group.enter()
-                TrustMechanismService.shared.isIssuerOrVerifierTrusted(url: url, x5c: publicKey, jwksURI: jwksURI) { pubKeyResult in
+                TrustMechanismProvider.shared.isIssuerOrVerifierTrusted(url: url, data: nil, x5c: publicKey, jwksURI: jwksURI) { pubKeyResult in
                     defer { group.leave() }
                     completion(pubKeyResult)
                 }
