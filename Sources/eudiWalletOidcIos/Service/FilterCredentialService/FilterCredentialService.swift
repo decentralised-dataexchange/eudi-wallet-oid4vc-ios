@@ -129,12 +129,14 @@ public class FilterCredentialService {
         }
 
         // Filter by the SPECIFIC requested trust list(s): look up the credential's issuer once, get
-        // the trust list it matched (entry.trustList.url), and keep the credential only if that URL
-        // is among the requested trusted_authorities values. If the issuer is in the OWS trust store
-        // but not in the requested list, it is filtered out.
+        // every trust list it matched (entry.trustList.url per entry), and keep the credential if any
+        // of them is among the requested trusted_authorities values. One issuer can be listed in
+        // several trust lists, so this has to intersect — comparing only the first matched URL would
+        // drop a credential that IS in the requested list. If the issuer is in the OWS trust store
+        // but in none of the requested lists, it is filtered out.
         let identifier = x5cData?.first ?? did ?? kid
-        ServerTrustMechanismService.shared.matchedTrustListURL(x5c: identifier) { matchedURL in
-            let keep = matchedURL != nil && values.contains(matchedURL!)
+        ServerTrustMechanismService.shared.matchedTrustListURLs(x5c: identifier) { matchedURLs in
+            let keep = matchedURLs.contains(where: { values.contains($0) })
             completion(keep)
         }
     }
