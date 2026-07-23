@@ -56,6 +56,11 @@ public struct TSPService: Codable {
     public var statusStartingTime: String?
     public var serviceDigitalIdentities: [DigitalId]?
     public var serviceSupplyPoints: [String]?
+    /// Allow-list: when non-empty, ONLY these credential types may be issued/requested by this
+    /// service. Only populated by the server-backed trust list; empty for TSL XML services.
+    public var permittedCredentials: [TrustCredentialType] = []
+    /// Deny-list: a credential matching any of these is refused even when role and status pass.
+    public var prohibitedCredentials: [TrustCredentialType] = []
 }
 
 public struct DigitalId: Codable {
