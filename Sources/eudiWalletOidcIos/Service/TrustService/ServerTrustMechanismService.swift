@@ -26,12 +26,29 @@ public class ServerTrustMechanismService: TrustMechanismServiceProtocol {
     /// TrustEvaluator/FilterCredentialService combines a kid with its jwksUri as "kid##SEP##jwksUri".
     private static let kidJwksSeparator = "##SEP##"
 
-    /// Optionally override the trust-list base URL (e.g. test vs prod).
-    public static func configure(baseURL: String) {
+    /// Path of the lookup endpoint, appended to `baseURL`. Overridable because the host publishes
+    /// it in metadata alongside the base URL.
+    public static var lookupPath: String = "/trust-list/lookup"
+
+    /// Optionally override the trust-list endpoint (e.g. test vs prod). `lookupPath` is left
+    /// unchanged when nil, so existing callers keep the default path.
+    public static func configure(baseURL: String, lookupPath: String? = nil) {
         ServerTrustMechanismService.baseURL = baseURL
+        if let lookupPath = lookupPath, !lookupPath.trimmingCharacters(in: .whitespaces).isEmpty {
+            ServerTrustMechanismService.lookupPath = lookupPath
+        }
     }
 
-    private var lookupURL: String { "\(ServerTrustMechanismService.baseURL)/trust-list/lookup" }
+    /// Joins base and path tolerantly — either side may or may not carry the separating slash.
+    private var lookupURL: String {
+        let base = ServerTrustMechanismService.baseURL.hasSuffix("/")
+            ? String(ServerTrustMechanismService.baseURL.dropLast())
+            : ServerTrustMechanismService.baseURL
+        let path = ServerTrustMechanismService.lookupPath.hasPrefix("/")
+            ? ServerTrustMechanismService.lookupPath
+            : "/\(ServerTrustMechanismService.lookupPath)"
+        return base + path
+    }
 
     // `data` mirrors the protocol; the server lookup ignores it (no in-memory list).
     public func isIssuerOrVerifierTrusted(url: String?,
