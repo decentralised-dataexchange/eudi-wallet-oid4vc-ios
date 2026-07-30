@@ -56,7 +56,17 @@ public class ServerTrustMechanismService: TrustMechanismServiceProtocol {
                                           x5c: String?,
                                           jwksURI: String?,
                                           completion: @escaping (Bool?) -> Void) {
-        lookup(identifier: x5c) { response in
+        isIssuerOrVerifierTrusted(url: url, data: data, x5c: x5c, x5cChain: nil,
+                                  jwksURI: jwksURI, completion: completion)
+    }
+
+    public func isIssuerOrVerifierTrusted(url: String?,
+                                          data: TrustServiceStatusList? = nil,
+                                          x5c: String?,
+                                          x5cChain: [String]?,
+                                          jwksURI: String?,
+                                          completion: @escaping (Bool?) -> Void) {
+        lookup(identifier: x5c, chain: x5cChain) { response in
             // Return true on match, nil otherwise — matches TrustMechanismService's semantics so
             // callers (e.g. FilterCredentialService) can `.contains(true)`. A match whose services
             // are all withdrawn is not trusted.
@@ -70,7 +80,17 @@ public class ServerTrustMechanismService: TrustMechanismServiceProtocol {
                                   x5c: String?,
                                   jwksURI: String?,
                                   completion: @escaping (TrustServiceProvider?) -> Void) {
-        lookup(identifier: x5c) { response in
+        fetchTrustDetails(url: url, data: data, x5c: x5c, x5cChain: nil,
+                          jwksURI: jwksURI, completion: completion)
+    }
+
+    public func fetchTrustDetails(url: String?,
+                                  data: TrustServiceStatusList? = nil,
+                                  x5c: String?,
+                                  x5cChain: [String]?,
+                                  jwksURI: String?,
+                                  completion: @escaping (TrustServiceProvider?) -> Void) {
+        lookup(identifier: x5c, chain: x5cChain) { response in
             guard let response = response, response.match else {
                 completion(nil)
                 return
@@ -120,15 +140,31 @@ public class ServerTrustMechanismService: TrustMechanismServiceProtocol {
     ///
     /// Every lookup is logged with the input it was given — which identifier kind was sent and the
     /// (abbreviated) value — so a trust decision can always be traced back to what was asked.
-    private func lookup(identifier: String?, completion: @escaping (TrustListLookupResponse?) -> Void) {
-        guard let identifier = identifier, !identifier.isEmpty,
-              let url = URL(string: lookupURL) else {
+    /// - Parameter chain: the request's full certificate chain, **leaf first** (a JWS `x5c` header or
+    ///   a COSE `x5chain`). When present it is posted whole, so the backend can match an entry
+    ///   registered against the CA or an intermediate rather than the leaf, and report which one hit
+    ///   via `matchedCertIndex`. Otherwise the single `identifier` is routed to the field its shape
+    ///   implies (x5c / did / kid).
+    private func lookup(identifier: String?,
+                        chain: [String]? = nil,
+                        completion: @escaping (TrustListLookupResponse?) -> Void) {
+        let certChain = (chain ?? []).filter { !$0.isEmpty }
+        guard let url = URL(string: lookupURL),
+              !certChain.isEmpty || !(identifier ?? "").isEmpty else {
             print("TrustLookup ▶︎ SKIPPED — no identifier supplied (failing closed)")
             completion(nil)
             return
         }
+        // Keep the log's `value` meaningful even when only a chain was supplied.
+        let identifier = (identifier?.isEmpty == false) ? identifier! : certChain[0]
 
-        let body = buildLookupBody(identifier: identifier)
+        let body: TrustListLookupRequest
+        if certChain.isEmpty {
+            body = buildLookupBody(identifier: identifier)
+        } else {
+            print("TrustLookup ▶︎ by x5c chain of \(certChain.count) certificate(s), leaf first")
+            body = TrustListLookupRequest(x5c: certChain)
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
