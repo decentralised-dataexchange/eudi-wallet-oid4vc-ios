@@ -125,7 +125,10 @@ public struct DataSharing: Codable {
     public var docType: String?
     public var vct: String?
     public let credentialMetadata: CredentialMetadata?
-    
+    /// ARF TS3 v1.5: true when the issuer metadata declares
+    /// proof_types_supported.jwt.key_attestations_required for this credential.
+    public var keyAttestationsRequired: Bool = false
+
     init(from: DataSharingResponse) {
         format = from.format
         scope = from.scope
@@ -136,6 +139,7 @@ public struct DataSharing: Codable {
         credentialDefinition = from.credentialDefinition == nil ? nil : IssuerCredentialDefinition(from: from.credentialDefinition!)
         docType = from.docType
         credentialMetadata = from.credentialMetadata
+        keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
     }
     init(from: DataSharingResponseV2) {
         format = from.format
@@ -148,6 +152,7 @@ public struct DataSharing: Codable {
         vct = from.vct
         docType = from.docType
         credentialMetadata = from.credentialMetadata
+        keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
     }
     
     init(from: DataSharingOldFormatResponse) {

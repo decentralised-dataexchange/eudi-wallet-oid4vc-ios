@@ -12,14 +12,14 @@ import JOSESwift
 
 class ProofService {
     
-    static func generateProof(nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, did: String, keyHandler: SecureKeyProtocol, credentialTypes: [String]) async -> String? {
+    static func generateProof(nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, did: String, keyHandler: SecureKeyProtocol, credentialTypes: [String], keyAttestation: String? = nil) async -> String? {
         let cryptographicBindingMethodsSupported = getCryptographicBindingMethodsFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
         // Generate JWT Header
         var header = ([
             "typ": "openid4vci-proof+jwt",
             "alg": "ES256"
         ]) as [String : Any]
-        
+
         if let didBindingMethod = cryptographicBindingMethodsSupported.first(where: { $0.starts(with: "did") }) {
             let keyId = generateKeyId(credentialOffer: credentialOffer, bindingMethod: didBindingMethod, did: did, keyHandler: keyHandler)
             header["kid"] = keyId
@@ -29,7 +29,13 @@ class ProofService {
         } else  {
             header["jwk"] = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
         }
-        
+
+        // ARF TS3 v1.5: the wallet-provider Key Attestation travels in the
+        // key_attestation JOSE header of the jwt proof.
+        if let keyAttestation = keyAttestation, !keyAttestation.isEmpty {
+            header["key_attestation"] = keyAttestation
+        }
+
         let headerString = header.toString() ?? ""
         
         // Generate JWT payload

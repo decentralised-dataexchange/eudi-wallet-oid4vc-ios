@@ -565,7 +565,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         version: String?,
         wua: String,
         pop: String,
-        redirectURI: String?, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> TokenResponse? {
+        redirectURI: String?, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil) async -> TokenResponse? {
             
             if isPreAuthorisedCodeFlow {
                 let tokenResponse =
@@ -574,7 +574,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                                          tokenEndpoint: tokenEndPoint ?? "",
                                                          version: version,
                                                          wua: wua,
-                                                         pop: pop, isDPOPSupported: isDPOPSupported, dpopKey: dpopKey)
+                                                         pop: pop, isDPOPSupported: isDPOPSupported, dpopKey: dpopKey, dpopKeyHandler: dpopKeyHandler, dpopKeyPublicJwk: dpopKeyPublicJwk)
                 return tokenResponse
             } else {
                 let codeVal = code.removingPercentEncoding ?? ""
@@ -585,7 +585,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                      tokenEndpoint: tokenEndPoint ?? "",
                                      wua: wua,
                                      pop: pop,
-                                     redirectURI: redirectURI, isDPOPSupported: isDPOPSupported, dpopKey: dpopKey)
+                                     redirectURI: redirectURI, isDPOPSupported: isDPOPSupported, dpopKey: dpopKey, dpopKeyHandler: dpopKeyHandler, dpopKeyPublicJwk: dpopKeyPublicJwk)
                 return tokenResponse
             }
         }
@@ -609,16 +609,18 @@ public class IssueService: NSObject, IssueServiceProtocol {
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
         format: String,
-        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, isDpopSUpported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> CredentialResponse? {
-            
+        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, isDpopSUpported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil) async -> CredentialResponse? {
+
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            
-            guard let idToken = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, keyHandler: keyHandler, credentialTypes: credentialTypes) else {return nil}
+
+            // ARF TS3 v1.5: attach the wallet-provider Key Attestation to the proof.
+            let proofKeyAttestation = KeyAttestationService.forProof(walletProviderKa: keyAttestationJwt, attach: attachKeyAttestation)
+            guard let idToken = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, keyHandler: keyHandler, credentialTypes: credentialTypes, keyAttestation: proofKeyAttestation) else {return nil}
             
             //let credentialTypes = getTypesFromCredentialOffer(credentialOffer: credentialOffer) ?? []
             let types = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")
@@ -740,7 +742,14 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             }
             if isDpopSUpported {
-                let dpopProof = DPoPProofService.generateProof(tokenEndpoint: issuerConfig.credentialEndpoint ?? "", dpopKey: dpopKey, claims: ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken)])
+                let athClaims: [String: Any] = ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken)]
+                // CS-04: bind DPoP to the WIA cnf (SE) key when attestation is active.
+                let dpopProof: String?
+                if let dpopHandler = dpopKeyHandler, let dpopJwk = dpopKeyPublicJwk {
+                    dpopProof = DPoPProofService.generateProof(tokenEndpoint: issuerConfig.credentialEndpoint ?? "", keyHandler: dpopHandler, publicJwk: dpopJwk, claims: athClaims)
+                } else {
+                    dpopProof = DPoPProofService.generateProof(tokenEndpoint: issuerConfig.credentialEndpoint ?? "", dpopKey: dpopKey, claims: athClaims)
+                }
                 request.setValue( "DPoP \(accessToken)", forHTTPHeaderField: "Authorization")
                 request.setValue( dpopProof, forHTTPHeaderField: "DPoP")
             } else {
@@ -823,7 +832,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
     
     public func processDeferredCredentialRequest(
         acceptanceToken: String,
-        deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?, jwks: [String: Any]?, encryptionRequired: Bool?, encValuesSupported: [String]?) async -> CredentialResponse? {
+        deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?, jwks: [String: Any]?, encryptionRequired: Bool?, encValuesSupported: [String]?, isDPOPSupported: Bool = false, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil) async -> CredentialResponse? {
             
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: deferredCredentialEndPoint) else { return nil }
@@ -842,7 +851,15 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 request.httpBody = data
             } else if version == "v2" {
                 var params: [String: Any] = [:]
-                request.setValue( "Bearer \(accessToken ?? "")", forHTTPHeaderField: "Authorization")
+                // Reuse the WIA-bound DPoP key on the deferred endpoint when the
+                // original request was DPoP-bound (CS-04); else fall back to Bearer.
+                if isDPOPSupported, let dpopHandler = dpopKeyHandler, let dpopJwk = dpopKeyPublicJwk, let token = accessToken {
+                    let dpopProof = DPoPProofService.generateProof(tokenEndpoint: deferredCredentialEndPoint, keyHandler: dpopHandler, publicJwk: dpopJwk, claims: ["ath": DPoPProofService.computeAccessTokenHash(token: token)])
+                    request.setValue( "DPoP \(token)", forHTTPHeaderField: "Authorization")
+                    request.setValue( dpopProof, forHTTPHeaderField: "DPoP")
+                } else {
+                    request.setValue( "Bearer \(accessToken ?? "")", forHTTPHeaderField: "Authorization")
+                }
                 params = ["transaction_id": acceptanceToken ?? ""]
                 if encryptionRequired == true {
                     var encryptRequest = ""
@@ -910,11 +927,18 @@ public class IssueService: NSObject, IssueServiceProtocol {
         tokenEndpoint: String?,
         version: String?,
         wua: String,
-        pop: String, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> TokenResponse? {
+        pop: String, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil) async -> TokenResponse? {
             
             let jsonDecoder = JSONDecoder()
             let grantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
-            let dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "", dpopKey: dpopKey)
+            // CS-04: when attestation headers are sent, the DPoP key MUST be the
+            // WIA cnf key, which is Secure-Enclave-backed — sign via its handler.
+            let dpopProof: String?
+            if let dpopHandler = dpopKeyHandler, let dpopJwk = dpopKeyPublicJwk {
+                dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "", keyHandler: dpopHandler, publicJwk: dpopJwk)
+            } else {
+                dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "", dpopKey: dpopKey)
+            }
             // Constructing parameters for the token request
             var params: [String: Any] = [:]
             // Constructing parameters for the token request
@@ -979,11 +1003,18 @@ public class IssueService: NSObject, IssueServiceProtocol {
         tokenEndpoint: String?,
         wua: String,
         pop: String,
-        redirectURI: String?, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil) async -> TokenResponse? {
+        redirectURI: String?, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil) async -> TokenResponse? {
             
             let jsonDecoder = JSONDecoder()
             let grantType = "authorization_code"
-            let dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "", dpopKey: dpopKey)
+            // CS-04: when attestation headers are sent, the DPoP key MUST be the
+            // WIA cnf key, which is Secure-Enclave-backed — sign via its handler.
+            let dpopProof: String?
+            if let dpopHandler = dpopKeyHandler, let dpopJwk = dpopKeyPublicJwk {
+                dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "", keyHandler: dpopHandler, publicJwk: dpopJwk)
+            } else {
+                dpopProof = DPoPProofService.generateProof(tokenEndpoint: tokenEndpoint ?? "", dpopKey: dpopKey)
+            }
             // Constructing parameters for the token request
             
             var params: [String: Any] = [

@@ -100,20 +100,36 @@ enum FormatResponse: String, Codable {
 }
 
 // MARK: - DataSharing
+// Presence-only decode of proof_types_supported.jwt.key_attestations_required
+// (ARF TS3 v1.5). An empty Codable struct decodes from any JSON object, so a
+// non-nil value means the issuer declared the key attestation requirement.
+struct KeyAttestationsRequiredResponse: Codable {}
+struct ProofTypeJwtResponse: Codable {
+    let keyAttestationsRequired: KeyAttestationsRequiredResponse?
+    enum CodingKeys: String, CodingKey {
+        case keyAttestationsRequired = "key_attestations_required"
+    }
+}
+struct ProofTypesSupportedResponse: Codable {
+    let jwt: ProofTypeJwtResponse?
+}
+
 struct DataSharingResponse: Codable {
     var format, scope: String?
     var cryptographicBindingMethodsSupported: [String]?
     var display: [DisplayResponse]?
     var credentialDefinition: IssuerCredentialDefinitionResponse?
     var docType: String?
+    var proofTypesSupported: ProofTypesSupportedResponse?
     public let credentialMetadata: CredentialMetadata?
-    
+
     enum CodingKeys: String, CodingKey {
         case format, scope
         case cryptographicBindingMethodsSupported = "cryptographic_binding_methods_supported"
         case display
         case credentialDefinition = "credential_definition"
         case docType = "doctype"
+        case proofTypesSupported = "proof_types_supported"
         case credentialMetadata = "credential_metadata"
     }
 }
@@ -143,14 +159,16 @@ struct DataSharingResponseV2: Codable {
     var credentialDefinition: IssuerCredentialDefinitionResponse?
     var vct: String?
     var docType: String?
+    var proofTypesSupported: ProofTypesSupportedResponse?
     public let credentialMetadata: CredentialMetadata?
-    
+
     enum CodingKeys: String, CodingKey {
         case format, scope, vct
         case cryptographicBindingMethodsSupported = "cryptographic_binding_methods_supported"
         case credentialDefinition = "credential_definition"
         case display
         case docType = "doctype"
+        case proofTypesSupported = "proof_types_supported"
         case credentialMetadata = "credential_metadata"
     }
 }

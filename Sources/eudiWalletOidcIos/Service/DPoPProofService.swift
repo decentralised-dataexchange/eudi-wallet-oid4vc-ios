@@ -61,6 +61,36 @@ class DPoPProofService {
             return jwt
           }
     
+    /// Generates a DPoP proof JWT signed by a `SecureKeyProtocol` handler
+    /// (e.g. the Secure-Enclave WIA key), embedding `publicJwk` in the header.
+    /// Used to satisfy the ARF TS3 / CS-04 rule that, when attestation headers
+    /// are sent, the DPoP key MUST be the WIA cnf key — whose private part lives
+    /// in the Secure Enclave and cannot be a `P256.Signing.PrivateKey`.
+    static func generateProof(tokenEndpoint: String, httpMethod: String = "POST", keyHandler: SecureKeyProtocol, publicJwk: [String: Any], claims: [String: Any] = [:]) -> String? {
+        var jwk = publicJwk
+        if jwk["use"] == nil { jwk["use"] = "sig" }
+        if jwk["alg"] == nil { jwk["alg"] = "ES256" }
+
+        let header: [String: Any] = [
+            "alg": "ES256",
+            "jwk": jwk,
+            "typ": "dpop+jwt"
+        ]
+        var payload: [String: Any] = [
+            "iat": Int(Date().timeIntervalSince1970),
+            "htu": tokenEndpoint,
+            "htm": httpMethod,
+            "jti": UUID().uuidString
+        ]
+        claims.forEach { payload[$0.key] = $0.value }
+
+        guard let headerData = try? JSONSerialization.data(withJSONObject: header),
+              let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+              let payloadString = String(data: payloadData, encoding: .utf8) else { return nil }
+
+        return keyHandler.sign(payload: payloadString, header: headerData, withKey: keyHandler.generateSecureKey()?.privateKey)
+    }
+
     static func computeAccessTokenHash(token: String) -> String {
         let tokenData = Data(token.utf8) // US-ASCII is subset of UTF-8
         let hash = SHA256.hash(data: tokenData)

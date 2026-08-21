@@ -41,7 +41,7 @@ class IETFCredentialRevocationService: CredentialRevocationServiceProtocol {
             if split.count > 1 {
                 let jsonString = "\(split[1])".decodeBase64() ?? ""
                 let dict = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString)
-                guard let statusData = dict?["status"] as? [String: Any] else { return (nil, nil) }
+                guard let statusData = StatusClaims.of(dict) else { return (nil, nil) }
                 if let statusListDict = statusData["status_list"] as? [String: Any], let statusIndex = statusListDict["idx"] as? Int , let statusUri = statusListDict["uri"] as? String {
                     return (statusUri, statusIndex)
                 }
