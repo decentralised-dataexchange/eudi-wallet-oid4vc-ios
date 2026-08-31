@@ -19,16 +19,48 @@ public class KeyAttestationService {
 
     public init() {}
 
+    /// The credential configuration matching `type`, or nil.
+    private static func config(
+        _ issuerConfig: IssuerWellKnownConfiguration?,
+        _ type: String?
+    ) -> DataSharing? {
+        guard let type = type, !type.isEmpty else { return nil }
+        return issuerConfig?.credentialsSupported?.dataSharing?[type]
+    }
+
     /// True when the issuer metadata declares
     /// proof_types_supported.jwt.key_attestations_required for `type`.
     public static func isRequired(
         issuerConfig: IssuerWellKnownConfiguration?,
         type: String?
     ) -> Bool {
-        guard let type = type,
-              let dataSharing = issuerConfig?.credentialsSupported?.dataSharing?[type]
-        else { return false }
-        return dataSharing.keyAttestationsRequired
+        config(issuerConfig, type)?.keyAttestationsRequired == true
+    }
+
+    /// Whether the credential is device-bound, per TS3 2.2.2.2: a provider
+    /// issuing non-device-bound attestations omits both proof_types_supported
+    /// and cryptographic_binding_methods_supported from its metadata.
+    ///
+    /// Deliberately keyed off proof_types_supported rather than
+    /// key_attestations_required: a device-bound issuer that omits the latter is
+    /// still owed a KA under the SHALL half of 2.2.2.1, and gating on it would
+    /// trade one violation for its opposite.
+    public static func isDeviceBound(
+        issuerConfig: IssuerWellKnownConfiguration?,
+        type: String?
+    ) -> Bool {
+        guard let matching = config(issuerConfig, type) else { return false }
+        return matching.hasProofTypesSupported == true
+            || matching.cryptographicBindingMethodsSupported != nil
+    }
+
+    /// True when the issuer demands iso_18045_high key storage for the binding
+    /// key (TS3 2.3.2). Drives whether the hardware tier is used at all.
+    public static func requiresHighKeyStorage(
+        issuerConfig: IssuerWellKnownConfiguration?,
+        type: String?
+    ) -> Bool {
+        config(issuerConfig, type)?.keyStorage?.contains("iso_18045_high") == true
     }
 
     /// The KA that goes on a credential-request proof. Only a wallet-provider
@@ -101,7 +133,7 @@ public class KeyAttestationService {
         print("KaWatch: POST \(url.absoluteString) keys=\(request.attestedKeys.count) evidence=\(evidence) nonce=\(nonce)")
 
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await NetworkLogger.send(req, tag: "key-attestation")
             let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
             guard (200..<300).contains(status) else {
                 print("KaWatch: WP KA response \(status): \(String(data: data, encoding: .utf8) ?? "")")

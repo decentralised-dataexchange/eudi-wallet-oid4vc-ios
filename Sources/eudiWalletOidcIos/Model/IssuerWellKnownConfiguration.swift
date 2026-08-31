@@ -127,7 +127,17 @@ public struct DataSharing: Codable {
     public let credentialMetadata: CredentialMetadata?
     /// ARF TS3 v1.5: true when the issuer metadata declares
     /// proof_types_supported.jwt.key_attestations_required for this credential.
-    public var keyAttestationsRequired: Bool = false
+    /// Optional, not a defaulted Bool: this type is decoded back out of stored
+    /// credential records, and a synthesised Decodable ignores default values -
+    /// a non-optional would fail to decode every record written before TS3.
+    public var keyAttestationsRequired: Bool?
+    /// Whether proof_types_supported is present at all. With
+    /// cryptographicBindingMethodsSupported this is the device-bound signal of
+    /// TS3 2.2.2.2, which decides whether a KA is owed (2.2.2.1).
+    public var hasProofTypesSupported: Bool?
+    /// key_attestations_required.key_storage - the attack-potential resistance
+    /// the issuer demands of the binding key (TS3 2.3.2).
+    public var keyStorage: [String]?
 
     init(from: DataSharingResponse) {
         format = from.format
@@ -140,6 +150,8 @@ public struct DataSharing: Codable {
         docType = from.docType
         credentialMetadata = from.credentialMetadata
         keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
+        hasProofTypesSupported = from.proofTypesSupported != nil
+        keyStorage = from.proofTypesSupported?.jwt?.keyAttestationsRequired?.keyStorage
     }
     init(from: DataSharingResponseV2) {
         format = from.format
@@ -153,6 +165,8 @@ public struct DataSharing: Codable {
         docType = from.docType
         credentialMetadata = from.credentialMetadata
         keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
+        hasProofTypesSupported = from.proofTypesSupported != nil
+        keyStorage = from.proofTypesSupported?.jwt?.keyAttestationsRequired?.keyStorage
     }
     
     init(from: DataSharingOldFormatResponse) {
@@ -164,6 +178,10 @@ public struct DataSharing: Codable {
             display = dataSharingDisplayList.map({ Display(from: $0)})
         }
         credentialMetadata = from.credentialMetadata
+        cryptographicBindingMethodsSupported = from.cryptographicBindingMethodsSupported
+        keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
+        hasProofTypesSupported = from.proofTypesSupported != nil
+        keyStorage = from.proofTypesSupported?.jwt?.keyAttestationsRequired?.keyStorage
     }
 }
 // MARK: - CredentialsSupportedObjectDisplay
