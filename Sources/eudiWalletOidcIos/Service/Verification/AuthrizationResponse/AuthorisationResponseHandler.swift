@@ -16,13 +16,12 @@ class AuthorisationResponseHandler {
         switch responseMode {
         case .directPost:
             var params = await AuthorisationResponseBuilder.buildResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds)
-            if var presentationSubmission = params["presentation_submission"] as? [String: Any]{
-                 // For encoding the format we have encoded the presentation submission
-                let allowedCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
-                let encodedPresentationSubmission =
-                presentationSubmission.toString()?
-                    .addingPercentEncoding(withAllowedCharacters: allowedCharacters)
-                params["presentation_submission"] = encodedPresentationSubmission
+            if let presentationSubmission = params["presentation_submission"] as? [String: Any] {
+                // Hand over the plain JSON. This used to be percent-encoded here
+                // because the body was assembled without escaping; the body is now
+                // form-encoded as OpenID4VP 8.2 requires, so encoding it here too
+                // would send the Verifier a doubly-escaped value.
+                params["presentation_submission"] = presentationSubmission.toString()
             }
             return params
         case .iarPost :
@@ -65,8 +64,10 @@ class AuthorisationResponseHandler {
                 encryptedResponseParams["response"] = encrypted
                 return encryptedResponseParams
             } catch {
+                // Was swallowed - the caller turned nil into an empty parameter
+                // set and POSTed a body with nothing in it, which a verifier
+                // answers by bouncing to its login page rather than with an error.
                 return nil
-                print("")
             }
         case .dcApi:
             print("Handling DC API response mode")

@@ -30,11 +30,26 @@ class JWEEncryptor {
         if let jwksURI = clientMetaData["jwks_uri"] as? String {
             jwk = try await fetchJWKFromURI(jwksURI)
         } else if let jwks = clientMetaData["jwks"] as? [String: Any],
-                  let keys = jwks["keys"] as? [[String: Any]],
-                  let p256Key = keys.first(where: { $0["crv"] as? String == "P-256" }) {
-            jwk = p256Key
+                  let keys = jwks["keys"] as? [[String: Any]] {
+            // Among P-256 keys prefer an explicit encryption key (use=enc), then a
+            // key with no `use`. Never a signing key: a verifier may publish both a
+            // sig and an enc P-256 key in the same set, and encrypting the response
+            // to the sig key leaves it unable to decrypt - which it reports as a
+            // rejected response, not as a key problem. The jwks_uri branch above
+            // already asks for keyUse "enc"; this branch did not, and took whichever
+            // P-256 key happened to come first.
+            let p256Keys = keys.filter { $0["crv"] as? String == "P-256" }
+            if let encKey = p256Keys.first(where: { ($0["use"] as? String) == "enc" }) {
+                jwk = encKey
+            } else if let noUseKey = p256Keys.first(where: { $0["use"] == nil }) {
+                jwk = noUseKey
+            } else {
+                throw NSError(domain: "JWE", code: 400, userInfo: [NSLocalizedDescriptionKey:
+                    "client_metadata.jwks has \(p256Keys.count) P-256 key(s) but none usable for encryption (all marked use=sig)"])
+            }
         } else {
-            throw NSError(domain: "JWE", code: 400, userInfo: [NSLocalizedDescriptionKey: "No P-256 key found"])
+            throw NSError(domain: "JWE", code: 400, userInfo: [NSLocalizedDescriptionKey:
+                "client_metadata carried neither jwks_uri nor an inline jwks - nothing to encrypt the response to"])
         }
 
         return try await encrypt(payload: payload,

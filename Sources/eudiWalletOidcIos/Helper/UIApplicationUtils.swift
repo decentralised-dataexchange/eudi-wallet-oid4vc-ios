@@ -47,6 +47,32 @@ class UIApplicationUtils {
         }
         return data.map { String($0) }.joined(separator: "&")
     }
+
+    /// application/x-www-form-urlencoded body, percent-encoding both key and value —
+    /// the equivalent of Retrofit's @FormUrlEncoded/@FieldMap on Android. Bodies carrying raw
+    /// JSON (authorization_details, client_metadata) or a custom-scheme redirect_uri parse as
+    /// garbage without this. Not a drop-in for getPostString: callers that hand over values
+    /// they already percent-encoded must keep using that one, or they double-encode.
+    func getFormEncodedString(params: [String: Any]) -> String {
+        return params.map { key, value in
+            "\(percentEscape(key))=\(percentEscape("\(value)"))"
+        }.joined(separator: "&")
+    }
+
+    /// RFC 3986 unreserved set; everything else is escaped, space as %20. The shared rule for
+    /// both form bodies and query values.
+    func percentEscape(_ value: String) -> String {
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        return value.addingPercentEncoding(withAllowedCharacters: unreserved) ?? value
+    }
+
+    /// Query item with an already-escaped value, for URLComponents.percentEncodedQueryItems.
+    /// URLComponents.queryItems leaves "+" and "/" literal, and a server that decodes query
+    /// parameters form-style then reads every "+" as a space — silently corrupting a client_id
+    /// or request_uri. Android escapes these via Uri.Builder.appendQueryParameter.
+    func encodedQueryItem(_ name: String, _ value: String?) -> URLQueryItem {
+        URLQueryItem(name: percentEscape(name), value: value.map { percentEscape($0) })
+    }
 }
 
 extension String {
