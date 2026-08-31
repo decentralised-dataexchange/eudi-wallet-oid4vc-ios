@@ -12,6 +12,10 @@ public class WalletUnitAttestationService {
     
     public init() {}
     var baseURL = ""
+
+    /// The wallet-provider registration profile that yields an ARF TS3 WIA
+    /// (x5c identity + client_status). Mirrors Android's TS3_PROFILE.
+    public static let ts3Profile = "ts3"
     
     public func initiateWalletUnitAttestation(walletProviderUrl: String, profile: String? = nil) async throws -> (String, WalletUnitAttestationResponse?){
             baseURL = walletProviderUrl
@@ -153,16 +157,28 @@ public class WalletUnitAttestationService {
         }
     }
     
+    /// Attest `keyId` against `hash`.
+    ///
+    /// A throttled App Attest service (`serverUnavailable`) is retried on the
+    /// same key and the same hash, which is what Apple asks for and what keeps
+    /// the device's risk metric intact. Everything else - `invalidKey` above
+    /// all, meaning this key has already been attested - is thrown to the
+    /// caller, whose catch mints and stores a replacement.
     func generateDeviceIntegrityToken(keyId: String, hash: Data) async throws -> String {
+        if #available(iOS 14.0, *) {
+            return try await AppAttestRetry.attestExistingKey(
+                service: DCAppAttestService.shared,
+                keyId: keyId,
+                clientDataHash: hash
+            )
+        }
         let service = DCAppAttestService.shared
         return try await withCheckedThrowingContinuation { continuation in
             service.attestKey(keyId, clientDataHash: hash) { attestation, error in
                 if let error = error {
                     continuation.resume(throwing: error)
                 } else if let attestation = attestation {
-                    let attestationData = attestation.base64EncodedString()
-                    print("Attestation Data: \(attestation.base64URLEncodedString())")
-                    continuation.resume(returning: attestationData)
+                    continuation.resume(returning: attestation.base64EncodedString())
                 } else {
                     continuation.resume(throwing: NSError(domain: "AppAttest", code: -1, userInfo: [NSLocalizedDescriptionKey: "Attestation failed"]))
                 }
@@ -191,7 +207,7 @@ public class WalletUnitAttestationService {
         request.httpBody = body?.data(using: .utf8)
         
         do {
-            let (data, resp) = try await URLSession.shared.data(for: request)
+            let (data, resp) = try await NetworkLogger.send(request, tag: "wallet-unit-attestation")
             let responseData =  String(data: data, encoding: .utf8)
             let jsonObject = try JSONSerialization.jsonObject(with: data, options: [])
             let dictionary = jsonObject as? [String: Any]
@@ -215,7 +231,11 @@ public class WalletUnitAttestationService {
             "typ": "oauth-client-attestation-pop+jwt",
         ] as [String: Any]).toString() ?? ""
         let now = Int(Date().timeIntervalSince1970)
-        let exp = now + 3600
+        // Short-lived by design: the PoP is per request, and the authorization
+        // server keeps a list of witnessed jti values for replay detection
+        // (draft-ietf-oauth-attestation-based-client-auth 5.2, 12.1). 6 minutes,
+        // matching Android.
+        let exp = now + 360
         let jti = UUID().uuidString
         let payload = ([
             "aud": aud ?? baseURL,

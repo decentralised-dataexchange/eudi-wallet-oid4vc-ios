@@ -53,43 +53,25 @@ public class AppAttestEvidenceService {
         let clientDataHash = Data(SHA256.hash(data: challenge))
 
         do {
-            let keyId = try await generateKeyId(service: service)
-            let attestation = try await attestKey(service: service, keyId: keyId, clientDataHash: clientDataHash)
+            // Reuses a key left un-attested by an earlier throttled attempt and
+            // retries `serverUnavailable` on the same key and clientDataHash,
+            // which is what preserves the device's App Attest risk metric.
+            let result = try await AppAttestRetry.attest(
+                service: service,
+                clientDataHash: clientDataHash,
+                keychainAccount: keyAttestationKeyAccount
+            )
             return IosAppAttestEvidence(
-                attestationObject: attestation.base64EncodedString(),
-                keyId: keyId
+                attestationObject: result.attestation.base64EncodedString(),
+                keyId: result.keyId
             )
         } catch {
-            print("KaWatch: App Attest evidence failed: \(error)")
+            print("KaWatch: App Attest evidence failed: \(error) - falling back to the software tier")
             return nil
         }
     }
 
-    private static func generateKeyId(service: DCAppAttestService) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            service.generateKey { keyId, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else if let keyId = keyId {
-                    continuation.resume(returning: keyId)
-                } else {
-                    continuation.resume(throwing: NSError(domain: "AppAttest", code: -1, userInfo: [NSLocalizedDescriptionKey: "Key generation failed"]))
-                }
-            }
-        }
-    }
-
-    private static func attestKey(service: DCAppAttestService, keyId: String, clientDataHash: Data) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
-            service.attestKey(keyId, clientDataHash: clientDataHash) { attestation, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else if let attestation = attestation {
-                    continuation.resume(returning: attestation)
-                } else {
-                    continuation.resume(throwing: NSError(domain: "AppAttest", code: -1, userInfo: [NSLocalizedDescriptionKey: "Attestation failed"]))
-                }
-            }
-        }
-    }
+    /// Keychain slot for the key-attestation path, separate from the wallet
+    /// unit registration key so the two never consume each other's.
+    private static let keyAttestationKeyAccount = "AppAttestKeyAttestationPendingKeyId"
 }
