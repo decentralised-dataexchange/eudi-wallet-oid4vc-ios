@@ -41,7 +41,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 var request = URLRequest(url: URL(string: credentialOfferUri ?? "")!)
                 request.httpMethod = "GET"
                 
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "credential-offer")
                 
                 do {
                     let httpRes = response as? HTTPURLResponse
@@ -191,6 +191,24 @@ public class IssueService: NSObject, IssueServiceProtocol {
     ///   - codeVerifier - to build the authorisation request
     ///   - authServer: The authorization server configuration.
     /// - Returns: code if successful; otherwise, nil.
+    /// The WUA JWT's `sub` claim, or nil when there is no usable WUA.
+    static func wuaSub(_ wua: String) -> String? {
+        let parts = wua.split(separator: ".")
+        guard parts.count > 1,
+              let payload = "\(parts[1])".decodeBase64(),
+              let dict = UIApplicationUtils.shared.convertStringToDictionaryAny(text: payload),
+              let sub = dict["sub"] as? String, !sub.isEmpty
+        else { return nil }
+        return sub
+    }
+
+    /// client_id rule, mirroring Android's `WalletUnitAttestationHeaders.clientId`: the wallet
+    /// unit identifier from the WUA, falling back to the local DID. The SAME value must go on the
+    /// PAR body, the authorization URL and the token request (RFC 9126 §4, RFC 6749 §4.1.3).
+    static func clientId(wua: String, fallbackDid: String) -> String {
+        wuaSub(wua) ?? fallbackDid
+    }
+
     public func processAuthorisationRequest(did: String,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,
@@ -202,7 +220,15 @@ public class IssueService: NSObject, IssueServiceProtocol {
         var authorizationURL: URL?
         // Gather query parameters
         let responseType = "code"
-        let scope = credentialFormat == "mso_mdoc" ? credentialFormat + "openid" : "openid"
+        // The mdoc scope is the doctype, space-separated from openid — "mso_mdocopenid"
+        // (the format glued onto openid) is not a scope any AS recognises.
+        let scope: String
+        if credentialFormat == "mso_mdoc" {
+            let mdocType = credentialOffer.credentials?.first?.doctype ?? docType
+            scope = "\(mdocType) openid".trimmingCharacters(in: .whitespaces)
+        } else {
+            scope = "openid"
+        }
         let state = UUID().uuidString
         let docType = credentialFormat == "mso_mdoc" ? docType : ""
         let authorizationDetails = buildAuthorizationRequest(credentialOffer: credentialOffer, docType: docType, format: credentialFormat, issuerConfig: issuerConfig)
@@ -225,13 +251,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             return WrappedResponse(data: nil, error: nil)
         }
         
-        var updatedDid: String? = nil
-        let wuaComponents = wua.split(separator: ".")
-        if wuaComponents.count > 1 {
-            let payload = "\(wuaComponents[1])".decodeBase64()
-            let payloadDict = UIApplicationUtils.shared.convertStringToDictionaryAny(text: payload ?? "") ?? [:]
-            updatedDid = payloadDict["sub"] as? String
-        }
+        let clientId = IssueService.clientId(wua: wua, fallbackDid: did)
         var authorizationURLComponents: URLComponents?
         if authServer.interactiveAuthorizationEndpoint != nil {
             let iarEndpoint = authServer.interactiveAuthorizationEndpoint ?? ""
@@ -240,17 +260,20 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             let bodyParameters = [
                 "response_type": responseType,
-                "client_id": updatedDid ?? did,
+                "scope": scope,
+                "state": state,
+                "client_id": clientId,
                 "code_challenge": codeChallenge ?? "",
                 "code_challenge_method": codeChallengeMethod,
                 "redirect_uri": redirectUri,
                 "authorization_details": authorizationDetails,
+                "nonce": nonce,
+                "client_metadata": clientMetadata ?? "",
                 "issuer_state": credentialOffer.grants?.authorizationCode?.issuerState ?? "",
                 "interaction_types_supported": "openid4vp_presentation,redirect_to_web",
             ] as [String: Any]
             
-            let postString = UIApplicationUtils.shared.getPostString(params: bodyParameters)
-            let parameter = postString.replacingOccurrences(of: "+", with: "%2B")
+            let parameter = UIApplicationUtils.shared.getFormEncodedString(params: bodyParameters)
             request.httpBody =  parameter.data(using: .utf8)
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
@@ -260,7 +283,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             }
             
             do {
-                let (data, response) = try await session!.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "iar-request", session: session!)
                 guard let authorization_response = String.init(data: data, encoding: .utf8) else { return WrappedResponse(data: nil, error: nil) }
                 if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
                     if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []),
@@ -273,22 +296,22 @@ public class IssueService: NSObject, IssueServiceProtocol {
                             updatedOpenid4vpRequest["client_id"] = "iar:\(iarEndpoint)"
                             let authSession = jsonDict["auth_session"] as? String
                             authorizationURLComponents = URLComponents(string: authorizationEndpoint)
-                            authorizationURLComponents?.queryItems = [
-                                URLQueryItem(name: "type", value: type),
-                                URLQueryItem(name: "openid4vp_request", value: updatedOpenid4vpRequest.toString()),
-                                URLQueryItem(name: "request_uri", value: requestURI),
-                                URLQueryItem(name: "auth_session", value: authSession),
-                                URLQueryItem(name: "client_id", value: did)
+                            authorizationURLComponents?.percentEncodedQueryItems = [
+                                UIApplicationUtils.shared.encodedQueryItem("type", type),
+                                UIApplicationUtils.shared.encodedQueryItem("openid4vp_request", updatedOpenid4vpRequest.toString()),
+                                UIApplicationUtils.shared.encodedQueryItem("request_uri", requestURI),
+                                UIApplicationUtils.shared.encodedQueryItem("auth_session", authSession),
+                                UIApplicationUtils.shared.encodedQueryItem("client_id", clientId)
                             ]
                             authorizationURL = authorizationURLComponents?.url
                             return WrappedResponse(data: authorizationURL?.absoluteString, error: nil)
                         } else {
                             authorizationURLComponents = URLComponents(string: authorizationEndpoint ?? "")
-                            authorizationURLComponents?.queryItems = [
-                                URLQueryItem(name: "type", value: type),
-                                URLQueryItem(name: "status", value: status),
-                                URLQueryItem(name: "request_uri", value: requestURI),
-                                URLQueryItem(name: "client_id", value: did)
+                            authorizationURLComponents?.percentEncodedQueryItems = [
+                                UIApplicationUtils.shared.encodedQueryItem("type", type),
+                                UIApplicationUtils.shared.encodedQueryItem("status", status),
+                                UIApplicationUtils.shared.encodedQueryItem("request_uri", requestURI),
+                                UIApplicationUtils.shared.encodedQueryItem("client_id", clientId)
                             ]
                             authorizationURL = authorizationURLComponents?.url
                             return WrappedResponse(data: authorizationURL?.absoluteString, error: nil)
@@ -310,7 +333,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             let bodyParameters = [
                 "response_type": responseType,
-                "client_id": updatedDid ?? did,
+                "client_id": clientId,
                 "code_challenge": codeChallenge ?? "",
                 "code_challenge_method": codeChallengeMethod,
                 "redirect_uri": redirectUri,
@@ -322,8 +345,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 "issuer_state": credentialOffer.grants?.authorizationCode?.issuerState ?? ""
             ] as [String: Any]
             
-            let postString = UIApplicationUtils.shared.getPostString(params: bodyParameters)
-            let parameter = postString.replacingOccurrences(of: "+", with: "%2B")
+            let parameter = UIApplicationUtils.shared.getFormEncodedString(params: bodyParameters)
             request.httpBody =  parameter.data(using: .utf8)
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
@@ -333,7 +355,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             }
             
             do {
-                let (data, response) = try await session!.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "par-request", session: session!)
                 guard let authorization_response = String.init(data: data, encoding: .utf8) else { return WrappedResponse(data: nil, error: nil) }
                 if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
                     if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []),
@@ -341,9 +363,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
                        let requestURI = jsonDict["request_uri"] as? String {
                         
                         authorizationURLComponents = URLComponents(string: authorizationEndpoint)
-                        authorizationURLComponents?.queryItems = [
-                            URLQueryItem(name: "client_id", value: did),
-                            URLQueryItem(name: "request_uri", value: requestURI)
+                        authorizationURLComponents?.percentEncodedQueryItems = [
+                            UIApplicationUtils.shared.encodedQueryItem("client_id", clientId),
+                            UIApplicationUtils.shared.encodedQueryItem("request_uri", requestURI)
                         ]
                         authorizationURL = authorizationURLComponents?.url
                     }
@@ -360,18 +382,18 @@ public class IssueService: NSObject, IssueServiceProtocol {
         } else {
             // Construct the authorization URL
             authorizationURLComponents = URLComponents(string: authorizationEndpoint)
-            authorizationURLComponents?.queryItems = [
-                URLQueryItem(name: "response_type", value: responseType),
-                URLQueryItem(name: "scope", value: scope),
-                URLQueryItem(name: "state", value: state),
-                URLQueryItem(name: "client_id", value: did),
-                URLQueryItem(name: "authorization_details", value: authorizationDetails),
-                URLQueryItem(name: "redirect_uri", value: redirectUri),
-                URLQueryItem(name: "nonce", value: nonce),
-                URLQueryItem(name: "code_challenge", value: codeChallenge),
-                URLQueryItem(name: "code_challenge_method", value: codeChallengeMethod),
-                URLQueryItem(name: "client_metadata", value: clientMetadata),
-                URLQueryItem(name: "issuer_state", value: credentialOffer.grants?.authorizationCode?.issuerState)
+            authorizationURLComponents?.percentEncodedQueryItems = [
+                UIApplicationUtils.shared.encodedQueryItem("response_type", responseType),
+                UIApplicationUtils.shared.encodedQueryItem("scope", scope),
+                UIApplicationUtils.shared.encodedQueryItem("state", state),
+                UIApplicationUtils.shared.encodedQueryItem("client_id", clientId),
+                UIApplicationUtils.shared.encodedQueryItem("authorization_details", authorizationDetails),
+                UIApplicationUtils.shared.encodedQueryItem("redirect_uri", redirectUri),
+                UIApplicationUtils.shared.encodedQueryItem("nonce", nonce),
+                UIApplicationUtils.shared.encodedQueryItem("code_challenge", codeChallenge),
+                UIApplicationUtils.shared.encodedQueryItem("code_challenge_method", codeChallengeMethod),
+                UIApplicationUtils.shared.encodedQueryItem("client_metadata", clientMetadata),
+                UIApplicationUtils.shared.encodedQueryItem("issuer_state", credentialOffer.grants?.authorizationCode?.issuerState)
             ]
             authorizationURL = authorizationURLComponents?.url
         }
@@ -394,7 +416,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
     //            if session == nil{
     //                session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
     //            }
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "authorisation-request", session: session)
     
                 let httpres = response as? HTTPURLResponse
                 if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
@@ -508,7 +530,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             ] as [String: Any]
             
             
-            let postString = UIApplicationUtils.shared.getPostString(params: params)
+            let postString = UIApplicationUtils.shared.getFormEncodedString(params: params)
             request.httpBody = postString.data(using: .utf8)
             
             var responseUrl = ""
@@ -517,7 +539,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 if session == nil{
                     session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
                 }
-                let (data, response) = try await session!.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "authorisation-request-idtoken", session: session!)
                 let httpres = response as? HTTPURLResponse
                 if httpres?.statusCode == 302, let location = httpres?.value(forHTTPHeaderField: "Location"){
                     responseUrl = location
@@ -643,7 +665,14 @@ public class IssueService: NSObject, IssueServiceProtocol {
                         "jwt": idToken
                     ]
                 ]
-            } else if tokenResponse?.cNonce == nil && authDetails == nil && issuerConfig.nonceEndPoint != nil {
+            } else if authDetails == nil && issuerConfig.nonceEndPoint != nil {
+                // OpenID4VCI 1.0 - an issuer that publishes a nonce endpoint wants
+                // credential_configuration_id, never the legacy format+vct body.
+                // This also required cNonce to be absent from the token response,
+                // which excluded issuers that publish a nonce endpoint AND return a
+                // c_nonce with the token (BankID does both). Those fell through to
+                // the legacy shape and were answered "Invalid request format".
+                // Android dropped the same gate for the same reason.
                 params = [
                     "credential_configuration_id": credentialTypes.first,
                     "proof": [
@@ -718,9 +747,20 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 }
             }
             
-            if let dataSharing = issuerConfig.credentialsSupported?.dataSharing,
-               let firstValue = dataSharing.values.first,
-               firstValue.credentialMetadata != nil {
+            // OpenID4VCI 1.0 8.2 carries `proofs` - an object with one member named
+            // for the proof type, holding a non-empty array. Singular `proof` is the
+            // pre-1.0 shape and stays for issuers still on it, which is why this is
+            // a switch rather than a rewrite.
+            //
+            // Which shape applies is read from the configuration of the credential
+            // being requested. It used to read whichever entry a Swift Dictionary
+            // happened to yield first: unlike Gson's LinkedTreeMap on Android, which
+            // preserves the order the JSON arrived in, Swift's Dictionary has no
+            // order at all - so with more than one credential configuration the
+            // wallet picked a different one from run to run and could send the shape
+            // belonging to a credential it was not requesting.
+            let requestedConfig = credentialTypes.last.flatMap { issuerConfig.credentialsSupported?.dataSharing?[$0] }
+            if requestedConfig?.credentialMetadata != nil {
                 params.removeValue(forKey: "proof")
                 var proofsDict: [String: Any] = [:]
                 proofsDict["jwt"] = [idToken]
@@ -775,7 +815,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Perform the request and handle the response
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "credential-request")
                 let httpRes = response as? HTTPURLResponse
                 if httpRes?.statusCode ?? 0 >= 400 {
                     let errorString = String(data: data, encoding: .utf8)
@@ -879,7 +919,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Perform the request and handle the response
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "deferred-credential-request")
                 let httpRes = response as? HTTPURLResponse
                 var jsonObject: [String: Any]?
                 var responseData: Data?
@@ -951,7 +991,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                     params = ["grant_type": grantType, "pre-authorized_code":preAuthCode] as [String: Any]
                 }
             }
-            let postString = UIApplicationUtils.shared.getPostString(params: params)
+            let postString = UIApplicationUtils.shared.getFormEncodedString(params: params)
             
             guard let urlString = tokenEndpoint, let url =  URL(string: urlString) else { return TokenResponse(error: EUDIError(from: ErrorResponse(message: "Invalid url")))}
             // Creating the request
@@ -967,7 +1007,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             }
             // Performing the token request
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "token-request-preauth")
                 let httpres = response as? HTTPURLResponse
                 let dataString = String.init(data: data, encoding: .utf8)
                 if let dataResponse = response as? HTTPURLResponse, dataResponse.statusCode >= 400, let errorData =  dataString {
@@ -1020,13 +1060,13 @@ public class IssueService: NSObject, IssueServiceProtocol {
             var params: [String: Any] = [
                 "grant_type": grantType,
                 "code": authCode,
-                "client_id": didKeyIdentifier,
+                "client_id": IssueService.clientId(wua: wua, fallbackDid: didKeyIdentifier),
                 "code_verifier": codeVerifier,
                 "redirect_uri": redirectURI ?? "openid://callback"
             ]
             
             
-            let postString = UIApplicationUtils.shared.getPostString(params: params)
+            let postString = UIApplicationUtils.shared.getFormEncodedString(params: params)
             
             // Creating the request
             guard let urlString = tokenEndpoint, let url =  URL(string: urlString) else { return TokenResponse(error: EUDIError(from: ErrorResponse(message: "Invalid url")))}
@@ -1048,7 +1088,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             
             // Performing the token request
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "token-request")
                 let httpsResponse = response as? HTTPURLResponse
                 if httpsResponse?.statusCode ?? 0 >= 400 {
                     let dataString = String(data: data, encoding: .utf8)
