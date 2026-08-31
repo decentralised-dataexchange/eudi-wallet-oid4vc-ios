@@ -68,7 +68,7 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         request.httpMethod = "GET"
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await NetworkLogger.send(request, tag: "issuer-metadata")
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
                 return nil
             }
@@ -168,7 +168,7 @@ public class DiscoveryService: DiscoveryServiceProtocol {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await NetworkLogger.send(request, tag: "auth-server-metadata")
         guard let httpResponse = response as? HTTPURLResponse else { return (nil, nil) }
 
         if httpResponse.statusCode >= 400 {

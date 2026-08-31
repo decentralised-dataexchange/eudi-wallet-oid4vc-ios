@@ -65,7 +65,7 @@ class IETFCredentialRevocationService: CredentialRevocationServiceProtocol {
             request.httpMethod = "GET"
             request.setValue("application/statuslist+jwt", forHTTPHeaderField: "Accept")
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
+                let (data, _) = try await NetworkLogger.send(request, tag: "ietf-status-list")
                 let stringData = String.init(data: data, encoding: .utf8)
                 let split = stringData?.split(separator: ".")
                 guard split?.count ?? 0 > 1 else { return [] }

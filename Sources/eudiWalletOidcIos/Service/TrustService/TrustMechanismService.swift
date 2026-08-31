@@ -125,7 +125,11 @@ public class TrustMechanismService: TrustMechanismServiceProtocol {
             DispatchQueue.main.async { completion(nil) }
             return
         }
-        URLSession.shared.dataTask(with: fetchURL) { data, response, error in
+        let request = URLRequest(url: fetchURL)
+        NetworkLogger.logRequest("trust-list-xml", request)
+        let startedAt = Date()
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            NetworkLogger.logResponse("trust-list-xml", request, data: data, response: response, error: error, started: startedAt)
             guard let data = data, error == nil else {
                 print("Error fetching XML: \(error?.localizedDescription ?? "Unknown error")")
                 return

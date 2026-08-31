@@ -23,7 +23,7 @@ public class NonceService: NonceServiceProtocol {
         request.httpMethod = "POST"
         
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await NetworkLogger.send(request, tag: "nonce")
             let httpRes = response as? HTTPURLResponse
             if httpRes?.statusCode ?? 0 >= 400 {
                 return nil

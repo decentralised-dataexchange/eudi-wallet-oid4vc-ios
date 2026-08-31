@@ -177,7 +177,7 @@ public class ReissueService {
             
             // Perform the request and handle the response
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "reissue-credential")
                 let httpRes = response as? HTTPURLResponse
                 if httpRes?.statusCode ?? 0 >= 400 {
                     let errorString = String(data: data, encoding: .utf8)

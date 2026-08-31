@@ -37,7 +37,7 @@ public class JWTVCIssuerMetadataResolver {
     }
     
     func fetchIssuerMetadata(from url: URL) async throws -> JwtVcIssuerMetadata? {
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let (data, response) = try await NetworkLogger.send(url: url, tag: "jwt-vc-issuer-metadata")
         guard let httpResponse = response as? HTTPURLResponse else {
             return nil
         }
