@@ -29,7 +29,7 @@ class ProcessWebVhFromKID {
         let finalURL = "https://\(cleanedPath)/did.jsonl"
 
         guard let url = URL(string: finalURL) else { return nil }
-        let (data, response) = try await session.data(from: url)
+        let (data, response) = try await NetworkLogger.send(url: url, tag: "did-webvh", session: session)
         //let (data, response) = try await URLSession.shared.data(from: url)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
 

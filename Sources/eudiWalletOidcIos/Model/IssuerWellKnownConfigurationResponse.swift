@@ -100,20 +100,41 @@ enum FormatResponse: String, Codable {
 }
 
 // MARK: - DataSharing
+// proof_types_supported.jwt.key_attestations_required (ARF TS3 v1.5). A non-nil
+// value means the issuer declared the requirement; key_storage carries the
+// attack-potential resistance it demands of the binding key (TS3 2.3.2).
+struct KeyAttestationsRequiredResponse: Codable {
+    let keyStorage: [String]?
+    enum CodingKeys: String, CodingKey {
+        case keyStorage = "key_storage"
+    }
+}
+struct ProofTypeJwtResponse: Codable {
+    let keyAttestationsRequired: KeyAttestationsRequiredResponse?
+    enum CodingKeys: String, CodingKey {
+        case keyAttestationsRequired = "key_attestations_required"
+    }
+}
+struct ProofTypesSupportedResponse: Codable {
+    let jwt: ProofTypeJwtResponse?
+}
+
 struct DataSharingResponse: Codable {
     var format, scope: String?
     var cryptographicBindingMethodsSupported: [String]?
     var display: [DisplayResponse]?
     var credentialDefinition: IssuerCredentialDefinitionResponse?
     var docType: String?
+    var proofTypesSupported: ProofTypesSupportedResponse?
     public let credentialMetadata: CredentialMetadata?
-    
+
     enum CodingKeys: String, CodingKey {
         case format, scope
         case cryptographicBindingMethodsSupported = "cryptographic_binding_methods_supported"
         case display
         case credentialDefinition = "credential_definition"
         case docType = "doctype"
+        case proofTypesSupported = "proof_types_supported"
         case credentialMetadata = "credential_metadata"
     }
 }
@@ -124,13 +145,17 @@ struct DataSharingOldFormatResponse: Codable {
     var trustFramework: TrustFrameworkResponse?
     var display: [DisplayResponse]?
     var docType: String?
+    var cryptographicBindingMethodsSupported: [String]?
+    var proofTypesSupported: ProofTypesSupportedResponse?
     public let credentialMetadata: CredentialMetadata?
-    
+
     enum CodingKeys: String, CodingKey {
         case format, types
         case trustFramework = "trust_framework"
         case display
         case docType = "doctype"
+        case cryptographicBindingMethodsSupported = "cryptographic_binding_methods_supported"
+        case proofTypesSupported = "proof_types_supported"
         case credentialMetadata = "credential_metadata"
     }
 }
@@ -143,14 +168,16 @@ struct DataSharingResponseV2: Codable {
     var credentialDefinition: IssuerCredentialDefinitionResponse?
     var vct: String?
     var docType: String?
+    var proofTypesSupported: ProofTypesSupportedResponse?
     public let credentialMetadata: CredentialMetadata?
-    
+
     enum CodingKeys: String, CodingKey {
         case format, scope, vct
         case cryptographicBindingMethodsSupported = "cryptographic_binding_methods_supported"
         case credentialDefinition = "credential_definition"
         case display
         case docType = "doctype"
+        case proofTypesSupported = "proof_types_supported"
         case credentialMetadata = "credential_metadata"
     }
 }

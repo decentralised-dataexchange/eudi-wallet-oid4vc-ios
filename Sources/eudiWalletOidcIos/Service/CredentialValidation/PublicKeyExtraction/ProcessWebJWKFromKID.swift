@@ -29,7 +29,7 @@ class ProcessWebJWKFromKID {
         
         guard let didDocURL = URL(string: didDocURLString) else { return nil }
         
-        let (data, response) = try await URLSession.shared.data(from: didDocURL)
+        let (data, response) = try await NetworkLogger.send(url: didDocURL, tag: "did-web")
         
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             return nil

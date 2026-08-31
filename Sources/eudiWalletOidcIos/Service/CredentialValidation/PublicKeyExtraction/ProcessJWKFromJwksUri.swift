@@ -19,7 +19,7 @@ class ProcessJWKFromJwksUri {
             return [:]
         }
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await NetworkLogger.send(url: url, tag: "jwks-uri")
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return [:]}
             guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any], let keys = jsonObject["keys"] as? [[String: Any]] else { return [:]}
             var jwkKey: [String: Any]? = keys.first(where: { $0["use"] as? String == keyUse })

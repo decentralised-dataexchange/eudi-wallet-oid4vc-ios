@@ -13,6 +13,14 @@ import Security
 import ASN1Decoder
 
 
+private extension String {
+    /// nil when empty or only whitespace, so a `??` chain treats an absent
+    /// parameter and one present-but-empty alike - query parsing delivers both.
+    var nilIfBlank: String? {
+        trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self
+    }
+}
+
 public class VerificationService: NSObject, VerificationServiceProtocol {
     
     var keyHandler: SecureKeyProtocol
@@ -34,9 +42,26 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         wua: String,
         pop: String, isSca: Bool = false, keyIds: [[String]] = []) async -> WrappedVerificationResponse? {
             
-            let params = await AuthorisationResponseHandler().prepareAuthorisationResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds) ?? [:]
-            guard let redirectURL = presentationRequest?.redirectUri else {return nil}
-            return await sendVPRequest(params: params, redirectURI: presentationRequest?.redirectUri ?? "", wua: wua, pop: pop)
+            guard let params = await AuthorisationResponseHandler().prepareAuthorisationResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds),
+                  !params.isEmpty else {
+                // Building the response failed. Posting the empty set that used to
+                // stand in for it is worse than not posting: the verifier answers a
+                // bodyless response by redirecting to its login page, so the failure
+                // surfaced as a browser opening rather than as an error.
+                return WrappedVerificationResponse(error: EUDIError(from: ErrorResponse(
+                    message: "Could not build the presentation response", code: nil)))
+            }
+            // OpenID4VP 1.0 8.2: for direct_post the Authorization Response is
+            // POSTed to response_uri, and redirect_uri MUST NOT be present. Only
+            // the by-value parser used to alias the two, so a signed request
+            // object - which carries response_uri and nothing else - resolved to
+            // nil here and the presentation was never sent. redirect_uri stays as
+            // a fallback for the redirect-based response modes.
+            guard let responseEndpoint = presentationRequest?.responseUri?.nilIfBlank
+                    ?? presentationRequest?.redirectUri?.nilIfBlank else {
+                return nil
+            }
+            return await sendVPRequest(params: params, redirectURI: responseEndpoint, wua: wua, pop: pop)
         }
     
     public func processAuthorisationRequest(data: String?) async -> (PresentationRequest?, EUDIError?) {
@@ -46,7 +71,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 let state = URL(string: code)?.queryParameters?["state"] ?? ""
                 let nonce = URL(string: code)?.queryParameters?["nonce"] ?? ""
                 let responseUri = URL(string: code)?.queryParameters?["response_uri"] ?? ""
-                let redirectUri = URL(string: code)?.queryParameters?["redirect_uri"] ?? responseUri
+                let redirectUri = URL(string: code)?.queryParameters?["redirect_uri"] ?? ""
                 let clientID = URL(string: code)?.queryParameters?["client_id"] ?? ""
                 let responseType = URL(string: code)?.queryParameters?["response_type"] ?? ""
                 let scope = URL(string: code)?.queryParameters?["scope"] ?? ""
@@ -100,7 +125,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 if presentationDefinition != "" || presentationDefinitionUri != "" || dcql != "" {
                     var presentationRequest =  PresentationRequest(state: state,
                                                                    clientId: clientID,
-                                                                   redirectUri: redirectUri ?? responseUri,
+                                                                   redirectUri: redirectUri,
                                                                    responseUri: responseUri,
                                                                    responseType: responseType,
                                                                    responseMode: responseMode,
@@ -157,7 +182,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                     request.httpMethod = "GET"
                     
                     do {
-                        let (data, response) = try await URLSession.shared.data(for: request)
+                        let (data, response) = try await NetworkLogger.send(request, tag: "presentation-request")
                         if let res = response as? HTTPURLResponse, res.statusCode >= 400 {
                             let dataString = String(data: data, encoding: .utf8)
                             let errorMsg = ErrorHandler.processError(data: data, contentType: res.value(forHTTPHeaderField: "Content-Type"))
@@ -224,7 +249,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             var request = URLRequest(url: uri)
             request.httpMethod = "GET"
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
+                let (data, _) = try await NetworkLogger.send(request, tag: "presentation-definition-uri")
                 if let presentationDefinitionFromUri = String(data: data, encoding: .utf8) {
                     return presentationDefinitionFromUri
                 } else {
@@ -244,7 +269,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             var request = URLRequest(url: uri)
             request.httpMethod = "GET"
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
+                let (data, _) = try await NetworkLogger.send(request, tag: "client-metadata-uri")
                 if let clientMetaDataFromUri = String(data: data, encoding: .utf8) {
                     return clientMetaDataFromUri
                 } else {
@@ -260,7 +285,14 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     }
     
     private func sendVPRequest(params: [String: Any], redirectURI: String, wua: String, pop: String) async -> WrappedVerificationResponse? {
-        let postString = UIApplicationUtils.shared.getPostString(params: params)
+        // OpenID4VP 1.0 8.2 requires application/x-www-form-urlencoded. getPostString
+        // joined key=value with no escaping at all, so any value carrying "+", "/"
+        // or "=" reached the Verifier corrupted - base64 vp_tokens (mdoc) above all.
+        let postString = UIApplicationUtils.shared.getFormEncodedString(params: params)
+        // What the verifier actually receives. A verifier that cannot correlate
+        // the response to its session tends to answer with a redirect to its
+        // login page rather than an error, so the fields it correlates on -
+        // state above all - are worth seeing without turning on body tracing.
         let paramsData = postString.data(using: .utf8)
         let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
         var request = URLRequest(url: URL(string: redirectURI)!)
@@ -275,12 +307,25 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         do {
             let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
             
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await NetworkLogger.send(request, tag: "vp-token-response", session: session)
             
             
             let httpres = response as? HTTPURLResponse
             
-            if httpres?.statusCode == 302 {
+            // The success case OpenID4VP 8.2 defines comes first: 200 with a body
+            // that MAY carry redirect_uri. A 302 is not in the specification and is
+            // only read afterwards, as a vendor accommodation.
+            if httpres?.statusCode == 200 || httpres?.statusCode == 204 {
+                let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+                if let redirectUri = json?["redirect_uri"] as? String {
+                    return WrappedVerificationResponse(redirectUri: redirectUri)
+                } else if let code = json?["code"] as? String {
+                    return WrappedVerificationResponse(data: "https://www.example.com?code=\(code)")
+                } else {
+                    // Presentation accepted, nowhere to send the user.
+                    return WrappedVerificationResponse(data: "https://www.example.com?code=1")
+                }
+            } else if httpres?.statusCode == 302 {
                 if let location = httpres?.value(forHTTPHeaderField: "Location") {
                     responseUrl = location
                     let url = URL.init(string: location)
@@ -288,20 +333,10 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                         let error = errorDescription.replacingOccurrences(of: "+", with: " ").data(using: .utf8)
                         return WrappedVerificationResponse(data: nil, error: ErrorHandler.processError(data: error, contentType: httpres?.value(forHTTPHeaderField: "Content-Type")))
                     } else {
-                        return WrappedVerificationResponse(data: responseUrl, error: nil)
+                        return WrappedVerificationResponse(location: responseUrl)
                     }
                 } else {
-                    return WrappedVerificationResponse(data: "https://www.example.com?code=1", error: nil)
-                }
-            } else if httpres?.statusCode == 200 || httpres?.statusCode == 204 {
-                if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                   let redirectUri = jsonResponse["redirect_uri"] as? String {
-                    return WrappedVerificationResponse(data: redirectUri, error: nil)
-                } else if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                          let code = jsonResponse["code"] as? String {
-                    return WrappedVerificationResponse(data: "https://www.example.com?code=\(code)", error: nil)
-                } else {
-                    return WrappedVerificationResponse(data: "https://www.example.com?code=1", error: nil)
+                    return WrappedVerificationResponse(data: "https://www.example.com?code=1")
                 }
             } else if httpres?.statusCode ?? 400 >= 400 {
                 return WrappedVerificationResponse(data: nil, error: ErrorHandler.processError(data: data, contentType: httpres?.value(forHTTPHeaderField: "Content-Type")))

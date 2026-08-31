@@ -41,7 +41,7 @@ class IETFCredentialRevocationService: CredentialRevocationServiceProtocol {
             if split.count > 1 {
                 let jsonString = "\(split[1])".decodeBase64() ?? ""
                 let dict = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString)
-                guard let statusData = dict?["status"] as? [String: Any] else { return (nil, nil) }
+                guard let statusData = StatusClaims.of(dict) else { return (nil, nil) }
                 if let statusListDict = statusData["status_list"] as? [String: Any], let statusIndex = statusListDict["idx"] as? Int , let statusUri = statusListDict["uri"] as? String {
                     return (statusUri, statusIndex)
                 }
@@ -65,7 +65,7 @@ class IETFCredentialRevocationService: CredentialRevocationServiceProtocol {
             request.httpMethod = "GET"
             request.setValue("application/statuslist+jwt", forHTTPHeaderField: "Accept")
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
+                let (data, _) = try await NetworkLogger.send(request, tag: "ietf-status-list")
                 let stringData = String.init(data: data, encoding: .utf8)
                 let split = stringData?.split(separator: ".")
                 guard split?.count ?? 0 > 1 else { return [] }

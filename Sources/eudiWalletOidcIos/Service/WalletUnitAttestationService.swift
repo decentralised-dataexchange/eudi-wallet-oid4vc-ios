@@ -12,8 +12,12 @@ public class WalletUnitAttestationService {
     
     public init() {}
     var baseURL = ""
+
+    /// The wallet-provider registration profile that yields an ARF TS3 WIA
+    /// (x5c identity + client_status). Mirrors Android's TS3_PROFILE.
+    public static let ts3Profile = "ts3"
     
-    public func initiateWalletUnitAttestation(walletProviderUrl: String) async throws -> (String, WalletUnitAttestationResponse?){
+    public func initiateWalletUnitAttestation(walletProviderUrl: String, profile: String? = nil) async throws -> (String, WalletUnitAttestationResponse?){
             baseURL = walletProviderUrl
             let service = DCAppAttestService.shared
             let inputString = await fetchNonceForDeviceIntegrityToken(nonceEndPoint:  "\(baseURL)/nonce")
@@ -36,7 +40,8 @@ public class WalletUnitAttestationService {
                     attestation: attest,
                     nonce: inputString,
                     keyId: keyId,
-                    clientAssertion: clientAssertion
+                    clientAssertion: clientAssertion,
+                    profile: profile
                 )
                 return (clientAssertion, credentialOffer)
             } catch {
@@ -51,7 +56,8 @@ public class WalletUnitAttestationService {
                     attestation: attestRetry,
                     nonce: inputString,
                     keyId: keyId,
-                    clientAssertion: clientAssertionRetry
+                    clientAssertion: clientAssertionRetry,
+                    profile: profile
                 )
                 return (clientAssertionRetry, credentialOfferRetry)
             }
@@ -151,16 +157,28 @@ public class WalletUnitAttestationService {
         }
     }
     
+    /// Attest `keyId` against `hash`.
+    ///
+    /// A throttled App Attest service (`serverUnavailable`) is retried on the
+    /// same key and the same hash, which is what Apple asks for and what keeps
+    /// the device's risk metric intact. Everything else - `invalidKey` above
+    /// all, meaning this key has already been attested - is thrown to the
+    /// caller, whose catch mints and stores a replacement.
     func generateDeviceIntegrityToken(keyId: String, hash: Data) async throws -> String {
+        if #available(iOS 14.0, *) {
+            return try await AppAttestRetry.attestExistingKey(
+                service: DCAppAttestService.shared,
+                keyId: keyId,
+                clientDataHash: hash
+            )
+        }
         let service = DCAppAttestService.shared
         return try await withCheckedThrowingContinuation { continuation in
             service.attestKey(keyId, clientDataHash: hash) { attestation, error in
                 if let error = error {
                     continuation.resume(throwing: error)
                 } else if let attestation = attestation {
-                    let attestationData = attestation.base64EncodedString()
-                    print("Attestation Data: \(attestation.base64URLEncodedString())")
-                    continuation.resume(returning: attestationData)
+                    continuation.resume(returning: attestation.base64EncodedString())
                 } else {
                     continuation.resume(throwing: NSError(domain: "AppAttest", code: -1, userInfo: [NSLocalizedDescriptionKey: "Attestation failed"]))
                 }
@@ -168,7 +186,7 @@ public class WalletUnitAttestationService {
         }
     }
     
-    func processWalletUnitAttestationRequest(attestation: String, nonce: String, keyId: String, clientAssertion: String) async -> WalletUnitAttestationResponse? {
+    func processWalletUnitAttestationRequest(attestation: String, nonce: String, keyId: String, clientAssertion: String, profile: String? = nil) async -> WalletUnitAttestationResponse? {
         var credentialOfferUri: String = ""
         var response: WalletUnitAttestationResponse?
         let url = "\(baseURL)/wallet-unit/request"
@@ -178,12 +196,18 @@ public class WalletUnitAttestationService {
         request.setValue("ios", forHTTPHeaderField: "X-Wallet-Unit-Platform")
         request.setValue(nonce, forHTTPHeaderField: "X-Wallet-Unit-Nonce")
         request.setValue(keyId, forHTTPHeaderField: "X-Wallet-Unit-KeyID")
-        
-        let body = ["client_assertion": clientAssertion, "client_assertion_type" : "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"].toString()
+
+        // ARF TS3 opt-in: profile:"ts3" asks the wallet provider for a TS3 WIA
+        // (x5c identity + client_status); nil keeps the legacy EWC shape.
+        var bodyDict: [String: Any] = ["client_assertion": clientAssertion, "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"]
+        if let profile = profile, !profile.isEmpty {
+            bodyDict["profile"] = profile
+        }
+        let body = bodyDict.toString()
         request.httpBody = body?.data(using: .utf8)
         
         do {
-            let (data, resp) = try await URLSession.shared.data(for: request)
+            let (data, resp) = try await NetworkLogger.send(request, tag: "wallet-unit-attestation")
             let responseData =  String(data: data, encoding: .utf8)
             let jsonObject = try JSONSerialization.jsonObject(with: data, options: [])
             let dictionary = jsonObject as? [String: Any]
@@ -207,7 +231,11 @@ public class WalletUnitAttestationService {
             "typ": "oauth-client-attestation-pop+jwt",
         ] as [String: Any]).toString() ?? ""
         let now = Int(Date().timeIntervalSince1970)
-        let exp = now + 3600
+        // Short-lived by design: the PoP is per request, and the authorization
+        // server keeps a list of witnessed jti values for replay detection
+        // (draft-ietf-oauth-attestation-based-client-auth 5.2, 12.1). 6 minutes,
+        // matching Android.
+        let exp = now + 360
         let jti = UUID().uuidString
         let payload = ([
             "aud": aud ?? baseURL,
@@ -222,7 +250,47 @@ public class WalletUnitAttestationService {
         guard let popToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.privateKey) else { return ""}
         return popToken
     }
-    
+
+    /// Decode a JWT segment (header or payload) into a dictionary.
+    private static func decodeJwtSegment(_ part: Substring) -> [String: Any]? {
+        var s = String(part)
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while s.count % 4 != 0 { s += "=" }
+        guard let data = Data(base64Encoded: s),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return obj
+    }
+
+    /// ARF TS3 WIA detection: the JOSE header carries an x5c chain AND the
+    /// payload carries a client_status claim.
+    public static func isTs3Wia(_ jwt: String) -> Bool {
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else { return false }
+        let hasX5c = decodeJwtSegment(parts[0])?["x5c"] != nil
+        let hasClientStatus = decodeJwtSegment(parts[1])?["client_status"] != nil
+        return hasX5c && hasClientStatus
+    }
+
+    /// The TS3 WIA maintenance expiry (client_status.exp, epoch seconds), or nil.
+    public static func ts3ClientStatusExp(_ jwt: String) -> Int? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2,
+              let payload = decodeJwtSegment(parts[1]),
+              let clientStatus = payload["client_status"] as? [String: Any] else { return nil }
+        if let exp = clientStatus["exp"] as? Int { return exp }
+        if let expD = clientStatus["exp"] as? Double { return Int(expD) }
+        return nil
+    }
+
+    /// True when a TS3 WIA is inside its maintenance window and should be
+    /// re-registered: now >= client_status.exp - margin (default 30 min).
+    public static func needsTs3MaintenanceRefresh(_ jwt: String, marginSeconds: Int = 1800) -> Bool {
+        guard isTs3Wia(jwt), let exp = ts3ClientStatusExp(jwt) else { return false }
+        let now = Int(Date().timeIntervalSince1970)
+        return now >= (exp - marginSeconds)
+    }
+
 }
 
 public struct WalletUnitAttestationResponse {

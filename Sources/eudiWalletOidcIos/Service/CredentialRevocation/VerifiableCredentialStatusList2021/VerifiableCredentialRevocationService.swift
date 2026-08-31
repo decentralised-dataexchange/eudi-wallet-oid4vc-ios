@@ -55,7 +55,7 @@ class VerifiableCredentialRevocationService: CredentialRevocationServiceProtocol
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
+                let (data, _) = try await NetworkLogger.send(request, tag: "status-list-2021")
                 let stringData = String.init(data: data, encoding: .utf8)
                 let split = stringData?.split(separator: ".")
                 guard split?.count ?? 0 > 1 else { return [] }
@@ -82,7 +82,7 @@ class VerifiableCredentialRevocationService: CredentialRevocationServiceProtocol
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
+                let (data, _) = try await NetworkLogger.send(request, tag: "status-list-2021")
                 let stringData = String.init(data: data, encoding: .utf8)
                 let split = stringData?.split(separator: ".")
                 guard split?.count ?? 0 > 1 else { return [] }

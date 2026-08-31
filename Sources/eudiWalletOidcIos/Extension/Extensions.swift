@@ -28,15 +28,12 @@ extension URL {
 extension String {
     public func decodeBase64() -> String? {
         do {
+            // Pad `st`, not `self` — padding the original threw away the base64url
+            // translation above and left "-"/"_" for Base64.decode to choke on.
             var st = self
                 .replacingOccurrences(of: "_", with: "/")
                 .replacingOccurrences(of: "-", with: "+")
-            let remainder = self.count % 4
-            if remainder > 0 {
-                st = self.padding(toLength: self.count + 4 - remainder,
-                                  withPad: "=",
-                                  startingAt: 0)
-            }
+            while st.count % 4 != 0 { st += "=" }
             let data = try Base64.decode(st)
             return String.init(decoding: data, as: UTF8.self)
         }catch{
@@ -45,4 +42,3 @@ extension String {
         }
     }
 }
-

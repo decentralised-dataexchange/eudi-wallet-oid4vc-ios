@@ -41,7 +41,7 @@ class ProcessEbsiJWKFromKID {
         guard let url = URL(string: urlString) else { return nil }
         
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await NetworkLogger.send(url: url, tag: "did-ebsi")
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return nil }
             
             return try processPublicKeyFromJWKList(data, kid: kid)

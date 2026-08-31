@@ -18,16 +18,18 @@ public class ReissueService {
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
         format: String,
-        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, keyHandler: SecureEnclaveHandler) async -> CredentialResponse? {
-            
+        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, keyHandler: SecureEnclaveHandler, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil) async -> CredentialResponse? {
+
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            
-            guard let idToken = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, keyHandler: keyHandler, credentialTypes: credentialTypes) else {return nil}
+
+            // ARF TS3 v1.5: attach the wallet-provider Key Attestation to the proof.
+            let proofKeyAttestation = KeyAttestationService.forProof(walletProviderKa: keyAttestationJwt, attach: attachKeyAttestation)
+            guard let idToken = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, keyHandler: keyHandler, credentialTypes: credentialTypes, keyAttestation: proofKeyAttestation) else {return nil}
             let issueHandler = IssueService(keyHandler: keyHandler)
             //let credentialTypes = getTypesFromCredentialOffer(credentialOffer: credentialOffer) ?? []
             let types = issueHandler.getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")
@@ -175,7 +177,7 @@ public class ReissueService {
             
             // Perform the request and handle the response
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await NetworkLogger.send(request, tag: "reissue-credential")
                 let httpRes = response as? HTTPURLResponse
                 if httpRes?.statusCode ?? 0 >= 400 {
                     let errorString = String(data: data, encoding: .utf8)

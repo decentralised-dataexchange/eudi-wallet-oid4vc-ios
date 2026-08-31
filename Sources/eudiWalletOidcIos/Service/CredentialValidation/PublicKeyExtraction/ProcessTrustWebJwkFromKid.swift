@@ -36,7 +36,7 @@ class ProcessTrustWebJwkFromKid {
         
         guard let didDocURL = URL(string: url) else { return nil }
         
-        let (data, response) = try await URLSession.shared.data(from: didDocURL)
+        let (data, response) = try await NetworkLogger.send(url: didDocURL, tag: "did-trustweb")
         
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             return nil

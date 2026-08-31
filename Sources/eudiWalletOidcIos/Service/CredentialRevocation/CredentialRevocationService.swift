@@ -22,7 +22,7 @@ public class CredentialRevocationService {
             if split.count > 1 {
                 let jsonString = "\(split[1])".decodeBase64() ?? ""
                 let dict = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString)
-                if let status = dict?["status"] as? [String: Any] {
+                if StatusClaims.of(dict) != nil {
                     statusList.append(item)
                 }
                 if let vc = dict?["vc"] as? [String: Any], let statusListArray = vc["credentialStatus"] as? [String: Any] {
