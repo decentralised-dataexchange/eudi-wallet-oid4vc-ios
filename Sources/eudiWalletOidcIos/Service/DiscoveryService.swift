@@ -5,193 +5,81 @@
 //  Created by Mumthasir mohammed on 08/03/24.
 //
 import Foundation
-import CryptoKit
 
+/// Credential Issuer and Authorization Server metadata discovery.
+///
+/// A delegation to `Service/Discovery/Metadata/`, where URL construction, retrieval, trust in
+/// signed documents, spec revision and conformance are each a separate, testable piece. Both
+/// protocol methods keep their exact signatures, so hosts need no change.
 public class DiscoveryService: DiscoveryServiceProtocol {
 
     public static var shared = DiscoveryService()
-    private init(){}
 
-    /// Helper to construct RFC 8414 Section 3 compatible URLs when paths are present.
-    /// Inserts the wellKnownSuffix immediately after the host/port.
-    private func buildRfc8414Url(inputUri: String, wellKnownSuffix: String) -> String? {
-        guard var components = URLComponents(string: inputUri) else { return nil }
+    /// What to accept. ``DiscoveryPolicy/standard`` preserves this SDK's existing reach;
+    /// ``DiscoveryPolicy/strict`` is OpenID4VCI 1.0 as written and will reject pre-1.0 issuers.
+    public var policy: DiscoveryPolicy
 
-        let originalPath = components.path
-        // If there's no path components to shift, appending standard suffix is equivalent
-        if originalPath.isEmpty || originalPath == "/" {
-            return nil
-        }
+    /// Establishes trust in signed metadata. The default verifies the signature and accepts any
+    /// signer that produced a valid one; see ``SignatureOnlyMetadataSignerTrust`` for what that
+    /// does and does not prove. ``RejectingSignedMetadataVerifier`` refuses signed metadata
+    /// outright, which is always safe: section 12.2.2 requires every issuer to serve unsigned JSON.
+    public var signedMetadataVerifier: SignedMetadataVerifier
 
-        // Strip leading slash from original path
-        let cleanedPath = originalPath.hasPrefix("/") ? String(originalPath.dropFirst()) : originalPath
+    public init(
+        policy: DiscoveryPolicy = .standard,
+        signedMetadataVerifier: SignedMetadataVerifier = SignatureValidatorSignedMetadataVerifier()
+    ) {
+        self.policy = policy
+        self.signedMetadataVerifier = signedMetadataVerifier
+    }
 
-        // RFC 8414: well-known prefix goes first, followed by the rest of the path
-        components.path = "/\(wellKnownSuffix)/\(cleanedPath)"
+    private var issuerResolver: IssuerMetadataResolver {
+        IssuerMetadataResolver(policy: policy, signedMetadataVerifier: signedMetadataVerifier)
+    }
 
-        return components.url?.absoluteString
+    private var authServerResolver: AuthServerMetadataResolver {
+        AuthServerMetadataResolver(policy: policy, signedMetadataVerifier: signedMetadataVerifier)
     }
 
     // MARK: - Retrieves the issuer configuration asynchronously based on the provided credential issuer well-known URI.
+    ///
+    /// - Parameter credentialIssuerWellKnownURI: the Credential Issuer Identifier, with or without
+    ///   a `/.well-known/openid-credential-issuer` segment; both spec URL layouts are recognised
+    ///   and stripped back to the identifier before the request URLs are built.
+    /// - Returns: never `nil`. A failure carries an `error` rather than being absent, so a caller
+    ///   can always tell what went wrong and always has something to show.
     public func getIssuerConfig(credentialIssuerWellKnownURI: String?) async throws -> IssuerWellKnownConfiguration? {
-        guard let uri = credentialIssuerWellKnownURI else { return nil }
-
-        // Strip existing suffix if present to find base
-        let baseIssuer = uri.replacingOccurrences(of: "/.well-known/openid-credential-issuer", with: "")
-
-        // 1. Primary strategy: RFC 8414 Section 3 URL (.well-known inserted between host and path)
-        let primaryUrl = buildRfc8414Url(inputUri: baseIssuer, wellKnownSuffix: ".well-known/openid-credential-issuer")
-        if let primaryUrl = primaryUrl {
-            debugPrint("### Attempting RFC 8414 Issuer URL:\(primaryUrl)")
-            if let config = try await executeIssuerFetch(from: primaryUrl) {
-                return config
-            }
-        }
-
-        // 2. Fallback strategy: suffix-style URL (.well-known appended to the end)
-        let fallbackUrl = baseIssuer + "/.well-known/openid-credential-issuer"
-        if fallbackUrl != primaryUrl {
-            debugPrint("### Falling back to suffix-style Issuer URL:\(fallbackUrl)")
-            if let config = try await executeIssuerFetch(from: fallbackUrl) {
-                return config
-            }
-        }
-
-        return nil
-    }
-
-    private func executeIssuerFetch(from urlString: String) async throws -> IssuerWellKnownConfiguration? {
-        let jsonDecoder = JSONDecoder()
-        guard let url = URL(string: urlString) else { return nil }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-
-        do {
-            let (data, response) = try await NetworkLogger.send(request, tag: "issuer-metadata")
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
-                return nil
-            }
-
-            let rawString = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let jsonData: Data
-            if rawString.components(separatedBy: ".").count == 3 {
-                let parts = rawString.components(separatedBy: ".")
-                let payloadBase64 = parts[1]
-
-                guard let decodedString = payloadBase64.decodeBase64(),
-                      let payloadData = decodedString.data(using: .utf8) else {
-                    return nil
-                }
-                jsonData = payloadData
-            } else {
-                jsonData = data
-            }
-
-            guard let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
-                return nil
-            }
-            if jsonObject["credential_configurations_supported"] != nil {
-                let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponseV2.self, from: jsonData)
-                return IssuerWellKnownConfiguration(from: model)
-            } else if jsonObject["credentials_supported"] != nil {
-                let model = try jsonDecoder.decode(IssuerWellKnownConfigurationResponse.self, from: jsonData)
-                return IssuerWellKnownConfiguration(from: model)
-            } else {
-                return nil
-            }
-        } catch {
-            debugPrint("Fetch execution failed for \(urlString): \(error)")
-            return nil
-        }
+        await issuerResolver.resolve(credentialIssuerWellKnownURI).configuration
     }
 
     // MARK: - To fetch the authorisation server configuration
+    /// - SeeAlso: ``getIssuerConfig(credentialIssuerWellKnownURI:)``
     public func getAuthConfig(authorisationServerWellKnownURI: String?) async throws -> AuthorisationServerWellKnownConfiguration? {
-        guard let uri = authorisationServerWellKnownURI else { return nil }
-
-        // Clean base URI string
-        let baseAuthServer = uri.replacingOccurrences(of: "/.well-known/oauth-authorization-server", with: "")
-                                .replacingOccurrences(of: "/.well-known/openid-configuration", with: "")
-
-        // Dynamic array to maintain resolution sequence safely
-        var urlsToTry: [String] = []
-
-        // 1. RFC 8414 Structured Locations (.well-known inserted between host and path)
-        if let rfcOauth = buildRfc8414Url(inputUri: baseAuthServer, wellKnownSuffix: ".well-known/oauth-authorization-server") {
-            if !urlsToTry.contains(rfcOauth) { urlsToTry.append(rfcOauth) }
-        }
-        if let rfcOpenId = buildRfc8414Url(inputUri: baseAuthServer, wellKnownSuffix: ".well-known/openid-configuration") {
-            if !urlsToTry.contains(rfcOpenId) { urlsToTry.append(rfcOpenId) }
-        }
-
-        // 2. Traditional Suffix Locations (.well-known appended to the end)
-        let suffixOauth = baseAuthServer + "/.well-known/oauth-authorization-server"
-        if !urlsToTry.contains(suffixOauth) { urlsToTry.append(suffixOauth) }
-        let suffixOpenId = baseAuthServer + "/.well-known/openid-configuration"
-        if !urlsToTry.contains(suffixOpenId) { urlsToTry.append(suffixOpenId) }
-
-        var finalNetworkError: Error?
-
-        // Iterate through all candidate URLs sequentially
-        for urlString in urlsToTry {
-            debugPrint("### Attempting Auth Discovery URL: \(urlString)")
-            do {
-                let (config, response) = try await fetchConfig(from: urlString)
-                if let config = config {
-                    return config
-                }
-                // Record context if it's an HTTP failure descriptor
-                if let response = response, response.statusCode >= 400 {
-                    finalNetworkError = NSError(domain: "HTTPError", code: response.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned status code \(response.statusCode)"])
-                }
-            } catch {
-                debugPrint("### Failed for URL: \(urlString) Error: \(error.localizedDescription)")
-                finalNetworkError = error
-            }
-        }
-
-        // If all attempts failed, wrap up the final gathered error state if available
-        if let error = finalNetworkError {
-            let nsError = error as NSError
-            let errorCode = nsError.code
-            let finalError = EUDIError(from: ErrorResponse(message: error.localizedDescription, code: errorCode))
-            return AuthorisationServerWellKnownConfiguration(error: finalError)
-        }
-
-        return nil
+        await authServerResolver.resolve(authorisationServerWellKnownURI).configuration
     }
 
-    func fetchConfig(from urlString: String) async throws -> (AuthorisationServerWellKnownConfiguration?, HTTPURLResponse?) {
-        let jsonDecoder = JSONDecoder()
-        guard let url = URL(string: urlString) else { return (nil, nil) }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+    /// As ``getIssuerConfig(credentialIssuerWellKnownURI:)``, plus which URL layout answered, the
+    /// media type, and which spec revision the document was. For diagnostics and for exercising
+    /// this function on its own.
+    public func getIssuerConfigDetailed(credentialIssuerWellKnownURI: String?) async -> DiscoveredIssuerMetadata {
+        await issuerResolver.resolve(credentialIssuerWellKnownURI)
+    }
 
-        let (data, response) = try await NetworkLogger.send(request, tag: "auth-server-metadata")
-        guard let httpResponse = response as? HTTPURLResponse else { return (nil, nil) }
+    /// - SeeAlso: ``getIssuerConfigDetailed(credentialIssuerWellKnownURI:)``
+    public func getAuthConfigDetailed(authorisationServerWellKnownURI: String?) async -> DiscoveredAuthServerMetadata {
+        await authServerResolver.resolve(authorisationServerWellKnownURI)
+    }
 
-        if httpResponse.statusCode >= 400 {
-            return (nil, httpResponse)
-        }
-
-        let rawString = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let jsonData: Data
-
-        if rawString.components(separatedBy: ".").count == 3 {
-            let parts = rawString.components(separatedBy: ".")
-            let payloadBase64 = parts[1]
-
-            guard let decodedString = payloadBase64.decodeBase64(),
-                  let payloadData = decodedString.data(using: .utf8) else {
-                return (nil, httpResponse)
-            }
-            jsonData = payloadData
-        } else {
-            jsonData = data
-        }
-
-        let model = try jsonDecoder.decode(AuthorisationServerWellKnownConfiguration.self, from: jsonData)
-        return (model, httpResponse)
+    /// Which authorization server to use, per OpenID4VCI 1.0 section 12.2.4.
+    ///
+    /// Handles the cases a host implementing this itself tends to miss: an absent
+    /// `authorization_servers` means the Credential Issuer is its own authorization server, and an
+    /// offer naming a server the issuer does not list must stop the flow rather than fall back.
+    public func selectAuthorizationServer(
+        issuerConfig: IssuerWellKnownConfiguration?,
+        credentialOffer: CredentialOffer? = nil
+    ) throws -> AuthorizationServerSelection {
+        let selector = AuthorizationServerSelector()
+        return try selector.select(issuerConfig: issuerConfig, hint: selector.hint(from: credentialOffer))
     }
 }
