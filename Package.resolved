@@ -1,6 +1,24 @@
 {
   "pins" : [
     {
+      "identity" : "anycodable",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Flight-School/AnyCodable.git",
+      "state" : {
+        "revision" : "862808b2070cd908cb04f9aafe7de83d35f81b05",
+        "version" : "0.6.7"
+      }
+    },
+    {
+      "identity" : "asn1decoder",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/filom/ASN1Decoder.git",
+      "state" : {
+        "revision" : "7e1523662c69d019a3299bbfb22fb824141dd1f6",
+        "version" : "1.10.0"
+      }
+    },
+    {
       "identity" : "base58swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/keefertaylor/Base58Swift.git",

@@ -22,6 +22,10 @@ public class IssueService: NSObject, IssueServiceProtocol {
     ///   - keyhandler: A handler to encryption key generation class
     /// - Returns: An `IssueService` object
     
+    /// What the SDK accepts when resolving a credential offer. Defaults to the SDK's existing,
+    /// permissive behaviour; `.strict` is OpenID4VCI 1.0 as written and will reject pre-1.0 issuers.
+    public var offerPolicy: CredentialOfferPolicy = .standard
+
     public init(keyHandler: SecureKeyProtocol) {
         super.init()
         session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
@@ -30,81 +34,31 @@ public class IssueService: NSObject, IssueServiceProtocol {
     
     // MARK: - Retrieves credential issuer asynchronously based on the provided credential_offer / credential_offer_uri.
     ///
+    /// A delegation to `Service/Issue/Offer/`, where each transfer mechanism is a
+    /// `CredentialOfferSource` and each supported spec revision a `CredentialOfferParser`, with
+    /// OpenID4VCI 1.0 tried first.
+    ///
     /// - Parameters:
     ///   - credentialOffer: The string representation of the credential offer.
-    /// - Returns: A `CredentialOffer` object if the resolution is successful; otherwise, `nil`.
+    /// - Returns: A `CredentialOffer`. On failure it carries an `error` rather than being `nil`, so
+    ///   a caller can always tell what went wrong and always has something to show.
     public func resolveCredentialOffer(credentialOffer credentialOfferString: String) async throws -> CredentialOffer? {
-            let credentialOfferUrl = URL(string: credentialOfferString)
-           let credentialOfferUri = credentialOfferUrl?.queryParameters?["credential_offer_uri"]
-            
-        if let credentialOfferUri = credentialOfferUri, !credentialOfferUri.isEmpty {
-                var request = URLRequest(url: URL(string: credentialOfferUri ?? "")!)
-                request.httpMethod = "GET"
-                
-                let (data, response) = try await NetworkLogger.send(request, tag: "credential-offer")
-                
-                do {
-                    let httpRes = response as? HTTPURLResponse
-                    if let res = httpRes?.statusCode, res >= 400 {
-                        let errorData = String(data: data, encoding: .utf8)
-                        if let eudiErrorData = ErrorHandler.processError(data: data, contentType: httpRes?.value(forHTTPHeaderField: "Content-Type")) {
-                            return CredentialOffer(fromError: eudiErrorData)
-                        } else {
-                            let error = EUDIError(from: ErrorResponse(message: errorData, code: nil))
-                            return CredentialOffer(fromError: error)
-                        }
-                    } else {
-                        guard let jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
-                            return nil
-                        }
-                        let credentialOfferResponse = parseCredentialOfferResponseModel(jsonData: jsonObject, data: data)
-                        return credentialOfferResponse
-                    }
-                }
-            } else {
-                guard let credentialOffer = credentialOfferUrl?.queryParameters?["credential_offer"] else { return nil }
-                let jsonData = Data(credentialOffer.utf8)
-                guard let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
-                    return nil
-                }
-                if credentialOffer != "" {
-                    let credentialOfferResponse = parseCredentialOfferResponseModel(jsonData: jsonObject, data: jsonData)
-                    return credentialOfferResponse
-                } else {
-                    return nil
-                }
-            }
-        return nil
+        // `.shared`, not this service's own session: that one carries a redirect-intercepting
+        // delegate for the authorization flow, and the offer fetch has always been plain.
+        await CredentialOfferResolver(policy: offerPolicy).resolve(credentialOfferString)
     }
-    
-     func parseCredentialOfferResponseModel(jsonData: [String: Any], data: Data?) -> CredentialOffer? {
-        let jsonDecoder = JSONDecoder()
-        if jsonData["credentials"] != nil {
-            if let data = data, let model = try? jsonDecoder.decode(CredentialOfferResponse.self, from: data) {
-                if model.credentialIssuer == nil {
-                    let error = EUDIError(from: ErrorResponse(message: "Invalid DID", code: nil))
-                    return CredentialOffer(fromError: error)
-                }
-                return CredentialOffer(from: model)
-            }
-        } else if jsonData["credential_configuration_ids"] != nil {
-            
-            if let data = data, let modelV2 = try? jsonDecoder.decode(CredentialOfferV2.self, from: data) {
-                if modelV2.credentialIssuer == nil {
-                    let error = EUDIError(from: ErrorResponse(message: "Invalid DID", code: nil))
-                    return CredentialOffer(fromError: error)
-                }
-                return CredentialOffer(from: modelV2)
-            }
-        }
-        
-        else {
+
+    @available(*, deprecated, message: "Superseded by CredentialOfferResolver. Offer documents are now matched by shape with OpenID4VCI 1.0 tried first; this entry point keeps the previous draft-first ordering only for compatibility.")
+    func parseCredentialOfferResponseModel(jsonData: [String: Any], data: Data?) -> CredentialOffer? {
+        guard let data else { return nil }
+        let parsers = CredentialOfferResolver.defaultParsers()
+        guard let parser = parsers.first(where: { $0.supports(jsonData) }) else {
             let error = EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil))
             return CredentialOffer(fromError: error)
         }
-    return nil
+        return try? parser.parse(data)
     }
-    
+
     private func buildAuthorizationRequestV1(credentialOffer: CredentialOffer?, docType: String, format: String) -> String {
         var authorizationDetails =  if format == "mso_mdoc" {
             "[" + (([
