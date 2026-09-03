@@ -21,8 +21,17 @@ public class ExpiryValidator {
         } else {
             guard let split = jwt?.split(separator: "."), split.count > 1,  let jsonString = "\(split[1])".decodeBase64(),
                   let jsonObject = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) else { return false }
-            guard let vc = jsonObject["vc"] as? [String: Any], let expiryDate = vc["expirationDate"] as? String else { return false }
-            expirationDate = expiryDate
+            if let expiryDate = jsonObject["exp"] as? Double {
+                let date = Date(timeIntervalSince1970: TimeInterval(expiryDate) )
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+                dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+                dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+                let formattedDateString = dateFormatter.string(from: date)
+                expirationDate = formattedDateString
+            } else if let vc = jsonObject["vc"] as? [String: Any], let expiryDate = vc["expirationDate"] as? String {
+                expirationDate = expiryDate
+            }
         }
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
