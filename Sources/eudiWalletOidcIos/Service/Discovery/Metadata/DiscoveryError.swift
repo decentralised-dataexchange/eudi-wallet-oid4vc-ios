@@ -26,7 +26,7 @@ public enum DiscoveryError: Error, LocalizedError, Equatable {
     /// The response was not the expected media type.
     case notJSON(contentType: String?)
 
-    /// The document exceeded `DiscoveryPolicy.maxMetadataBytes`.
+    /// The document exceeded `DiscoveryPolicy.maxMetadataBytes`, when one is set.
     case tooLarge(bytes: Int)
 
     /// Signed metadata was returned but could not be trusted.
