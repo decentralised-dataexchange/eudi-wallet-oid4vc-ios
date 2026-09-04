@@ -163,12 +163,35 @@ final class IssuerMetadataResolverTests: XCTestCase {
         XCTAssertNotNil(result.configuration.error)
     }
 
-    func testAnOversizedDocumentIsRefused() async {
+    func testAnOversizedDocumentIsRefusedWhenALimitIsSet() async {
         serve([insertionPath: v1Metadata()])
         var policy = DiscoveryPolicy.standard
         policy.maxMetadataBytes = 10
         let result = await resolve(policy: policy)
         XCTAssertNotNil(result.configuration.error)
+    }
+
+    /// No size check by default: issuer metadata carrying embedded base64 `display` logos runs to
+    /// hundreds of KB legitimately, and a fixed cap rejected real issuers.
+    func testALargeDocumentIsAcceptedByDefault() async {
+        XCTAssertNil(DiscoveryPolicy.standard.maxMetadataBytes)
+
+        var padded = v1Metadata()
+        padded = padded.replacingOccurrences(
+            of: "\"credential_issuer\"",
+            with: "\"padding\": \"\(String(repeating: "x", count: 600 * 1024))\", \"credential_issuer\""
+        )
+        serve([insertionPath: padded])
+
+        let result = await resolve()
+
+        XCTAssertNil(result.configuration.error)
+        XCTAssertNotNil(result.configuration.credentialIssuer)
+    }
+
+    /// Strict keeps the guard, so a caller that wants one still has it.
+    func testStrictRetainsASizeLimit() {
+        XCTAssertEqual(DiscoveryPolicy.strict.maxMetadataBytes, 512 * 1024)
     }
 
     /// Never a bare nil: a caller's error branch has to have something to fire on.

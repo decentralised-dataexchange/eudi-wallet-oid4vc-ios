@@ -61,8 +61,13 @@ public struct DiscoveryPolicy {
     /// Overrides the device locale for `Accept-Language`.
     public var acceptLanguage: String?
 
-    /// Largest metadata document accepted, in bytes.
-    public var maxMetadataBytes: Int
+    /// Largest metadata document accepted, in bytes. `nil` (the default) applies no size check.
+    ///
+    /// Off by default: real issuer metadata -- especially `credential_configurations_supported`
+    /// entries with embedded base64 `display` logos -- can legitimately run well past a few hundred
+    /// KB, and there is no size the SDK can pick that is safe for every issuer. Set a value to
+    /// guard against a misbehaving endpoint returning something unreasonable.
+    public var maxMetadataBytes: Int?
 
     public init(
         allowedSchemes: Set<String> = ["https", "http"],
@@ -73,7 +78,7 @@ public struct DiscoveryPolicy {
         requireJSONContentType: Bool = false,
         sendAcceptLanguage: Bool = true,
         acceptLanguage: String? = nil,
-        maxMetadataBytes: Int = 512 * 1024
+        maxMetadataBytes: Int? = nil
     ) {
         self.allowedSchemes = allowedSchemes
         self.allowSuffixWellKnownFallback = allowSuffixWellKnownFallback
@@ -101,6 +106,7 @@ public struct DiscoveryPolicy {
         allowOpenIdConfigurationFallback: false,
         requireIssuerIdentifierMatch: true,
         allowDraftMetadata: false,
-        requireJSONContentType: true
+        requireJSONContentType: true,
+        maxMetadataBytes: 512 * 1024
     )
 }
