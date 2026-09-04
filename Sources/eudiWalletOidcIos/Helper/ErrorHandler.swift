@@ -9,7 +9,17 @@ import Foundation
 
 class ErrorHandler {
     
-    static func processError(data: Data?, contentType: String? = nil) -> EUDIError? {
+    /// Turns whatever a server sent into an ``EUDIError``.
+    ///
+    /// The message logic below is unchanged and deliberately so -- issuers send several different
+    /// shapes and each branch exists because one of them was met in the field. What is new is that
+    /// the OAuth `error` **code** now survives alongside the message instead of being overwritten
+    /// by it: a standard
+    /// `{"error":"invalid_grant","error_description":"Issuer state is not found"}` used to come
+    /// back as the sentence alone, leaving callers to string-match prose to decide what to do.
+    ///
+    /// Mirrors `ErrorHandler.processError` in the Android SDK.
+    static func processError(data: Data?, contentType: String? = nil, httpStatus: Int? = nil) -> EUDIError? {
             // Convert Data to String for initial check
             guard let data = data, let dataString = String(data: data, encoding: .utf8) else {
                 return EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1))
@@ -53,6 +63,17 @@ class ErrorHandler {
             } else {
                 errorResponse = EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1))
             }
-            return errorResponse
+            // Read the code and the message as the two separate fields they are. `error` is only
+            // a code when it is a string: some issuers nest the real pair under `detail`.
+            let oauthCode = (jsonObject?["error"] as? String)
+                ?? ((jsonObject?["detail"] as? [String: Any])?["error"] as? String)
+            let errorUri = jsonObject?["error_uri"] as? String
+
+            var decorated = errorResponse
+            decorated?.errorCode = oauthCode?.isEmpty == false ? oauthCode : nil
+            decorated?.errorUri = errorUri
+            decorated?.httpStatus = httpStatus
+            decorated?.raw = dataString
+            return decorated
         }
 }

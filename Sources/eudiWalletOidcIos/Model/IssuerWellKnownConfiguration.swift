@@ -210,7 +210,18 @@ public struct DisplayCover: Codable {
 }
 public struct IssuerWellKnownConfiguration: Codable {
     public let credentialIssuer: String?
+
+    /// The authorization servers, with the draft's singular `authorization_server` and 1.0's plural
+    /// `authorization_servers` merged into one array.
     public let authorizationServer: [String]?
+
+    /// Whether the issuer declared the **plural** `authorization_servers` (OpenID4VCI 1.0) rather
+    /// than the draft's singular `authorization_server`.
+    ///
+    /// The merge above loses that distinction, and sections 5.1.2 and 6.1 attach the `resource`
+    /// parameter and the authorization detail's `locations` to the plural form specifically. Kept
+    /// so those conditions can be evaluated the same way the Android SDK evaluates them.
+    public var declaresAuthorizationServers: Bool = false
     public let credentialEndpoint: String?
     public let deferredCredentialEndpoint: String?
     public let display: [Display]?
@@ -230,6 +241,8 @@ public struct IssuerWellKnownConfiguration: Codable {
             authServerArray = [from.authorizationServer ?? ""]
         }
         authorizationServer = authServerArray
+        declaresAuthorizationServers =
+            from.authorizationServer == nil && !(from.authorizationServers ?? []).isEmpty
         credentialEndpoint = from.credentialEndpoint
         deferredCredentialEndpoint = from.deferredCredentialEndpoint
         
@@ -263,6 +276,8 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         authServerArray = [from.authorizationServer ?? ""]
     }
     authorizationServer = authServerArray
+    declaresAuthorizationServers =
+        from.authorizationServer == nil && !(from.authorizationServers ?? []).isEmpty
         credentialEndpoint = from.credentialEndpoint
         deferredCredentialEndpoint = from.deferredCredentialEndpoint
         
