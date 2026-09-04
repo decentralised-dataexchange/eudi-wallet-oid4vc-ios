@@ -80,7 +80,7 @@ enum MetadataFetcher {
             let detail = (body?.isEmpty == false && (body?.count ?? 0) <= 512) ? body : nil
             throw DiscoveryError.fetchFailed(status: status, detail: detail)
         }
-        guard data.count <= policy.maxMetadataBytes else {
+        if let limit = policy.maxMetadataBytes, data.count > limit {
             throw DiscoveryError.tooLarge(bytes: data.count)
         }
         guard !data.isEmpty else {
