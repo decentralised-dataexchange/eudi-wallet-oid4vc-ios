@@ -67,18 +67,18 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 "doctype": docType,
                 "locations": [credentialOffer?.credentialIssuer ?? ""]
             ] as [String : Any]).toString() ?? "") + "]"
-        } else if credentialOffer?.credentials?[0].trustFramework == nil {
+        } else if credentialOffer?.credentials?.first?.trustFramework == nil {
             "[" + (([
                 "type": "openid_credential",
                 "format": format,
-                "credential_definition": ["type":credentialOffer?.credentials?[0].types ?? []],
+                "credential_definition": ["type": credentialOffer?.credentials?.first?.types ?? []],
                 "locations": [credentialOffer?.credentialIssuer ?? ""]
             ] as [String : Any]).toString() ?? "") + "]"
         } else {
             "[" + (([
                 "type": "openid_credential",
                 "format": format,
-                "types": credentialOffer?.credentials?[0].types ?? [],
+                "types": credentialOffer?.credentials?.first?.types ?? [],
                 "locations": [credentialOffer?.credentialIssuer ?? ""]
             ] as [String : Any]).toString() ?? "") + "]"
         }
@@ -88,8 +88,18 @@ public class IssueService: NSObject, IssueServiceProtocol {
     
     func buildAuthorizationRequestV2(credentialOffer: CredentialOffer?, docType: String, format: String, issuerConfig: IssuerWellKnownConfiguration?) -> String {
         var authorizationDetails: [String] = []
-        
-        guard let credentials = credentialOffer?.credentials else { return ""}
+
+        // "[]" rather than "" for an absent or empty offer: an empty authorization_details
+        // parameter on the wire is not the same as none, and removeFirst() below traps on "".
+        guard let credentials = credentialOffer?.credentials, !credentials.isEmpty else { return "[]" }
+
+        // Section 5.1.1: when the Credential Issuer metadata contains `authorization_servers`, the
+        // authorization detail's `locations` MUST be set to the Credential Issuer Identifier. The
+        // same condition governs the `resource` parameter, which this SDK already honours.
+        let locations: [String]? = issuerConfig?.declaresAuthorizationServers == true
+            ? [credentialOffer?.credentialIssuer ?? issuerConfig?.credentialIssuer ?? ""]
+            : nil
+
         authorizationDetails.removeAll()
         for (index, _) in credentials.enumerated()  {
             let credFormat = getFormatFromIssuerConfig(issuerConfig: issuerConfig, type: credentials[index].types?.first) ?? ""
@@ -112,10 +122,12 @@ public class IssueService: NSObject, IssueServiceProtocol {
 //                ] as [String : Any]).toString() ?? "")
 //                authorizationDetails.append(authDetail)
 //            } else {
-                let authDetail =  (([
+                var detail: [String: Any] = [
                     "type": "openid_credential",
-                    "credential_configuration_id": credentialConfigID
-                ] as [String : Any]).toString() ?? "")
+                    "credential_configuration_id": credentialConfigID as Any,
+                ]
+                if let locations { detail["locations"] = locations }
+                let authDetail = (detail.toString() ?? "")
                 authorizationDetails.append(authDetail)
 //            }
         }
@@ -163,6 +175,78 @@ public class IssueService: NSObject, IssueServiceProtocol {
         wuaSub(wua) ?? fallbackDid
     }
 
+    /// The authorization request.
+    ///
+    /// Returns one ``AuthorizationResponse``: the outcome, and what was sent to produce it. There is
+    /// deliberately no second "detailed" variant -- `request` is part of the contract, because the
+    /// caller needs `redirectUri` and `state` to finish the flow correctly.
+    ///
+    /// Mirrors `IssueService.requestAuthorization` in the Android SDK.
+    ///
+    /// - Parameters:
+    ///   - session: the offer and the two metadata documents, from the offer and discovery steps.
+    ///   - wallet: the DID and key this authorization is bound to.
+    ///   - attestation: the wallet unit attestation and its proof of possession, when the issuer
+    ///     requires them; `nil` sends no `OAuth-Client-Attestation` headers.
+    ///   - codeVerifier: PKCE (RFC 7636). Owned by the caller because the **token request needs the
+    ///     same value**; the SDK only derives the challenge from it.
+    ///   - selection: overrides the format and doctype the session implies; both are derived when
+    ///     left `nil`.
+    ///   - redirectUri: where the authorization server should send the user back to. Defaults to
+    ///     `openid://callback`. Whatever is used is returned as
+    ///     ``AuthorizationRequestInfo/redirectUri`` and **must be repeated verbatim in the token
+    ///     request** (RFC 6749 section 4.1.3).
+    ///   - mode: ``AuthorizationMode/browser`` for a scanned offer (RFC 8252), or
+    ///     ``AuthorizationMode/inApp`` for first-party non-interactive flows.
+    public func requestAuthorization(
+        session: IssuanceSession,
+        wallet: WalletIdentity,
+        attestation: WalletAttestation? = nil,
+        codeVerifier: String,
+        selection: CredentialSelection = CredentialSelection(),
+        redirectUri: String? = nil,
+        mode: AuthorizationMode = .browser,
+        policy: AuthorizationRequestPolicy = .standard
+    ) async -> AuthorizationResponse {
+
+        let types = getTypesFromCredentialOffer(credentialOffer: session.credentialOffer)
+        let format = selection.format
+            ?? getFormatFromIssuerConfig(issuerConfig: session.issuerConfig, type: types?.last)
+            ?? "jwt_vc"
+        let docType = format == "mso_mdoc" ? (selection.docType ?? "") : ""
+
+        let authorizationDetails = buildAuthorizationRequest(
+            credentialOffer: session.credentialOffer,
+            docType: docType,
+            format: format,
+            issuerConfig: session.issuerConfig
+        )
+
+        let resolver = AuthorizationRequestResolver(
+            policy: policy,
+            idTokenResponder: IdTokenResponder(service: self)
+        )
+
+        return await resolver.resolve(
+            session: session,
+            wallet: wallet,
+            attestation: attestation,
+            codeVerifier: codeVerifier,
+            authorizationDetails: authorizationDetails,
+            selection: CredentialSelection(format: format, docType: selection.docType),
+            redirectUri: redirectUri,
+            mode: mode,
+            urlSession: session_urlSession()
+        )
+    }
+
+    /// The session the transports use. Kept as its own seam so the delegate-backed session that
+    /// handles redirects is reused rather than rebuilt per transport.
+    private func session_urlSession() -> URLSession {
+        session ?? URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+    }
+
+    @available(*, deprecated, message: "Returns a URL that means six different things. Use requestAuthorization, which returns AuthorizationResponse.")
     public func processAuthorisationRequest(did: String,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,

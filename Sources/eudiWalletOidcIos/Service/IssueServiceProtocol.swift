@@ -25,6 +25,36 @@ protocol IssueServiceProtocol {
     ///   - codeVerifier - to build the authorisation request
     /// - Returns: code if successful; otherwise, nil.
     func processAuthorisationRequest(did: String, credentialOffer: CredentialOffer, codeVerifier: String, authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?, redirectURI: String?, isApiCallRequired: Bool?, wua: String, pop: String) async -> WrappedResponse?
+
+    /// The authorization request.
+    ///
+    /// Replaces ``processAuthorisationRequest(did:credentialOffer:codeVerifier:authServer:credentialFormat:docType:issuerConfig:redirectURI:isApiCallRequired:wua:pop:)``,
+    /// whose `data: String?` meant six different things and left the caller re-parsing query
+    /// parameters off a URL to work out which. Switch on ``AuthorizationResponse/outcome``.
+    func requestAuthorization(
+        session: IssuanceSession,
+        wallet: WalletIdentity,
+        attestation: WalletAttestation?,
+        codeVerifier: String,
+        selection: CredentialSelection,
+        redirectUri: String?,
+        mode: AuthorizationMode,
+        policy: AuthorizationRequestPolicy
+    ) async -> AuthorizationResponse
+
+    /// Answers an authorization server that asked for an ID token rather than authorizing directly.
+    ///
+    /// Reached when ``requestAuthorization(session:wallet:attestation:codeVerifier:selection:redirectUri:mode:policy:)``
+    /// answers with ``AuthorizationOutcome/idTokenRequired``, whose `url` is the `location` to pass
+    /// here. Declared on the Android interface all along; it was missing here.
+    func processAuthorisationRequestUsingIdToken(
+        did: String,
+        authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration,
+        redirectURI: String,
+        nonce: String,
+        state: String,
+        clientID: String
+    ) async -> String?
     
     // Processes the token request to obtain the access token.
     /** - Parameters
