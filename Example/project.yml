@@ -1,0 +1,38 @@
+# Regenerate with:  cd Example && xcodegen generate
+#
+# The .xcodeproj is committed so the harness opens without xcodegen installed; this file is the
+# source of truth for it.
+name: Harness
+options:
+  bundleIdPrefix: io.igrant.eudiwalletoidc
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+packages:
+  eudiWalletOidcIos:
+    path: ..
+
+targets:
+  Harness:
+    type: application
+    platform: iOS
+    sources:
+      - path: Harness
+    info:
+      path: Harness/Info.plist
+      properties:
+        CFBundleDisplayName: EUDI Harness
+        UILaunchScreen: {}
+        NSCameraUsageDescription: Scanning a credential offer QR code.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.igrant.eudiwalletoidc.harness
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - package: eudiWalletOidcIos
+        product: eudiWalletOidcIos
