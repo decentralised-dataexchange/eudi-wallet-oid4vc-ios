@@ -1,17 +1,17 @@
 //
-//  AuthorizationHTTP.swift
+//  HTTPCall.swift
 //
-//  Performing an authorization-leg request, keeping the response.
+//  Performing a request, keeping the status code and the headers.
 //
 
 import Foundation
 
-/// Performs an authorization-leg request, keeping the status and the headers.
+/// Performs a request, keeping the status and the headers.
 ///
 /// Mirrors `AuthorizationHttp` in the Android SDK, where the equivalent helper exists because the
 /// shared `SafeApiCall` discarded the status code -- which meant a "PAR rejected" diagnostic
 /// written for a 400 could only ever fire for a 3xx.
-enum AuthorizationHTTP {
+enum HTTPCall {
 
     struct Result {
         let data: Data
@@ -30,10 +30,14 @@ enum AuthorizationHTTP {
     /// - Throws: ``AuthorizationError/requestFailed(detail:failingURL:)`` when the request never
     ///   completed. The failing URL is carried through because a custom-scheme redirect surfaces as
     ///   a load failure whose failing URL is the callback.
+    /// - Parameter onTransportFailure: builds the error thrown when the request never completed,
+    ///   so each leg raises its own type. The failing URL matters: a redirect to a custom scheme
+    ///   cannot be loaded, and the URL it failed on *is* the callback.
     static func send(
         _ request: URLRequest,
         tag: String,
-        session: URLSession
+        session: URLSession,
+        onTransportFailure: (String?, String?) -> Error
     ) async throws -> Result {
         do {
             let (data, response) = try await NetworkLogger.send(request, tag: tag, session: session)
@@ -47,10 +51,7 @@ enum AuthorizationHTTP {
             let nsError = error as NSError
             let failingURL = (nsError.userInfo[NSURLErrorFailingURLStringErrorKey] as? String)
                 ?? (nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
-            throw AuthorizationError.requestFailed(
-                detail: nsError.localizedDescription,
-                failingURL: failingURL
-            )
+            throw onTransportFailure(nsError.localizedDescription, failingURL)
         }
     }
 

@@ -41,7 +41,7 @@ struct PushedAuthorizationRequestTransport: AuthorizationRequestTransport {
         guard let authorizationEndpoint = session.authConfig?.authorizationEndpoint else {
             throw AuthorizationError.noAuthorizationEndpoint
         }
-        guard let request = AuthorizationHTTP.formPost(
+        guard let request = HTTPCall.formPost(
             url: session.authConfig?.pushedAuthorizationRequestEndpoint ?? "",
             parameters: parameters.asDictionary(),
             attestation: attestation
@@ -49,7 +49,7 @@ struct PushedAuthorizationRequestTransport: AuthorizationRequestTransport {
             throw AuthorizationError.unusable("This issuer's pushed authorization endpoint is not a usable URL")
         }
 
-        let result = try await AuthorizationHTTP.send(request, tag: "par-request", session: urlSession)
+        let result = try await HTTPCall.send(request, tag: "par-request", session: urlSession, onTransportFailure: authorizationTransportFailure)
 
         guard result.isSuccessful else {
             // The Date header is the server's own clock -- compare it with the proof-of-possession
@@ -106,7 +106,7 @@ struct PushedAuthorizationRequestTransport: AuthorizationRequestTransport {
         request.httpMethod = "GET"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        let result = try await AuthorizationHTTP.send(request, tag: "authorisation-request", session: urlSession)
+        let result = try await HTTPCall.send(request, tag: "authorisation-request", session: urlSession, onTransportFailure: authorizationTransportFailure)
 
         if result.status == 302, let location = result.header("Location"), !location.isEmpty {
             return .openInBrowser(url: location, expiresIn: expiresIn)
