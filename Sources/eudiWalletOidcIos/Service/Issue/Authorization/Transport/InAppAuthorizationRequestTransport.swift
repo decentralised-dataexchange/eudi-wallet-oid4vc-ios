@@ -59,8 +59,11 @@ struct InAppAuthorizationRequestTransport: AuthorizationRequestTransport {
 
         let location: String
         do {
-            let result = try await AuthorizationHTTP.send(
-                request, tag: "authorisation-request", session: urlSession
+            let result = try await HTTPCall.send(
+                request,
+                tag: "authorisation-request",
+                session: urlSession,
+                onTransportFailure: authorizationTransportFailure
             )
             if result.status == 302, let header = result.header("Location") {
                 location = header

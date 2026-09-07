@@ -64,3 +64,10 @@ enum AuthorizationError: Error {
         }
     }
 }
+
+/// Wraps a transport failure as the authorization leg's own error type.
+///
+/// Passed to ``HTTPCall``, which is shared with the token leg and so cannot know which to raise.
+func authorizationTransportFailure(_ detail: String?, _ failingURL: String?) -> Error {
+    AuthorizationError.requestFailed(detail: detail, failingURL: failingURL)
+}
