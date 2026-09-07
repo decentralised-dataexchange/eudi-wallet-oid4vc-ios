@@ -168,124 +168,157 @@ public class SDJWTService {
         return issuedJwt.isEmpty ? nil : issuedJwt
     }
     
+    /// One decoded disclosure: `[salt, name, value]` for an object member,
+    /// `[salt, value]` for an array element.
+    private struct ParsedDisclosure {
+        let encoded: String
+        let name: String?
+        let value: Any
+    }
+
+    /// Selects the disclosures needed to satisfy a set of requested claim paths.
+    ///
+    /// Matching on the last path component alone is not enough. A claim like
+    /// `address.street_address` lives behind two disclosures - one for `address`,
+    /// whose value is an `_sd` list, and one for `street_address` inside it. Sending
+    /// only the leaf leaves the Verifier with a digest it cannot reach, so the claim
+    /// arrives missing even though its disclosure was in the presentation. Walking
+    /// the path from the issuer JWT payload downwards collects every disclosure on
+    /// the chain, and - because each step only looks at the `_sd` list of the node it
+    /// is standing on - it also stops same-named claims under a sibling parent from
+    /// being disclosed by accident.
+    private func selectDisclosures(payload: [String: Any],
+                                   disclosures: [String],
+                                   paths: [[String]]) -> [String] {
+        var byDigest: [String: ParsedDisclosure] = [:]
+        for encoded in disclosures {
+            guard let decoded = encoded.decodeBase64(),
+                  let list = try? JSONSerialization.jsonObject(with: Data(decoded.utf8),
+                                                              options: [.fragmentsAllowed]) as? [Any] else { continue }
+            guard let digest = calculateSHA256Hash(inputString: encoded) else { continue }
+            if list.count >= 3 {
+                byDigest[digest] = ParsedDisclosure(encoded: encoded, name: list[1] as? String, value: list[2])
+            } else if list.count == 2 {
+                byDigest[digest] = ParsedDisclosure(encoded: encoded, name: nil, value: list[1])
+            }
+        }
+
+        var selected: Set<String> = []
+
+        /// Everything reachable below `node` - used once a path has been consumed,
+        /// which is how a request for a whole object or array (`nationalities`,
+        /// `address`) disclosures its members too.
+        func collectSubtree(_ node: Any) {
+            if let object = node as? [String: Any] {
+                for digest in (object["_sd"] as? [String] ?? []) {
+                    guard let disclosure = byDigest[digest] else { continue }
+                    selected.insert(disclosure.encoded)
+                    collectSubtree(disclosure.value)
+                }
+                for (key, value) in object where key != "_sd" {
+                    collectSubtree(value)
+                }
+            } else if let array = node as? [Any] {
+                for element in array {
+                    if let digestObject = element as? [String: Any],
+                       let digest = digestObject["..."] as? String {
+                        guard let disclosure = byDigest[digest] else { continue }
+                        selected.insert(disclosure.encoded)
+                        collectSubtree(disclosure.value)
+                    } else {
+                        collectSubtree(element)
+                    }
+                }
+            }
+        }
+
+        func walk(_ node: Any, remaining: ArraySlice<String>) {
+            guard let key = remaining.first else {
+                collectSubtree(node)
+                return
+            }
+            let rest = remaining.dropFirst()
+
+            if let array = node as? [Any] {
+                // A path segment never names an array index here (DCQL null and
+                // integer indices both drop out), so the segment applies to every
+                // element - resolving each element's disclosure on the way in.
+                for element in array {
+                    if let digestObject = element as? [String: Any],
+                       let digest = digestObject["..."] as? String {
+                        guard let disclosure = byDigest[digest] else { continue }
+                        selected.insert(disclosure.encoded)
+                        walk(disclosure.value, remaining: remaining)
+                    } else {
+                        walk(element, remaining: remaining)
+                    }
+                }
+                return
+            }
+
+            guard let object = node as? [String: Any] else { return }
+
+            // A claim the issuer left in the clear needs no disclosure of its own.
+            if let child = object[key] {
+                walk(child, remaining: rest)
+                return
+            }
+            // Otherwise it is behind one of this node's digests.
+            for digest in (object["_sd"] as? [String] ?? []) {
+                guard let disclosure = byDigest[digest], disclosure.name == key else { continue }
+                selected.insert(disclosure.encoded)
+                walk(disclosure.value, remaining: rest)
+                return
+            }
+        }
+
+        for path in paths {
+            walk(payload, remaining: path[...])
+        }
+        return Array(selected)
+    }
+
+    /// The issuer JWT payload with its digests still unresolved - the shape the
+    /// path walk needs, since it is the `_sd` lists that say which disclosure
+    /// belongs at which level.
+    private func issuerPayload(from issuedJwt: String) -> [String: Any]? {
+        let parts = issuedJwt.split(separator: ".")
+        guard parts.count > 1, let json = String(parts[1]).decodeBase64() else { return nil }
+        return try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }
+
     public func processDisclosuresWithDCQL(
         credential: String?,
         dcqlCredential: CredentialItems?, format: String?, keyHandler: SecureKeyProtocol) -> String? {
-            guard let credential = credential, let dcqlData = dcqlCredential  else { return nil }
-            
+            guard let credential = credential, let dcqlData = dcqlCredential else { return nil }
+
             // Split the credential into disclosures and the issued JWT
             guard let disclosures = SDJWTService.shared.getDisclosuresFromSDJWT(credential), !disclosures.isEmpty,
-                  var issuedJwt = SDJWTService.shared.getIssuerJwtFromSDJWT(credential) else {
+                  let issuedJwt = SDJWTService.shared.getIssuerJwtFromSDJWT(credential) else {
                 return SDJWTService.shared.getIssuerJwtFromSDJWT(credential)
             }
-          
-            var disclosureList: [String] = []
-            // Extract requested parameters from the presentation definition
-            var requestedParams: [String] = []
-            guard let claims = dcqlData.claims else {
-                return issuedJwt
-            }
-            for (pathIndex, claim) in claims.enumerated() {
+
+            // An absent `claims` is the Verifier asking for the whole credential.
+            guard let claims = dcqlData.claims else { return issuedJwt }
+
+            var requestedPaths: [[String]] = []
+            for claim in claims {
+                // A namespaced claim addresses an mdoc namespace, not an SD-JWT path.
                 guard case .pathClaim(let pathClaim) = claim else { continue }
-            let nonNilPaths = pathClaim.path.compactMap { $0 }
-                let paths = nonNilPaths.last
-                requestedParams.append(String(paths ?? ""))
+                let path = pathClaim.path.compactMap { $0 }
+                guard !path.isEmpty else { continue }
+                requestedPaths.append(path)
             }
-            
-            // Filter disclosures based on requested parameters
-            for disclosure in disclosures {
-                if let decodedDisclosure = disclosure.decodeBase64(),
-                   let list = try? JSONSerialization.jsonObject(with: Data(decodedDisclosure.utf8), options: []) as? [Any],
-                   list.count == 3 {
-                    if let paramName = list[1] as? String,
-                       requestedParams.contains(paramName){
-                        disclosureList.append(disclosure)
-                    }
-                    if let secondParam = list[2] as? [String: Any] {
-                        let keys = Array(secondParam.keys)
-                        for key in keys {
-                            if requestedParams.contains(key) {
-                                disclosureList.append(disclosure)
-                            }
-                        }
-                    }
-                }
-                // need to check the flow when list.count == 3
+
+            guard let payload = issuerPayload(from: issuedJwt) else { return issuedJwt }
+
+            let selected = selectDisclosures(payload: payload, disclosures: disclosures, paths: requestedPaths)
+
+            var presentation = issuedJwt
+            for disclosure in selected {
+                presentation += "~\(disclosure)"
             }
-            var verificationHandler : eudiWalletOidcIos.VerificationService?
-            verificationHandler = eudiWalletOidcIos.VerificationService(keyhandler: keyHandler)
-            var processedCredentials: [String] = []
-            var tempCredentialList: [String?] = []
-            var credentialList: [String] = []
-            var sdList: [String] = []
-            var arrayDigestHashes: [String] = []
-            credentialList.append(credential)
-            
-            var credentialFormat: String = ""
-            if let format = format {
-                credentialFormat = format
-            }
-            if credentialFormat == "mso_mdoc" {
-                tempCredentialList = credentialList
-                processedCredentials = FilterCredentialService().processCborCredentialToJsonString(credentialList: tempCredentialList) ?? []
-            } else {
-                tempCredentialList = credentialList
-                
-                processedCredentials = FilterCredentialService().processCredentialsToJsonString(credentialList: tempCredentialList) ?? []
-            }
-            
-            let matchesString = DCQLFiltering.filterCredentialUsingSingleDCQLCredentialFilter(credentialFilter: dcqlData, credentialList: credentialList)
-            for item in matchesString {
-                for data in item.fields {
-                    let value = data.path.value
-                    if let valueDict = value as? [String: Any], let sdArray = valueDict["_sd"] as? [Any] {
-                        for element in sdArray {
-                            if let sdValue = element as? String {
-                                sdList.append(sdValue)
-                            }
-                        }
-                    }
-                    if let arrayValue = value as? [Any] {
-                        for element in arrayValue {
-                            if let hashString = element as? String {
-                                arrayDigestHashes.append(hashString)
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Second pass: match count == 2 array-element disclosures via SHA256 hash
-            for disclosure in disclosures {
-                if let decodedDisclosure = disclosure.decodeBase64(),
-                   let list = try? JSONSerialization.jsonObject(with: Data(decodedDisclosure.utf8), options: []) as? [Any],
-                   list.count == 2 {
-                    let disclosureHash = SDJWTService.shared.calculateSHA256Hash(inputString: disclosure) ?? ""
-                    let arrayElement = list[1] as? String
-                    if arrayDigestHashes.contains(arrayElement ?? "") {
-                        if !disclosureList.contains(disclosure) {
-                            disclosureList.append(disclosure)
-                        }
-                    }
-                }
-            }
-            
-            for dis in disclosures {
-                let sdData = SDJWTService.shared.calculateSHA256Hash(inputString: dis) ?? ""
-                if sdList.contains(sdData) {
-                    if !(disclosureList.contains(sdData)) {
-                        disclosureList.append(dis)
-                    }
-                }
-            }
-            let uniqueDisclosureSet = Array(Set(disclosureList))
-            for data in uniqueDisclosureSet {
-                issuedJwt += "~\(data)"
-            }
-            return issuedJwt.isEmpty ? nil : issuedJwt
-            
-            
-            return issuedJwt.isEmpty ? nil : issuedJwt
+            return presentation.isEmpty ? nil : presentation
         }
     
     public func processDisclosures(credential: String?,
