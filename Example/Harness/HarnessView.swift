@@ -65,6 +65,7 @@ struct HarnessView: View {
                 .font(.system(size: 12, design: .monospaced))
 
             step("5 · Request token") { await model.requestToken() }
+            step("6 · Request credential") { await model.requestCredential() }
 
             Divider().padding(.vertical, 4)
 
