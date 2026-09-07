@@ -35,6 +35,10 @@ final class HarnessModel: ObservableObject {
     /// What the authorization request sent, so the token request can repeat it verbatim.
     private var sentRedirectUri: String?
 
+    /// The token response, so step 6 can present the access token and read section 8.2's
+    /// `authorization_details` back off it.
+    private var tokenResponse: TokenResponse?
+
     /// The transaction code, when the offer asks for one.
     @Published var txCode = ""
 
@@ -53,6 +57,7 @@ final class HarnessModel: ObservableObject {
         codeVerifier = nil
         authorizationCode = nil
         sentRedirectUri = nil
+        tokenResponse = nil
         output = ""
         log("Scanned", data)
     }
@@ -344,6 +349,8 @@ final class HarnessModel: ObservableObject {
               dpop nonce         \(response.dpopNonce ?? "—")
             """
 
+            self.tokenResponse = response
+
             if let accessToken = response.accessToken {
                 self.log(heading, """
                 \(trace)
@@ -370,6 +377,106 @@ final class HarnessModel: ObservableObject {
         }
     }
 
+    // MARK: - Step 6
+
+    /// `IssueService.requestCredential(session:wallet:token:subject:...)`
+    ///
+    /// Asks for **every** credential in the offer, one request each, because that is where the
+    /// interesting failures are: section 8.2's subject is chosen per credential from the token
+    /// response, and an offer whose credentials do not all resolve the same way is exactly what a
+    /// single-credential harness cannot show.
+    func requestCredential() async {
+        await run("6 · Request credential") {
+            let heading = "6 · Request credential"
+            guard let token = self.tokenResponse, token.accessToken != nil else {
+                self.log(heading, "Get an access token first — run step 5")
+                return false
+            }
+            guard let issuerConfig = self.issuerConfig else {
+                self.log(heading, "Discover the issuer first")
+                return false
+            }
+            guard let offer = self.offer else {
+                self.log(heading, "Resolve an offer first")
+                return false
+            }
+
+            let session = IssuanceSession(
+                credentialOffer: offer,
+                issuerConfig: issuerConfig,
+                authConfig: self.authConfig
+            )
+            let wallet = await self.walletIdentity()
+            let service = IssueService(keyHandler: HarnessKeyHandler())
+            let credentials = offer.credentials ?? []
+
+            var allIssued = true
+            for (index, credential) in credentials.enumerated() {
+                // The SDK applies section 8.2; the harness does not choose the shape.
+                let subject = CredentialSubject.of(
+                    session: session, token: token, credential: credential
+                )
+                let outcome = await service.requestCredential(
+                    session: session,
+                    wallet: wallet,
+                    token: token,
+                    subject: subject,
+                    // Appendix F.1: the harness holds no wallet attestation, so the DID is the
+                    // client_id -- unless the offer is pre-authorized and the server allows
+                    // anonymous access, in which case `iss` is omitted entirely.
+                    issuer: IssueService.proofIssuer(
+                        credentialOffer: offer,
+                        preAuthorizedGrantAnonymousAccessSupported:
+                            self.authConfig?.preAuthorizedGrantAnonymousAccessSupported,
+                        clientId: wallet.did,
+                        did: wallet.did
+                    )
+                )
+
+                let name = credential.types?.first ?? credential.doctype ?? "credential \(index + 1)"
+                let trace = """
+                  credential         \(name)
+                  subject            \(subject.describedForLog)
+                  proofs plural      \(subject.sendsPluralProofs(in: session))
+                  endpoint           \(issuerConfig.credentialEndpoint ?? "—")
+                  nonce endpoint     \(issuerConfig.nonceEndPoint ?? "— (draft: c_nonce from the token)")
+                """
+
+                switch outcome {
+                case let .issued(issued, notificationId, cNonce):
+                    self.log(heading, """
+                    \(trace)
+                      outcome            issued
+                      credentials        \(issued.count)
+                      notification_id    \(notificationId ?? "—")
+                      c_nonce            \(cNonce ?? "—")
+                      first              \(issued.first?.prefix(32) ?? "")…
+                    """)
+
+                case let .deferred(transactionId, interval):
+                    self.log(heading, """
+                    \(trace)
+                      outcome            deferred (section 9 — the request comes next pass)
+                      transaction_id     \(transactionId)
+                      interval           \(interval.map { String($0) } ?? "—")
+                    """)
+
+                case let .failed(error):
+                    allIssued = false
+                    self.log(heading, """
+                    \(trace)
+                      outcome            FAILED
+                      error              \(error.errorCode ?? "—")
+                      description        \(error.message ?? "no reason given")
+                      http status        \(error.httpStatus.map(String.init) ?? "—")
+                      raw                \(error.raw?.prefix(200).description ?? "—")
+                    """)
+                }
+            }
+            return allIssued && !credentials.isEmpty
+        }
+    }
+
     /// Runs the steps in sequence, stopping at the first that does not produce a result.
     func runAll() async {
         output = ""
@@ -385,6 +492,8 @@ final class HarnessModel: ObservableObject {
         if offer?.grants?.authorizationCode == nil,
            offer?.grants?.urnIETFParamsOauthGrantTypePreAuthorizedCode != nil {
             await requestToken()
+            guard tokenResponse?.accessToken != nil else { return }
+            await requestCredential()
         } else {
             await requestAuthorization()
         }
