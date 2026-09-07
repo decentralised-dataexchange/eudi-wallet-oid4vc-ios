@@ -26,9 +26,23 @@ final class ClientIdentityTests: XCTestCase {
 
     private func proofClaims(issuer: String?) async throws -> [String: Any] {
         let offer = try JSONDecoder().decode(CredentialOffer.self, from: Data("{}".utf8))
-        let config = try JSONDecoder().decode(IssuerWellKnownConfiguration.self, from: Data("{}".utf8))
-        let jwt = await ProofService.generateProof(nonce: "nonce", credentialOffer: offer, issuerConfig: config, did: "did:key:zBindingKey", issuer: issuer, keyHandler: CryptoKitHandler(), credentialTypes: [])
-        let segment = try XCTUnwrap(jwt?.split(separator: ".").dropFirst().first)
+        // `declaresAuthorizationServers` is a non-optional Bool and a synthesised Decodable ignores
+        // property defaults, so it has to be present even though nothing here reads it.
+        let config = try JSONDecoder().decode(
+            IssuerWellKnownConfiguration.self,
+            from: Data(#"{"declaresAuthorizationServers":false}"#.utf8)
+        )
+        // ProofService moved to CredentialProofFactory under Issue/Credential/Proof; the iss rule
+        // this tests moved with it.
+        let jwt = try await CredentialProofFactory.create(
+            session: IssuanceSession(credentialOffer: offer, issuerConfig: config, authConfig: nil),
+            wallet: WalletIdentity(did: "did:key:zBindingKey"),
+            keyHandler: CryptoKitHandler(),
+            issuer: issuer,
+            nonce: "nonce",
+            subject: .legacyFormat(format: nil)
+        )
+        let segment = try XCTUnwrap(jwt.split(separator: ".").dropFirst().first)
         var base64 = segment.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
         let data = try XCTUnwrap(Data(base64Encoded: base64))

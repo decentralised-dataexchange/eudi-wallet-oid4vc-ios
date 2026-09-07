@@ -75,4 +75,51 @@ enum HTTPCall {
         }
         return request
     }
+
+    /// A JSON POST carrying the wallet attestation headers when there are any.
+    ///
+    /// The credential request is JSON (or JWT when encrypted), not form-encoded, so it cannot use
+    /// ``formPost(url:parameters:attestation:)`` -- but the attestation headers are the same, and
+    /// so is the reason they are not logged.
+    ///
+    /// - Returns: `nil` when the URL is unusable or the body is not a serialisable JSON object.
+    ///   `JSONSerialization` raises an **Objective-C** exception on an invalid top-level object,
+    ///   which a Swift `do`/`catch` cannot catch, so `isValidJSONObject` is checked first.
+    static func jsonPost(
+        url: String,
+        body: [String: Any],
+        attestation: WalletAttestation?
+    ) -> URLRequest? {
+        guard JSONSerialization.isValidJSONObject(body),
+              let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+        return post(url: url, body: data, contentType: "application/json", attestation: attestation)
+    }
+
+    /// A POST whose body is a compact-serialised JWE, section 10's encrypted credential request.
+    static func jwtPost(
+        url: String,
+        body: String,
+        attestation: WalletAttestation?
+    ) -> URLRequest? {
+        post(url: url, body: Data(body.utf8), contentType: "application/jwt", attestation: attestation)
+    }
+
+    private static func post(
+        url: String,
+        body: Data,
+        contentType: String,
+        attestation: WalletAttestation?
+    ) -> URLRequest? {
+        guard let endpoint = URL(string: url) else { return nil }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        // Deliberately not logged: the attestation and its proof are credentials in their own right.
+        if let jwt = attestation?.sanitisedAttestationJwt {
+            request.setValue(jwt, forHTTPHeaderField: "OAuth-Client-Attestation")
+            request.setValue(attestation?.proofOfPossession ?? "", forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
+        }
+        return request
+    }
 }

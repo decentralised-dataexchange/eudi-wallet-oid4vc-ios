@@ -106,8 +106,19 @@ public struct WalletAttestation {
     var hasDPoPKey: Bool { dpopKey != nil || (dpopKeyHandler != nil && dpopKeyPublicJwk != nil) }
 
     /// The DPoP proof for [endpoint], carrying [nonce] when the server has demanded one.
-    func dpopProof(for endpoint: String, nonce: String? = nil) -> String? {
-        let claims: [String: Any] = nonce.map { ["nonce": $0] } ?? [:]
+    ///
+    /// - Parameter extraClaims: additional proof claims. The credential and deferred endpoints add
+    ///   `ath`, RFC 9449 section 4.2's hash of the access token, which the token endpoint has no
+    ///   use for -- so it is a parameter rather than something computed here, and the
+    ///   Secure-Enclave-versus-P256 branch below stays in one place instead of being written out
+    ///   again at each call site.
+    func dpopProof(
+        for endpoint: String,
+        nonce: String? = nil,
+        extraClaims: [String: Any] = [:]
+    ) -> String? {
+        var claims: [String: Any] = extraClaims
+        if let nonce { claims["nonce"] = nonce }
         if let dpopKeyHandler, let dpopKeyPublicJwk {
             return DPoPProofService.generateProof(
                 tokenEndpoint: endpoint, keyHandler: dpopKeyHandler, publicJwk: dpopKeyPublicJwk, claims: claims
@@ -151,13 +162,9 @@ public struct WalletAttestation {
         ])
     }
 
-    /// RFC 7638: SHA-256 over the required members only, lexicographically ordered, no whitespace.
+    /// @see ``JWKThumbprint``
     private static func thumbprint(of jwk: [String: Any]) -> String? {
-        guard let x = jwk["x"] as? String,
-              let y = jwk["y"] as? String,
-              let crv = jwk["crv"] as? String else { return nil }
-        let canonical = "{\"crv\":\"\(crv)\",\"kty\":\"EC\",\"x\":\"\(x)\",\"y\":\"\(y)\"}"
-        return Data(SHA256.hash(data: Data(canonical.utf8))).base64URLEncodedString()
+        JWKThumbprint.rfc7638(of: jwk)
     }
 }
 

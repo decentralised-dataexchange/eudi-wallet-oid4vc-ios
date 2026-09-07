@@ -26,26 +26,46 @@ final class BatchCredentialIssuanceTests: XCTestCase {
         XCTAssertEqual(stored.batchCredentialIssuance?.batchSize, 3)
     }
 
-    func testEveryAdditionalKeySignsItsOwnProofWithTheSameNonceAndAudience() async throws {
-        let offer = try JSONDecoder().decode(CredentialOffer.self, from: Data(#"{"credential_issuer":"https://issuer.example"}"#.utf8))
-        let config = try JSONDecoder().decode(IssuerWellKnownConfiguration.self, from: Data("{}".utf8))
-        let keys = (0..<2).map { _ in P256.Signing.PrivateKey() }
+    /// Moved from `IssueService.batchProofs` to `CredentialProofFactory.createAll`, which also
+    /// generates the first proof rather than being handed one — so all three keys are checked.
+    func testEveryKeySignsItsOwnProofWithTheSameNonceAndAudience() async throws {
+        let offer = try JSONDecoder().decode(CredentialOffer.self, from: Data(#"{"credentialIssuer":"https://issuer.example"}"#.utf8))
+        // `declaresAuthorizationServers` is a non-optional Bool and a synthesised Decodable ignores
+        // property defaults, so it has to be present.
+        let config = try JSONDecoder().decode(
+            IssuerWellKnownConfiguration.self,
+            from: Data(#"{"declaresAuthorizationServers":false}"#.utf8)
+        )
+        let keys = (0..<3).map { _ in P256.Signing.PrivateKey() }
         let handlers: [SecureKeyProtocol] = keys.map {
             CryptoKitHandler(secureKeyData: SecureKeyData(publicKey: $0.publicKey.rawRepresentation, privateKey: $0.rawRepresentation))
         }
-        let proofs = await IssueService.batchProofs(first: "first", nonce: "n-1", credentialOffer: offer, issuerConfig: config, issuer: "did:key:zWallet", keyHandlers: handlers, credentialTypes: [])
-        XCTAssertEqual(proofs?.count, 3)
-        XCTAssertEqual(proofs?.first, "first")
-        let extras = Array(proofs?.dropFirst() ?? [])
-        XCTAssertNotEqual(extras[0], extras[1])
-        for (index, proof) in extras.enumerated() {
+
+        let proofs = try await CredentialProofFactory.createAll(
+            session: IssuanceSession(credentialOffer: offer, issuerConfig: config, authConfig: nil),
+            wallet: WalletIdentity(did: "did:key:zWallet"),
+            keyHandler: handlers[0],
+            additionalKeyHandlers: Array(handlers.dropFirst()),
+            issuer: "did:key:zWallet",
+            nonce: "n-1",
+            subject: .legacyFormat(format: nil)
+        )
+
+        let list = proofs
+        XCTAssertEqual(list.count, 3)
+        XCTAssertEqual(Set(list).count, 3, "each key must sign its own proof")
+
+        for (index, proof) in list.enumerated() {
             let parts = proof.split(separator: ".").map(String.init)
             let claims = try XCTUnwrap(try JSONSerialization.jsonObject(with: try XCTUnwrap(Self.b64url(parts[1]))) as? [String: Any])
             XCTAssertEqual(claims["nonce"] as? String, "n-1")
             XCTAssertEqual(claims["aud"] as? String, offer.credentialIssuer ?? "")
             XCTAssertEqual(claims["iss"] as? String, "did:key:zWallet")
             let signature = try P256.Signing.ECDSASignature(rawRepresentation: try XCTUnwrap(Self.b64url(parts[2])))
-            XCTAssertTrue(keys[index].publicKey.isValidSignature(signature, for: Data("\(parts[0]).\(parts[1])".utf8)))
+            XCTAssertTrue(
+                keys[index].publicKey.isValidSignature(signature, for: Data("\(parts[0]).\(parts[1])".utf8)),
+                "proof \(index) must be signed by its own key"
+            )
         }
     }
 
