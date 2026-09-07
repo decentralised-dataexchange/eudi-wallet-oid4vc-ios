@@ -46,9 +46,40 @@ public struct CredentialResponse {
     public init(fromError: EUDIError) {
         error = fromError
     }
+
+    /// Adapts a ``CredentialOutcome`` back onto the shape callers already read.
+    ///
+    /// Kept so ``IssueService/processCredentialRequest(did:nonce:credentialOffer:issuerConfig:accessToken:format:credentialTypes:tokenResponse:authDetails:privateKey:isDpopSUpported:dpopKey:dpopKeyHandler:dpopKeyPublicJwk:attachKeyAttestation:keyAttestationJwt:)``
+    /// can be deprecated rather than deleted, and both wallets keep compiling while they migrate.
+    ///
+    /// Note what is lost on the way through: `Issued` carries **every** credential and a `c_nonce`,
+    /// and this type has nowhere to put the latter. New code should read the outcome.
+    public init(from outcome: CredentialOutcome) {
+        switch outcome {
+        case let .issued(credentials, notificationId, _):
+            credential = credentials.first
+            self.credentials = credentials.map { CredentialItem(credential: $0) }
+            notificationID = notificationId
+            isDeferred = false
+
+        case let .deferred(transactionId, interval):
+            // Both the 1.0 `transaction_id` and the draft `acceptance_token` land here, and this
+            // is the field callers test for deferral.
+            acceptanceToken = transactionId
+            self.interval = interval
+            isDeferred = true
+
+        case let .failed(error):
+            self.error = error
+        }
+    }
 }
 
 
 public struct CredentialItem: Codable {
     public let credential: String?
+
+    public init(credential: String?) {
+        self.credential = credential
+    }
 }
