@@ -615,6 +615,55 @@ public class IssueService: NSObject, IssueServiceProtocol {
      
      - Returns: A `TokenResponse` object if the request is successful, otherwise `nil`.
      */
+    /// The token request.
+    ///
+    /// Replaces ``processTokenRequest(did:tokenEndPoint:code:codeVerifier:isPreAuthorisedCodeFlow:userPin:version:wua:pop:redirectURI:isDPOPSupported:dpopKey:dpopKeyHandler:dpopKeyPublicJwk:)``,
+    /// whose fourteen parameters let illegal states be expressed. The grant is a ``TokenGrant``, so
+    /// section 6.1's "`tx_code` MUST only be used if the grant_type is
+    /// `urn:ietf:params:oauth:grant-type:pre-authorized_code`" cannot be broken.
+    ///
+    /// Whether a Transaction Code is *required* is read from the offer -- see
+    /// ``IssuanceSession/requiresTransactionCode`` -- not from whether one was supplied.
+    ///
+    /// - Parameter attestation: carries the wallet unit attestation, its proof of possession **and
+    ///   the DPoP key**, by either the in-memory or the Secure-Enclave route. ARF TS3 requires that
+    ///   key to be the one the attestation names in `cnf`, and keeping them together is what makes
+    ///   the mismatch detectable rather than silent.
+    /// - Parameter dpopNonce: a nonce from an earlier `DPoP-Nonce` header, when one has been seen.
+    public func requestToken(
+        session: IssuanceSession,
+        wallet: WalletIdentity,
+        attestation: WalletAttestation? = nil,
+        grant: TokenGrant,
+        dpopNonce: String? = nil,
+        policy: TokenRequestPolicy = .standard
+    ) async -> TokenResponse {
+        var authorizationDetails: String?
+        if policy.sendAuthorizationDetails {
+            let types = getTypesFromCredentialOffer(credentialOffer: session.credentialOffer)
+            let format = getFormatFromIssuerConfig(
+                issuerConfig: session.issuerConfig, type: types?.last
+            ) ?? "jwt_vc"
+            authorizationDetails = buildAuthorizationRequestV2(
+                credentialOffer: session.credentialOffer,
+                docType: "",
+                format: format,
+                issuerConfig: session.issuerConfig
+            )
+        }
+
+        return await TokenRequestResolver(policy: policy).resolve(
+            session: session,
+            wallet: wallet,
+            attestation: attestation,
+            grant: grant,
+            authorizationDetails: authorizationDetails,
+            dpopNonce: dpopNonce,
+            urlSession: session_urlSession()
+        )
+    }
+
+    @available(*, deprecated, message: "Fourteen parameters in which illegal grant/tx_code combinations are expressible. Use requestToken, which takes a TokenGrant.")
     public func processTokenRequest(
         did: String,
         tokenEndPoint: String?,

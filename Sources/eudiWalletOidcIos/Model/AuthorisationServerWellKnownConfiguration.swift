@@ -20,7 +20,37 @@ public struct AuthorisationServerWellKnownConfiguration: Codable {
     public var pushedAuthorizationRequestEndpoint: String?
     public var interactiveAuthorizationEndpoint: String?
     public var error: EUDIError?
-    
+
+    /// Builds a configuration a host already holds part of.
+    ///
+    /// Swift's synthesised memberwise initialiser is internal, so an app consuming this package
+    /// could not construct one at all — which it needs to when it has cached an endpoint but not
+    /// the whole discovered document. Everything is optional and defaults to nil; discovery fills
+    /// the rest.
+    public init(
+        issuer: String? = nil,
+        authorizationEndpoint: String? = nil,
+        tokenEndpoint: String? = nil,
+        jwksURI: String? = nil,
+        pushedAuthorizationRequestEndpoint: String? = nil,
+        requirePushedAuthorizationRequests: Bool? = nil,
+        interactiveAuthorizationEndpoint: String? = nil,
+        dpopSigningAlgValuesSupported: [String]? = nil,
+        tokenEndpointAuthMethodsSupported: [String]? = nil,
+        error: EUDIError? = nil
+    ) {
+        self.issuer = issuer
+        self.authorizationEndpoint = authorizationEndpoint
+        self.tokenEndpoint = tokenEndpoint
+        self.jwksURI = jwksURI
+        self.pushedAuthorizationRequestEndpoint = pushedAuthorizationRequestEndpoint
+        self.requirePushedAuthorizationRequests = requirePushedAuthorizationRequests
+        self.interactiveAuthorizationEndpoint = interactiveAuthorizationEndpoint
+        self.dpopSigningAlgValuesSupported = dpopSigningAlgValuesSupported
+        self.tokenEndpointAuthMethodsSupported = tokenEndpointAuthMethodsSupported
+        self.error = error
+    }
+
     enum CodingKeys: String, CodingKey {
         case redirectUris = "redirect_uris"
         case issuer

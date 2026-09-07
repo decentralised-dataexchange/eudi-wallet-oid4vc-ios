@@ -70,6 +70,22 @@ protocol IssueServiceProtocol {
      - Returns: A `TokenResponse` object if the request is successful, otherwise `nil`.
      */
     func processTokenRequest(did: String, tokenEndPoint: String?, code: String, codeVerifier: String, isPreAuthorisedCodeFlow: Bool, userPin: String?, version: String?, wua: String, pop: String, redirectURI: String?, isDPOPSupported: Bool, dpopKey: P256.Signing.PrivateKey?, dpopKeyHandler: SecureKeyProtocol?, dpopKeyPublicJwk: [String: Any]?) async -> TokenResponse?
+
+    /// The token request.
+    ///
+    /// Replaces the fourteen-parameter form above, in which illegal grant/`tx_code` combinations
+    /// were expressible. The grant is a ``TokenGrant``, so section 6.1's "`tx_code` MUST only be
+    /// used if the grant_type is `urn:ietf:params:oauth:grant-type:pre-authorized_code`" cannot be
+    /// broken, and the DPoP key travels inside ``WalletAttestation`` where ARF TS3's `cnf` rule is
+    /// checkable rather than a mismatch a caller can make silently.
+    func requestToken(
+        session: IssuanceSession,
+        wallet: WalletIdentity,
+        attestation: WalletAttestation?,
+        grant: TokenGrant,
+        dpopNonce: String?,
+        policy: TokenRequestPolicy
+    ) async -> TokenResponse
     
     
     // Processes a credential request to the specified credential endpoint.

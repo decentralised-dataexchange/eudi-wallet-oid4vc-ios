@@ -63,7 +63,7 @@ struct InteractiveAuthorizationTransport: AuthorizationRequestTransport {
         var body = parameters.asDictionary()
         body["interaction_types_supported"] = interactionTypesSupported
 
-        guard let request = AuthorizationHTTP.formPost(
+        guard let request = HTTPCall.formPost(
             url: interactiveEndpoint,
             parameters: body,
             attestation: attestation
@@ -71,7 +71,7 @@ struct InteractiveAuthorizationTransport: AuthorizationRequestTransport {
             throw AuthorizationError.unusable("This issuer's interactive authorization endpoint is not a usable URL")
         }
 
-        let result = try await AuthorizationHTTP.send(request, tag: "iar-request", session: urlSession)
+        let result = try await HTTPCall.send(request, tag: "iar-request", session: urlSession, onTransportFailure: authorizationTransportFailure)
 
         guard result.isSuccessful else {
             throw AuthorizationError.rejected(

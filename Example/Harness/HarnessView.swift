@@ -60,9 +60,15 @@ struct HarnessView: View {
             step("3 · Discover authorization server") { await model.discoverAuthServer() }
             step("4 · Request authorization") { await model.requestAuthorization() }
 
+            TextField("Transaction code (only if the offer declares tx_code)", text: $model.txCode)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+
+            step("5 · Request token") { await model.requestToken() }
+
             Divider().padding(.vertical, 4)
 
-            step("Run 1 → 4") { await model.runAll() }
+            step("Run 1 → 5") { await model.runAll() }
             Button("Clear") { model.clear() }
                 .buttonStyle(.bordered)
                 .frame(maxWidth: .infinity)

@@ -20,9 +20,21 @@ class ErrorHandler {
     ///
     /// Mirrors `ErrorHandler.processError` in the Android SDK.
     static func processError(data: Data?, contentType: String? = nil, httpStatus: Int? = nil) -> EUDIError? {
+            // Every exit below goes through `decorated` at the end, so the status and the raw body
+            // survive on all of them. They used to return early, which meant `httpStatus` was set
+            // only when the body happened to be JSON.
+            func decorated(_ error: EUDIError?, code: String? = nil, uri: String? = nil, raw: String? = nil) -> EUDIError? {
+                var out = error
+                out?.errorCode = code
+                out?.errorUri = uri
+                out?.httpStatus = httpStatus
+                out?.raw = raw
+                return out
+            }
+
             // Convert Data to String for initial check
             guard let data = data, let dataString = String(data: data, encoding: .utf8) else {
-                return EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1))
+                return decorated(EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1)))
             }
 
             // Attempt to parse the data string as a JSON object
@@ -31,9 +43,18 @@ class ErrorHandler {
                 jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
             } catch {
                 if contentType == "text/html" {
-                    return EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1))
+                    return decorated(
+                        EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1)),
+                        raw: dataString
+                    )
                 } else {
-                    return EUDIError(from: ErrorResponse(message: dataString, code: -1))
+                    return decorated(
+                        EUDIError(from: ErrorResponse(
+                            message: dataString.isEmpty ? "The request was refused" : dataString,
+                            code: -1
+                        )),
+                        raw: dataString
+                    )
                 }
             }
 
@@ -69,11 +90,11 @@ class ErrorHandler {
                 ?? ((jsonObject?["detail"] as? [String: Any])?["error"] as? String)
             let errorUri = jsonObject?["error_uri"] as? String
 
-            var decorated = errorResponse
-            decorated?.errorCode = oauthCode?.isEmpty == false ? oauthCode : nil
-            decorated?.errorUri = errorUri
-            decorated?.httpStatus = httpStatus
-            decorated?.raw = dataString
-            return decorated
+            return decorated(
+                errorResponse,
+                code: oauthCode?.isEmpty == false ? oauthCode : nil,
+                uri: errorUri,
+                raw: dataString
+            )
         }
 }
