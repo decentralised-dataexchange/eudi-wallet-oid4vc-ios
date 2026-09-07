@@ -22,6 +22,14 @@ public struct TokenResponse: Codable {
     public var lpidPop: String?
     public var authorizationDetails: [AuthorizationDetails]?
     public var dpopKey: P256.Signing.PrivateKey?
+
+    /// A nonce the authorization server supplied in a `DPoP-Nonce` header, on the success or on a
+    /// `use_dpop_nonce` challenge.
+    ///
+    /// RFC 9449 section 8.2: the client "MUST use the new nonce value supplied for the next token
+    /// request and for all subsequent token requests until the authorization server supplies a new
+    /// nonce". Carry it forward rather than discarding it.
+    public var dpopNonce: String?
     
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"

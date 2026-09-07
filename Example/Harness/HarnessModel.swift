@@ -30,6 +30,13 @@ final class HarnessModel: ObservableObject {
     /// the authorization request used, so the steps have to present the same wallet.
     private var wallet: WalletIdentity?
     private var codeVerifier: String?
+    private var authorizationCode: String?
+
+    /// What the authorization request sent, so the token request can repeat it verbatim.
+    private var sentRedirectUri: String?
+
+    /// The transaction code, when the offer asks for one.
+    @Published var txCode = ""
 
     /// Which transport the request goes through. Browser is what a scanned offer uses; inApp is the
     /// first-party path the wallet-provider attestation bootstrap takes.
@@ -44,6 +51,8 @@ final class HarnessModel: ObservableObject {
         authConfig = nil
         wallet = nil
         codeVerifier = nil
+        authorizationCode = nil
+        sentRedirectUri = nil
         output = ""
         log("Scanned", data)
     }
@@ -238,6 +247,8 @@ final class HarnessModel: ObservableObject {
 
             switch response.outcome {
             case .authorizationCode:
+                self.authorizationCode = response.code
+                self.sentRedirectUri = request?.redirectUri
                 self.log(heading, """
                 \(trace)
                   outcome            authorization code
@@ -280,6 +291,85 @@ final class HarnessModel: ObservableObject {
         }
     }
 
+    // MARK: - Step 5
+
+    /// `IssueService.requestToken(session:wallet:...)`
+    func requestToken() async {
+        await run("5 · Request token") {
+            let heading = "5 · Request token"
+            guard let authConfig = self.authConfig else {
+                self.log(heading, "Discover the authorization server first")
+                return false
+            }
+
+            let session = IssuanceSession(
+                credentialOffer: self.offer,
+                issuerConfig: self.issuerConfig,
+                authConfig: authConfig
+            )
+
+            let preAuthorizedCode = self.offer?.grants?
+                .urnIETFParamsOauthGrantTypePreAuthorizedCode?.preAuthorizedCode
+            let isPreAuthorised = preAuthorizedCode != nil && self.authorizationCode == nil
+            guard let code = isPreAuthorised ? preAuthorizedCode : self.authorizationCode else {
+                self.log(heading, "No code yet — run step 4 for an authorization-code offer")
+                return false
+            }
+
+            // The offer decides the grant; the harness does not choose. The SDK enforces section
+            // 6.1's "tx_code MUST be present if a tx_code object was in the offer, even an empty one".
+            let pin = self.txCode.isEmpty ? nil : self.txCode
+            let grant: TokenGrant = isPreAuthorised
+                ? .preAuthorized(code: code, txCode: pin)
+                : .authorizationCode(
+                    code: code,
+                    codeVerifier: self.codeVerifier,
+                    // The value the authorization request actually sent (RFC 6749 section 4.1.3).
+                    redirectUri: self.sentRedirectUri
+                )
+
+            let wallet = await self.walletIdentity()
+            let response = await IssueService(keyHandler: HarnessKeyHandler()).requestToken(
+                session: session,
+                wallet: wallet,
+                grant: grant
+            )
+
+            let trace = """
+              grant              \(grant.grantType)
+              endpoint           \(authConfig.tokenEndpoint ?? "—")
+              tx_code required   \(session.requiresTransactionCode)
+              tx_code sent       \(pin != nil ? "yes" : "no")
+              redirect_uri       \(self.sentRedirectUri ?? "—")
+              dpop nonce         \(response.dpopNonce ?? "—")
+            """
+
+            if let accessToken = response.accessToken {
+                self.log(heading, """
+                \(trace)
+                  outcome            access token
+                  token_type         \(response.tokenType ?? "—")
+                  expires_in         \(response.expiresIn.map(String.init) ?? "—")
+                  c_nonce            \(response.cNonce ?? "— (1.0 uses the nonce endpoint)")
+                  refresh_token      \(response.refreshToken != nil ? "present" : "—")
+                  auth details       \(response.authorizationDetails?.count ?? 0)
+                  access_token       \(accessToken.prefix(24))…
+                """)
+                return true
+            }
+
+            self.log(heading, """
+            \(trace)
+              outcome            FAILED
+              error              \(response.error?.errorCode ?? "—")
+              description        \(response.error?.message ?? "no reason given")
+              http status        \(response.error?.httpStatus.map(String.init) ?? "—")
+              raw                \(response.error?.raw?.prefix(200).description ?? "—")
+            """)
+            return false
+        }
+    }
+
     /// Runs the steps in sequence, stopping at the first that does not produce a result.
     func runAll() async {
         output = ""
@@ -289,7 +379,15 @@ final class HarnessModel: ObservableObject {
         guard issuerConfig != nil else { return }
         await discoverAuthServer()
         guard authConfig != nil else { return }
-        await requestAuthorization()
+
+        // A pre-authorized offer has no authorization leg; running it anyway is what makes a server
+        // complain about a missing issuer_state.
+        if offer?.grants?.authorizationCode == nil,
+           offer?.grants?.urnIETFParamsOauthGrantTypePreAuthorizedCode != nil {
+            await requestToken()
+        } else {
+            await requestAuthorization()
+        }
     }
 
     /// A throwaway P-256 identity, created once per scan. The harness is not a wallet and holds
