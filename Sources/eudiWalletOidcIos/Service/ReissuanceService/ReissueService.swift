@@ -31,7 +31,24 @@ public class ReissueService {
             let proofKeyAttestation = KeyAttestationService.forProof(walletProviderKa: keyAttestationJwt, attach: attachKeyAttestation)
             // Appendix F.1: iss is the original grant's client_id, omitted when that token was anonymous.
             let issuer = IssueService.proofIssuer(credentialOffer: credentialOffer, preAuthorizedGrantAnonymousAccessSupported: preAuthorizedGrantAnonymousAccessSupported, clientId: clientId, did: did)
-            guard let idToken = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, issuer: issuer, keyHandler: keyHandler, credentialTypes: credentialTypes, keyAttestation: proofKeyAttestation) else {return nil}
+            // `ProofService` moved to `CredentialProofFactory` under Issue/Credential/Proof. Only
+            // the call moves here: re-issuance keeps its own request body until the deferred pass,
+            // which is where its response handling belongs.
+            let proofSession = IssuanceSession(
+                credentialOffer: credentialOffer, issuerConfig: issuerConfig, authConfig: nil
+            )
+            guard let idToken = try? await CredentialProofFactory.create(
+                session: proofSession,
+                wallet: WalletIdentity(did: did),
+                keyHandler: keyHandler,
+                issuer: issuer,
+                nonce: nonce,
+                subject: .byConfiguration(
+                    credentialConfigurationId: credentialTypes.last ?? "",
+                    offerCredential: credentialOffer.credentials?.first
+                ),
+                keyAttestation: proofKeyAttestation
+            ) else { return nil }
             let issueHandler = IssueService(keyHandler: keyHandler)
             //let credentialTypes = getTypesFromCredentialOffer(credentialOffer: credentialOffer) ?? []
             let types = issueHandler.getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")

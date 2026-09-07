@@ -99,6 +99,22 @@ protocol IssueServiceProtocol {
      - accessToken: The access token for authentication.
      - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
      */
+    /// @see ``IssueService/requestCredential(session:wallet:token:subject:attestation:keyAttestation:encryption:nonce:dpopNonce:policy:)``
+    func requestCredential(
+        session: IssuanceSession,
+        wallet: WalletIdentity,
+        token: TokenResponse,
+        subject: CredentialSubject,
+        issuer: String?,
+        attestation: WalletAttestation?,
+        keyAttestation: String?,
+        encryption: CredentialEncryption?,
+        nonce: String?,
+        dpopNonce: String?,
+        policy: CredentialRequestPolicy
+    ) async -> CredentialOutcome
+
+    @available(*, deprecated, message: "Use requestCredential(session:wallet:token:subject:...), which returns a CredentialOutcome naming issued, deferred and failed instead of a CredentialResponse? where nil meant a dozen different things.")
     func processCredentialRequest(did: String, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String, credentialTypes: [String], tokenResponse: TokenResponse?, authDetails: AuthorizationDetails?, privateKey: ECPrivateKey?, isDpopSUpported: Bool, dpopKey: P256.Signing.PrivateKey?, dpopKeyHandler: SecureKeyProtocol?, dpopKeyPublicJwk: [String: Any]?, attachKeyAttestation: Bool, keyAttestationJwt: String?, clientId: String?, preAuthorizedGrantAnonymousAccessSupported: Bool?) async -> CredentialResponse?
     
     // Processes a deferred credential request to obtain the credential response in deffered manner.

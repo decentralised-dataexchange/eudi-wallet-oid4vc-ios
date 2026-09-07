@@ -189,7 +189,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
     /// The key proof's `iss` for a credential request authorized by the offer's grant, including with an
     /// access token refreshed from it: RFC 6749 section 6 binds the refresh token to the client it was
     /// issued to. Nil omits `iss`. Pre-1.0 draft pre-authorized offers keep `did`.
-    static func proofIssuer(credentialOffer: CredentialOffer, preAuthorizedGrantAnonymousAccessSupported: Bool?, clientId: String?, did: String) -> String? {
+    /// Public because ``requestCredential(session:wallet:token:subject:issuer:attestation:keyAttestation:encryption:nonce:dpopNonce:policy:)``
+    /// takes the `iss` it returns: a host cannot satisfy that parameter correctly without this.
+    public static func proofIssuer(credentialOffer: CredentialOffer, preAuthorizedGrantAnonymousAccessSupported: Bool?, clientId: String?, did: String) -> String? {
         let isPreAuthorised = credentialOffer.grants?.urnIETFParamsOauthGrantTypePreAuthorizedCode?.preAuthorizedCode != nil
         if isPreAuthorised && credentialOffer.version == "v1" { return did }
         return clientIdentity(isPreAuthorisedCodeFlow: isPreAuthorised, preAuthorizedGrantAnonymousAccessSupported: preAuthorizedGrantAnonymousAccessSupported, version: credentialOffer.version, clientId: clientId ?? did)
@@ -720,18 +722,53 @@ public class IssueService: NSObject, IssueServiceProtocol {
             }
         }
     
-    // MARK:  Processes a credential request to the specified credential endpoint.
-    
-    /** - Parameters
-     - did: The identifier for the DID key.
-     - secureKey: A wrapper object containing the public and private encryption keys
-     - credentialOffer: The credential offer object containing offer details.
-     - credentialEndpointUrlString: The URL string of the credential endpoint.
-     - c_nonce: The nonce value for the credential request.
-     - accessToken: The access token for authentication.
-     
-     - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
-     */
+    // MARK: - The credential request (OpenID4VCI 1.0 section 8)
+
+    /// Asks the issuer for a credential.
+    ///
+    /// - Parameter subject: which credential, in the form section 8.2 requires. Build it with
+    ///   ``CredentialSubject/of(session:token:credential:)`` rather than choosing a case by hand --
+    ///   the rule is the specification's and lives there.
+    /// - Parameter keyAttestation: the wallet-provider Key Attestation, when one is owed. Pass what
+    ///   `KeyAttestationService.forProof(walletProviderKa:attach:)` returns; TS3 2.2.2.1 forbids the
+    ///   wallet minting its own.
+    /// - Parameter issuer: the proof's `iss` -- the `client_id` the token was obtained with, or
+    ///   `nil` to omit the claim, which Appendix F.1 requires when the token came through
+    ///   anonymous access. Compute it with ``proofIssuer(credentialOffer:preAuthorizedGrantAnonymousAccessSupported:clientId:did:)``;
+    ///   it has no default because passing the DID by reflex is the bug that rule exists to stop.
+    /// - Parameter nonce: leave nil and the SDK fetches one per request from the Nonce Endpoint
+    ///   (section 7). Callers used to do this themselves, which is why a single nonce was reused
+    ///   for every credential in a multi-credential offer.
+    /// - Parameter dpopNonce: defaults to the one the token response carried, RFC 9449 section 8.2.
+    public func requestCredential(
+        session: IssuanceSession,
+        wallet: WalletIdentity,
+        token: TokenResponse,
+        subject: CredentialSubject,
+        issuer: String?,
+        attestation: WalletAttestation? = nil,
+        keyAttestation: String? = nil,
+        encryption: CredentialEncryption? = nil,
+        nonce: String? = nil,
+        dpopNonce: String? = nil,
+        policy: CredentialRequestPolicy = .standard
+    ) async -> CredentialOutcome {
+        await CredentialRequestResolver(policy: policy, keyHandler: keyHandler).resolve(
+            session: session,
+            wallet: wallet,
+            token: token,
+            subject: subject,
+            issuer: issuer,
+            attestation: attestation,
+            keyAttestation: keyAttestation,
+            encryption: encryption,
+            nonce: nonce,
+            dpopNonce: dpopNonce,
+            urlSession: session_urlSession()
+        )
+    }
+
+    @available(*, deprecated, message: "Use requestCredential(session:wallet:token:subject:...), which returns a CredentialOutcome naming issued, deferred and failed instead of a CredentialResponse? where nil meant a dozen different things.")
     public func processCredentialRequest(
         did: String,
         nonce: String,
@@ -741,236 +778,65 @@ public class IssueService: NSObject, IssueServiceProtocol {
         format: String,
         credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, isDpopSUpported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil, clientId: String? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil) async -> CredentialResponse? {
 
-            let jsonDecoder = JSONDecoder()
-            guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        // `format` and `tokenResponse` were dead here: the format was re-derived from the metadata
+        // two lines in, and the token response was read by nothing once the c_nonce gate went.
+        _ = format
 
-            // ARF TS3 v1.5: attach the wallet-provider Key Attestation to the proof.
-            let proofKeyAttestation = KeyAttestationService.forProof(walletProviderKa: keyAttestationJwt, attach: attachKeyAttestation)
-            // Appendix F.1: iss is the client_id the token request sent, omitted when that was anonymous.
-            let issuer = IssueService.proofIssuer(credentialOffer: credentialOffer, preAuthorizedGrantAnonymousAccessSupported: preAuthorizedGrantAnonymousAccessSupported, clientId: clientId, did: did)
-            guard let idToken = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, issuer: issuer, keyHandler: keyHandler, credentialTypes: credentialTypes, keyAttestation: proofKeyAttestation) else {return nil}
-            
-            //let credentialTypes = getTypesFromCredentialOffer(credentialOffer: credentialOffer) ?? []
-            let types = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")
-            let formatT = getFormatFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
-            let doctType = getDocTypeFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last)
-            var params: [String: Any] = [:]
-            if authDetails != nil && authDetails?.type == "openid_credential" && authDetails?.credentialIdentifiers != nil {
-                    params = [
-                        "credential_identifier": authDetails?.credentialIdentifiers?.first,
-                        "proof": [
-                            "proof_type": "jwt",
-                            "jwt": idToken
-                        ]
-                    ]
-            } else if authDetails != nil && authDetails?.type == "openid_credential" && authDetails?.credentialConfigId != nil && issuerConfig.nonceEndPoint != nil {
-                params = [
-                    "credential_configuration_id": authDetails?.credentialConfigId,
-                    "proof": [
-                        "proof_type": "jwt",
-                        "jwt": idToken
-                    ]
-                ]
-            } else if authDetails == nil && issuerConfig.nonceEndPoint != nil {
-                // OpenID4VCI 1.0 - an issuer that publishes a nonce endpoint wants
-                // credential_configuration_id, never the legacy format+vct body.
-                // This also required cNonce to be absent from the token response,
-                // which excluded issuers that publish a nonce endpoint AND return a
-                // c_nonce with the token (BankID does both). Those fell through to
-                // the legacy shape and were answered "Invalid request format".
-                // Android dropped the same gate for the same reason.
-                params = [
-                    "credential_configuration_id": credentialTypes.first,
-                    "proof": [
-                        "proof_type": "jwt",
-                        "jwt": idToken
-                    ]
-                ]
-            } else if formatT == "mso_mdoc" {
-                params = [
-                    "doctype": doctType,
-                    "format": formatT,
-                    "proof": [
-                        "proof_type": "jwt",
-                        "jwt": idToken
-                    ]
-                ]
-            } else {
-                if types is String {
-                    params = [
-                        "vct": types ?? "",
-                        "format": formatT ?? "jwt_vc",
-                        "proof": [
-                            "proof_type": "jwt",
-                            "jwt": idToken
-                        ]
-                    ]
-                }else{
-                    params = [
-                        "credential_definition": [
-                            "type": types ?? []
-                        ],
-                        "format": formatT ?? "jwt_vc",
-                        "proof": [
-                            "proof_type": "jwt",
-                            "jwt": idToken
-                        ]
-                    ]
-                }
-                if issuerConfig.credentialsSupported?.version == "v1" {
-                    params = [
-                        "types": credentialTypes,
-                        "format": formatT ?? "jwt_vc",
-                        "proof": [
-                            "proof_type": "jwt",
-                            "jwt": idToken
-                        ]
-                    ]
-                } else {
-                    if let data = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "") {
-                        if let dataArray = data as? [String] {
-                            params = [
-                                "credential_definition": [
-                                    "type": dataArray ?? []
-                                ],
-                                "format": formatT ?? "jwt_vc",
-                                "proof": [
-                                    "proof_type": "jwt",
-                                    "jwt": idToken
-                                ]
-                            ]
-                        } else if let dataString = data as? String {
-                            params = [
-                                "vct": dataString,
-                                "format": formatT ?? "jwt_vc",
-                                "proof": [
-                                    "proof_type": "jwt",
-                                    "jwt": idToken
-                                ]
-                            ]
-                        }
-                    }
-                }
-            }
-            
-            // OpenID4VCI 1.0 8.2 carries `proofs` - an object with one member named
-            // for the proof type, holding a non-empty array. Singular `proof` is the
-            // pre-1.0 shape and stays for issuers still on it, which is why this is
-            // a switch rather than a rewrite.
-            //
-            // Which shape applies is read from the configuration of the credential
-            // being requested. It used to read whichever entry a Swift Dictionary
-            // happened to yield first: unlike Gson's LinkedTreeMap on Android, which
-            // preserves the order the JSON arrived in, Swift's Dictionary has no
-            // order at all - so with more than one credential configuration the
-            // wallet picked a different one from run to run and could send the shape
-            // belonging to a credential it was not requesting.
-            let requestedConfig = credentialTypes.last.flatMap { issuerConfig.credentialsSupported?.dataSharing?[$0] }
-            if requestedConfig?.credentialMetadata != nil {
-                params.removeValue(forKey: "proof")
-                var proofsDict: [String: Any] = [:]
-                proofsDict["jwt"] = [idToken]
-                params["proofs"] = proofsDict
-            }
-            
-            if issuerConfig.credentialResponseEncryption != nil && issuerConfig.credentialResponseEncryption?.algValuesSupported?.contains("ECDH-ES") == true && issuerConfig.credentialResponseEncryption?.encValuesSupported?.contains("A128CBC-HS256") == true {
-                let jwk = JWEEncryptor().generateEphemeralEncryptionJWK(privateKey: privateKey)
-                params["credential_response_encryption"] = ["jwk": jwk, "alg": "ECDH-ES", "enc": "A128CBC-HS256"]
-            }
-            // Create URL for the credential endpoint
-            guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
-            
-            // Set up the request for the credential endpoint
-            request = URLRequest(url: url)
-            if issuerConfig.credentialRequestEncryption?.encryptionRequired == true  {
-                request.setValue("application/jwt", forHTTPHeaderField: "Content-Type")
-            } else {
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            }
-            if isDpopSUpported {
-                let athClaims: [String: Any] = ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken)]
-                // CS-04: bind DPoP to the WIA cnf (SE) key when attestation is active.
-                let dpopProof: String?
-                if let dpopHandler = dpopKeyHandler, let dpopJwk = dpopKeyPublicJwk {
-                    dpopProof = DPoPProofService.generateProof(tokenEndpoint: issuerConfig.credentialEndpoint ?? "", keyHandler: dpopHandler, publicJwk: dpopJwk, claims: athClaims)
-                } else {
-                    dpopProof = DPoPProofService.generateProof(tokenEndpoint: issuerConfig.credentialEndpoint ?? "", dpopKey: dpopKey, claims: athClaims)
-                }
-                request.setValue( "DPoP \(accessToken)", forHTTPHeaderField: "Authorization")
-                request.setValue( dpopProof, forHTTPHeaderField: "DPoP")
-            } else {
-                request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            }
-            request.httpMethod = "POST"
-            if issuerConfig.credentialRequestEncryption?.encryptionRequired == true {
-                let credentialRequestEncryptionJwks = issuerConfig.credentialRequestEncryption?.jwks?.first?.dictionary
-                var encryptRequest = ""
-                do {
-                    let supportedEncryptions = issuerConfig.credentialResponseEncryption?.encValuesSupported
-                    encryptRequest = try await JWEEncryptor().encrypt(payload: params, jwks: credentialRequestEncryptionJwks, supportedEncryptions: supportedEncryptions)
-                } catch {
-                    encryptRequest = ""
-                }
-                // Convert the parameters to JSON data and set it as the request body
-                let requestBodyData = encryptRequest.data(using: .utf8)
-                request.httpBody =  requestBodyData
-            } else {
-                let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
-                request.httpBody =  requestBodyData
-            }
-            
-            // Perform the request and handle the response
-            do {
-                let (data, response) = try await NetworkLogger.send(request, tag: "credential-request")
-                let httpRes = response as? HTTPURLResponse
-                if httpRes?.statusCode ?? 0 >= 400 {
-                    let errorString = String(data: data, encoding: .utf8)
-                    let error = EUDIError(from: ErrorResponse(message: errorString))
-                    if let eudiErrorData = ErrorHandler.processError(data: data, contentType: httpRes?.value(forHTTPHeaderField: "Content-Type")) {
-                        return CredentialResponse(fromError: eudiErrorData)
-                    } else {
-                        return CredentialResponse(fromError: error)
-                    }
-                }
-                var jsonObject: [String: Any]?
-                var responseData: Data?
-                if httpRes?.value(forHTTPHeaderField: "Content-Type") == "application/jwt", let responseString = String(data: data, encoding: .utf8) {
-                    if let decryptedData = JWEDecryptor().decrypt(responseString, privateKey: privateKey) {
-                        jsonObject = try JSONSerialization.jsonObject(with: decryptedData.data(using: .utf8)!, options: []) as? [String: Any]
-                        responseData = decryptedData.data(using: .utf8)!
-                    }
-                } else {
-                    responseData = data
-                    jsonObject = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
-                }
-                guard let jsonObject = jsonObject, let responseData = responseData  else { return nil }
-                if jsonObject["acceptance_token"] != nil {
-                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: responseData)
-                    return CredentialResponse(from: model)
-                    
-                } else if jsonObject["transaction_id"] != nil {
-                    let modelV2 = try jsonDecoder.decode(CredentialResponseV2.self, from: responseData)
-                    return CredentialResponse(from: modelV2)
-                } else if jsonObject["acceptance_token"] == nil && jsonObject["transaction_id"] == nil {
-                    let model = try jsonDecoder.decode(CredentialResponseV1.self, from: responseData)
-                    return CredentialResponse(from: model)
-                } else {
-                    //let error = EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil))
-                    let error = ErrorHandler.processError(data: data, contentType: httpRes?.value(forHTTPHeaderField: "Content-Type"))
-                    return CredentialResponse(fromError: error ?? EUDIError(from: ErrorResponse(message: "Invalid data format", code: nil)))
-                }
-            } catch {
-                debugPrint("Process credential request failed: \(error)")
-                let nsError = error as NSError
-                let errorCode = nsError.code
-                let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
-                return CredentialResponse(fromError: error)
-            }
-        }
+        let session = IssuanceSession(
+            credentialOffer: credentialOffer,
+            issuerConfig: issuerConfig,
+            authConfig: nil
+        )
+
+        var token = tokenResponse ?? TokenResponse()
+        token.accessToken = accessToken
+        if let authDetails { token.authorizationDetails = [authDetails] }
+        // The caller's flag is what decided the scheme before; honour it rather than changing
+        // behaviour under callers that have not migrated.
+        if isDpopSUpported { token.tokenType = "DPoP" }
+
+        // Which offer entry this call is for. The old body read `credentialTypes.first` in one
+        // branch and `.last` in another; matching on either is closer to both than picking one.
+        let credential = credentialOffer.credentials?.first { entry in
+            guard let types = entry.types else { return entry.doctype.map(credentialTypes.contains) ?? false }
+            return types.contains { credentialTypes.contains($0) }
+        } ?? credentialOffer.credentials?.first
+
+        let attestation = isDpopSUpported
+            ? WalletAttestation(
+                attestationJwt: nil,
+                proofOfPossession: nil,
+                dpopKey: dpopKey,
+                dpopKeyHandler: dpopKeyHandler,
+                dpopKeyPublicJwk: dpopKeyPublicJwk
+              )
+            : nil
+
+        let outcome = await requestCredential(
+            session: session,
+            wallet: WalletIdentity(did: did),
+            token: token,
+            subject: CredentialSubject.of(session: session, token: token, credential: credential),
+            // Appendix F.1: iss is the client_id the token request sent, omitted when anonymous.
+            issuer: IssueService.proofIssuer(
+                credentialOffer: credentialOffer,
+                preAuthorizedGrantAnonymousAccessSupported: preAuthorizedGrantAnonymousAccessSupported,
+                clientId: clientId,
+                did: did
+            ),
+            attestation: attestation,
+            keyAttestation: KeyAttestationService.forProof(
+                walletProviderKa: keyAttestationJwt, attach: attachKeyAttestation
+            ),
+            encryption: CredentialEncryption(
+                responseKey: privateKey,
+                request: issuerConfig.credentialRequestEncryption
+            ),
+            nonce: nonce.isEmpty ? nil : nonce
+        )
+        return CredentialResponse(from: outcome)
+    }
+
 
     // MARK: - Processes a deferred credential request to obtain the credential response in deffered manner.
     

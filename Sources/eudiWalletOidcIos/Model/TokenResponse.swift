@@ -31,6 +31,19 @@ public struct TokenResponse: Codable {
     /// nonce". Carry it forward rather than discarding it.
     public var dpopNonce: String?
     
+    /// An empty token response, for a host assembling one from values it already holds.
+    ///
+    /// The synthesised memberwise initialiser is internal, so without this a host cannot construct
+    /// a `TokenResponse` at all -- only decode one. `data-wallet-ios` needs to, to carry an access
+    /// token obtained on one screen into a credential request made on another.
+    public init() {}
+
+    /// A failed token response. Declaring ``init()`` above suppresses the synthesised memberwise
+    /// initialiser the resolver used for this, so it is spelled out.
+    init(error: EUDIError?) {
+        self.error = error
+    }
+
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
         case tokenType = "token_type"
