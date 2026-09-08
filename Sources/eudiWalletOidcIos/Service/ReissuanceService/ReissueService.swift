@@ -52,7 +52,14 @@ public class ReissueService {
                         "jwt": idToken
                     ]
                 ]
-            } else if tokenResponse?.cNonce == nil && authDetails == nil && issuerConfig.nonceEndPoint != nil {
+            } else if authDetails == nil && issuerConfig.nonceEndPoint != nil {
+                // OpenID4VCI 1.0 - an issuer that publishes a nonce endpoint wants
+                // credential_configuration_id, never the legacy format+vct body.
+                // This also required cNonce to be absent from the token response,
+                // which excluded issuers that publish a nonce endpoint AND return a
+                // c_nonce with the token (BankID does both). Those fell through to
+                // the legacy shape and were answered "Invalid request format".
+                // Android dropped the same gate for the same reason.
                 params = [
                     "credential_configuration_id": credentialTypes.first,
                     "proof": [
@@ -127,9 +134,8 @@ public class ReissueService {
                 }
             }
             
-            if let dataSharing = issuerConfig.credentialsSupported?.dataSharing,
-                let firstValue = dataSharing.values.first,
-                firstValue.credentialMetadata != nil  {
+            let requestedConfig = credentialTypes.last.flatMap { issuerConfig.credentialsSupported?.dataSharing?[$0] }
+            if requestedConfig?.credentialMetadata != nil {
                 params.removeValue(forKey: "proof")
                 var proofsDict: [String: Any] = [:]
                 proofsDict["jwt"] = [idToken]
@@ -151,7 +157,7 @@ public class ReissueService {
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             }
             if tokenResponse?.tokenType == "DPoP" {
-                let dpopProof = DPoPProofService.generateProof(tokenEndpoint: issuerConfig.credentialEndpoint ?? "", dpopKey: tokenResponse?.dpopKey, claims: ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken ?? "")])
+                let dpopProof = DPoPProofService.generateProof(tokenEndpoint: issuerConfig.credentialEndpoint ?? "", dpopKey: tokenResponse?.dpopKey, claims: ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken)])
                 request.setValue( "DPoP \(accessToken)", forHTTPHeaderField: "Authorization")
                 request.setValue( dpopProof, forHTTPHeaderField: "DPoP")
             } else {
