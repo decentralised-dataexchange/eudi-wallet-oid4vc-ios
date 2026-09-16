@@ -19,6 +19,9 @@ public struct AuthorisationServerWellKnownConfiguration: Codable {
     public var requirePushedAuthorizationRequests: Bool?
     public var pushedAuthorizationRequestEndpoint: String?
     public var interactiveAuthorizationEndpoint: String?
+    /// OpenID4VCI 1.0 section 12.3: whether the token endpoint accepts a Pre-Authorized Code without a
+    /// `client_id`. Absent means false.
+    public var preAuthorizedGrantAnonymousAccessSupported: Bool?
     public var error: EUDIError?
     
     enum CodingKeys: String, CodingKey {
@@ -47,6 +50,7 @@ public struct AuthorisationServerWellKnownConfiguration: Codable {
         case pushedAuthorizationRequestEndpoint = "pushed_authorization_request_endpoint"
         case interactiveAuthorizationEndpoint = "interactive_authorization_endpoint"
         case dpopSigningAlgValuesSupported = "dpop_signing_alg_values_supported"
+        case preAuthorizedGrantAnonymousAccessSupported = "pre-authorized_grant_anonymous_access_supported"
     }
 }
 // MARK: - RequestAuthenticationMethodsSupported

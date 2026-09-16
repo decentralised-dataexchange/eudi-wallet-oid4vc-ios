@@ -12,7 +12,7 @@ import JOSESwift
 
 class ProofService {
     
-    static func generateProof(nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, did: String, keyHandler: SecureKeyProtocol, credentialTypes: [String], keyAttestation: String? = nil) async -> String? {
+    static func generateProof(nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, did: String, issuer: String?, keyHandler: SecureKeyProtocol, credentialTypes: [String], keyAttestation: String? = nil) async -> String? {
         // Resolve the key ONCE. generateSecureKey() is load-or-create, so every
         // extra call is a chance to mint a replacement rather than observe the
         // existing key - which would both change what gets signed and make any
@@ -46,13 +46,15 @@ class ProofService {
         
         // Generate JWT payload
         let currentTime = Int(Date().epochTime) ?? 0
-        let payload = ([
-            "iss": did,
+        var claims: [String: Any] = [
             "iat": currentTime,
             "aud": "\(credentialOffer.credentialIssuer ?? "")",
             "exp": currentTime + 86400,
             "nonce": "\(nonce)"
-        ] as [String : Any]).toString() ?? ""
+        ]
+        // The client_id, or no iss at all when the token was obtained anonymously (Appendix F.1).
+        if let issuer { claims["iss"] = issuer }
+        let payload = claims.toString() ?? ""
         let headerData = Data(headerString.utf8)
         guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: secureData?.privateKey) else{return nil}
         // TS3 2.2.2.1: a jwt proof carrying a key attestation SHALL be signed with

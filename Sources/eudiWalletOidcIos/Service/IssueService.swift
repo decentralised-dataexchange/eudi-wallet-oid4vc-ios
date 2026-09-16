@@ -209,6 +209,26 @@ public class IssueService: NSObject, IssueServiceProtocol {
         wuaSub(wua) ?? fallbackDid
     }
 
+    /// The `client_id` the token request sends, which is also the key proof's `iss`. Nil means neither.
+    /// OpenID4VCI 1.0 Appendix F.1: `iss` is omitted when the token was obtained through anonymous
+    /// access, which section 12.3's `pre-authorized_grant_anonymous_access_supported` (default false)
+    /// decides. Pre-1.0 draft pre-authorized offers never sent `client_id`, and still don't.
+    static func clientIdentity(isPreAuthorisedCodeFlow: Bool, preAuthorizedGrantAnonymousAccessSupported: Bool?, version: String?, clientId: String) -> String? {
+        let identity = clientId.isEmpty ? nil : clientId
+        guard isPreAuthorisedCodeFlow else { return identity }
+        if version == "v1" { return nil }
+        return preAuthorizedGrantAnonymousAccessSupported == true ? nil : identity
+    }
+
+    /// The key proof's `iss` for a credential request authorized by the offer's grant, including with an
+    /// access token refreshed from it: RFC 6749 section 6 binds the refresh token to the client it was
+    /// issued to. Nil omits `iss`. Pre-1.0 draft pre-authorized offers keep `did`.
+    static func proofIssuer(credentialOffer: CredentialOffer, preAuthorizedGrantAnonymousAccessSupported: Bool?, clientId: String?, did: String) -> String? {
+        let isPreAuthorised = credentialOffer.grants?.urnIETFParamsOauthGrantTypePreAuthorizedCode?.preAuthorizedCode != nil
+        if isPreAuthorised && credentialOffer.version == "v1" { return did }
+        return clientIdentity(isPreAuthorisedCodeFlow: isPreAuthorised, preAuthorizedGrantAnonymousAccessSupported: preAuthorizedGrantAnonymousAccessSupported, version: credentialOffer.version, clientId: clientId ?? did)
+    }
+
     public func processAuthorisationRequest(did: String,
                                             credentialOffer: CredentialOffer,
                                             codeVerifier: String,
@@ -587,7 +607,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         version: String?,
         wua: String,
         pop: String,
-        redirectURI: String?, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil) async -> TokenResponse? {
+        redirectURI: String?, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil) async -> TokenResponse? {
             
             if isPreAuthorisedCodeFlow {
                 let tokenResponse =
@@ -596,7 +616,8 @@ public class IssueService: NSObject, IssueServiceProtocol {
                                                          tokenEndpoint: tokenEndPoint ?? "",
                                                          version: version,
                                                          wua: wua,
-                                                         pop: pop, isDPOPSupported: isDPOPSupported, dpopKey: dpopKey, dpopKeyHandler: dpopKeyHandler, dpopKeyPublicJwk: dpopKeyPublicJwk)
+                                                         pop: pop, isDPOPSupported: isDPOPSupported, dpopKey: dpopKey, dpopKeyHandler: dpopKeyHandler, dpopKeyPublicJwk: dpopKeyPublicJwk,
+                                                         clientId: IssueService.clientIdentity(isPreAuthorisedCodeFlow: true, preAuthorizedGrantAnonymousAccessSupported: preAuthorizedGrantAnonymousAccessSupported, version: version, clientId: IssueService.clientId(wua: wua, fallbackDid: did)))
                 return tokenResponse
             } else {
                 let codeVal = code.removingPercentEncoding ?? ""
@@ -631,7 +652,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
         format: String,
-        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, isDpopSUpported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil) async -> CredentialResponse? {
+        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, isDpopSUpported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil, clientId: String? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil) async -> CredentialResponse? {
 
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
@@ -642,7 +663,9 @@ public class IssueService: NSObject, IssueServiceProtocol {
 
             // ARF TS3 v1.5: attach the wallet-provider Key Attestation to the proof.
             let proofKeyAttestation = KeyAttestationService.forProof(walletProviderKa: keyAttestationJwt, attach: attachKeyAttestation)
-            guard let idToken = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, keyHandler: keyHandler, credentialTypes: credentialTypes, keyAttestation: proofKeyAttestation) else {return nil}
+            // Appendix F.1: iss is the client_id the token request sent, omitted when that was anonymous.
+            let issuer = IssueService.proofIssuer(credentialOffer: credentialOffer, preAuthorizedGrantAnonymousAccessSupported: preAuthorizedGrantAnonymousAccessSupported, clientId: clientId, did: did)
+            guard let idToken = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, issuer: issuer, keyHandler: keyHandler, credentialTypes: credentialTypes, keyAttestation: proofKeyAttestation) else {return nil}
             
             //let credentialTypes = getTypesFromCredentialOffer(credentialOffer: credentialOffer) ?? []
             let types = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")
@@ -967,7 +990,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         tokenEndpoint: String?,
         version: String?,
         wua: String,
-        pop: String, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil) async -> TokenResponse? {
+        pop: String, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil, clientId: String? = nil) async -> TokenResponse? {
             
             let jsonDecoder = JSONDecoder()
             let grantType = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
@@ -990,6 +1013,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 } else {
                     params = ["grant_type": grantType, "pre-authorized_code":preAuthCode] as [String: Any]
                 }
+                if let clientId { params["client_id"] = clientId }
             }
             let postString = UIApplicationUtils.shared.getFormEncodedString(params: params)
             
