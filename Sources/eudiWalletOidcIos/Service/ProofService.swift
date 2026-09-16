@@ -102,7 +102,7 @@ class ProofService {
         if bindingMethod == "did:jwk" {
             guard let jwk = signingJwk ?? keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data()) else { return nil }
             let base64JWK = base64URLEncodeJWK(jwk) ?? ""
-            keyId = "did:jwk:\(base64JWK)"
+            keyId = "did:jwk:\(base64JWK)#0"
         } else if bindingMethod == "jwk" {
             let jwk = signingJwk ?? keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
             do {
