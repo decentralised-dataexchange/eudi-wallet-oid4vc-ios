@@ -11,7 +11,7 @@ class DCQLAuthorisationResponseBuilder {
     
     func build(credentialsList: [[String]]?,
                presentationRequest: PresentationRequest?,
-               did: String, keyHandler: SecureKeyProtocol, isSca: Bool, keyIds: [[String]], isEncrypted: Bool = false) async -> [String: Any]{
+               did: String, keyHandler: SecureKeyProtocol, isSca: Bool, keyIds: [[String]], isEncrypted: Bool = false, amrInherenceFactor: String?, amrKnowledgeFactor: String?) async -> [String: Any]{
         
         var params: [String: Any] = [:]
         
@@ -36,7 +36,7 @@ class DCQLAuthorisationResponseBuilder {
                    case .jwt:
                        hasDoctype = false
                    }
-            let generatedVPToken = await generateVpTokensBasedOfCredntialFormat(credential: credentialsList[index], presentationRequest: presentationRequest, did: did, isMdoc: hasDoctype, index: index, keyHandler: keyHandler, format: format, isSca: isSca, keyIds: keyIds[index])
+            let generatedVPToken = await generateVpTokensBasedOfCredntialFormat(credential: credentialsList[index], presentationRequest: presentationRequest, did: did, isMdoc: hasDoctype, index: index, keyHandler: keyHandler, format: format, isSca: isSca, keyIds: keyIds[index], amrInherenceFactor: amrInherenceFactor, amrKnowledgeFactor: amrKnowledgeFactor)
             let clientDataString = presentationRequest?.clientMetaData?.replacingOccurrences(of: "+", with: " ")
             let clientMetadataJson = clientDataString?.data(using: .utf8)!
             var clientMetaDataModel: ClientMetaData? = nil
@@ -79,13 +79,13 @@ class DCQLAuthorisationResponseBuilder {
     private func generateVpTokensBasedOfCredntialFormat(credential:[String],
                                                         presentationRequest: PresentationRequest?,
                                                         did: String,
-                                                        isMdoc: Bool, index: Int, keyHandler: SecureKeyProtocol, format: String, isSca: Bool, keyIds: [String]) async -> [String] {
+                                                        isMdoc: Bool, index: Int, keyHandler: SecureKeyProtocol, format: String, isSca: Bool, keyIds: [String], amrInherenceFactor: String?, amrKnowledgeFactor: String?) async -> [String] {
         if format == "mso_mdoc"  {
             return await MDocVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest ?? nil, did: did, index: index, keyHandler: keyHandler, keyIds: keyIds) ?? []
         } else if format == "jwt_vc_json"  {
             return await JWTVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler) ?? []
         } else {
-            return await SDJWTVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds) ?? []
+            return await SDJWTVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds, amrInherenceFactor: amrInherenceFactor, amrKnowledgeFactor: amrKnowledgeFactor) ?? []
         }
     }
 }

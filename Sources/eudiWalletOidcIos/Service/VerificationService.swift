@@ -40,9 +40,9 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         presentationRequest: PresentationRequest?,
         credentialsList: [[String]]?,
         wua: String,
-        pop: String, isSca: Bool = false, keyIds: [[String]] = []) async -> WrappedVerificationResponse? {
+        pop: String, isSca: Bool = false, keyIds: [[String]] = [], amrInherenceFactor: String?, amrKnowledgeFactor: String?) async -> WrappedVerificationResponse? {
             
-            guard let params = await AuthorisationResponseHandler().prepareAuthorisationResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds),
+            guard let params = await AuthorisationResponseHandler().prepareAuthorisationResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds, amrInherenceFactor: amrInherenceFactor, amrKnowledgeFactor: amrKnowledgeFactor),
                   !params.isEmpty else {
                 // Building the response failed. Posting the empty set that used to
                 // stand in for it is worse than not posting: the verifier answers a
