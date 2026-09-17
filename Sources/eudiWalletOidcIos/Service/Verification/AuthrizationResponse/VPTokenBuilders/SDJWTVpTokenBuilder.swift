@@ -10,7 +10,7 @@ import CryptoKit
 
 class SDJWTVpTokenBuilder : VpTokenBuilder{
         
-    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol, isSca: Bool, keyIds: [String]) async -> [String]? {
+    func build(credentials: [String], presentationRequest: PresentationRequest?, did: String, index: Int?, keyHandler: SecureKeyProtocol, isSca: Bool, keyIds: [String], amrInherenceFactor: String?, amrKnowledgeFactor: String?) async -> [String]? {
         let item = credentials.first ?? ""
         guard !item.isEmpty else { return nil }
         var claims: [String: Any] = [:]
@@ -41,10 +41,19 @@ class SDJWTVpTokenBuilder : VpTokenBuilder{
             if isSca {
                 claims["response_mode"] = presentationRequest?.responseMode
                 claims["jti"] = UUID().uuidString
-                let amr: [[String: String]] = [
-                    ["possession": "key_in_local_native_wscd"],
-                    ["inherence": "fingerprint_device"]
+                var amr: [[String: String]] = [
+                    ["possession": "key_in_local_native_wscd"]
                 ]
+
+                if let amrInherenceFactor {
+                    amr.append(["inherence": amrInherenceFactor])
+                }
+
+                if let amrKnowledgeFactor {
+                    amr.append(["knowledge": amrKnowledgeFactor])
+                }
+
+                
                 claims["amr"] = amr
             }
         }
