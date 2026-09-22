@@ -66,6 +66,8 @@ struct HarnessView: View {
 
             step("5 · Request token") { await model.requestToken() }
             step("6 · Request credential") { await model.requestCredential() }
+            step("7 · Request deferred credential") { await model.requestDeferredCredential() }
+            step("8 · Notify the issuer") { await model.sendNotification() }
 
             Divider().padding(.vertical, 4)
 
