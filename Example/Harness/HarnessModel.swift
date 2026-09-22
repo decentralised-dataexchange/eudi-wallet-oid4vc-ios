@@ -39,6 +39,12 @@ final class HarnessModel: ObservableObject {
     /// `authorization_details` back off it.
     private var tokenResponse: TokenResponse?
 
+    /// Set when step 6 comes back deferred, so step 7 knows what to ask about.
+    private var deferredTransaction: DeferredTransaction?
+
+    /// Set when step 6 or step 7 issues, so step 8 has something to acknowledge.
+    private var notificationId: String?
+
     /// The transaction code, when the offer asks for one.
     @Published var txCode = ""
 
@@ -58,6 +64,8 @@ final class HarnessModel: ObservableObject {
         authorizationCode = nil
         sentRedirectUri = nil
         tokenResponse = nil
+        deferredTransaction = nil
+        notificationId = nil
         output = ""
         log("Scanned", data)
     }
@@ -444,6 +452,8 @@ final class HarnessModel: ObservableObject {
 
                 switch outcome {
                 case let .issued(issued, notificationId, cNonce):
+                    self.notificationId = notificationId
+                    self.deferredTransaction = nil
                     self.log(heading, """
                     \(trace)
                       outcome            issued
@@ -454,9 +464,10 @@ final class HarnessModel: ObservableObject {
                     """)
 
                 case let .deferred(transactionId, interval):
+                    self.deferredTransaction = .transactionId(transactionId)
                     self.log(heading, """
                     \(trace)
-                      outcome            deferred (section 9 — the request comes next pass)
+                      outcome            deferred — run step 7, which asks for it
                       transaction_id     \(transactionId)
                       interval           \(interval.map { String($0) } ?? "—")
                     """)
@@ -476,6 +487,156 @@ final class HarnessModel: ObservableObject {
             return allIssued && !credentials.isEmpty
         }
     }
+
+    // MARK: - Step 7
+
+    /// `IssueService.requestDeferredCredential(session:token:transaction:...)`
+    ///
+    /// Polls until the issuer stops deferring, waiting the `interval` it names (section 9.3: "the
+    /// minimum number of seconds the Wallet MUST wait"). It stops on a failure rather than polling
+    /// a dead transaction — which is what telling `issuance_pending` from `invalid_transaction_id`
+    /// buys.
+    func requestDeferredCredential() async {
+        await run("7 · Request deferred credential") {
+            let heading = "7 · Request deferred credential"
+            guard let token = self.tokenResponse, token.accessToken != nil else {
+                self.log(heading, "Get an access token first — run step 5")
+                return false
+            }
+            guard var transaction = self.deferredTransaction else {
+                self.log(heading, "Nothing is deferred — run step 6, and this lights up if it defers")
+                return false
+            }
+            guard let issuerConfig = self.issuerConfig else {
+                self.log(heading, "Discover the issuer first")
+                return false
+            }
+
+            let session = IssuanceSession(
+                credentialOffer: self.offer, issuerConfig: issuerConfig, authConfig: self.authConfig
+            )
+            let service = IssueService(keyHandler: HarnessKeyHandler())
+
+            for attempt in 1...Self.maxDeferredAttempts {
+                let outcome = await service.requestDeferredCredential(
+                    session: session,
+                    token: token,
+                    transaction: transaction
+                )
+
+                let trace = """
+                  endpoint           \(issuerConfig.deferredCredentialEndpoint ?? "—")
+                  transaction_id     \(transaction.value)
+                  attempt            \(attempt) of \(Self.maxDeferredAttempts)
+                """
+
+                switch outcome {
+                case let .issued(credentials, notificationId, _):
+                    self.notificationId = notificationId
+                    self.deferredTransaction = nil
+                    self.log(heading, """
+                    \(trace)
+                      outcome            issued
+                      credentials        \(credentials.count)
+                      notification_id    \(notificationId ?? "—")
+                      first              \(credentials.first?.prefix(48) ?? "")…
+                    """)
+                    return true
+
+                case let .deferred(transactionId, interval):
+                    // Section 9.2: still not ready, and it may name a fresh handle.
+                    transaction = .transactionId(transactionId)
+                    self.deferredTransaction = transaction
+                    let wait = min(interval ?? Self.defaultDeferredWait, Self.maxDeferredWait)
+                    self.log(heading, """
+                    \(trace)
+                      outcome            still pending
+                      next transaction   \(transactionId)
+                      interval           \(interval.map { "\($0) s" } ?? "— (none given)")
+                      waiting            \(wait) s
+                    """)
+                    try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+
+                case let .failed(error):
+                    self.log(heading, """
+                    \(trace)
+                      outcome            FAILED — polling stops here
+                      error              \(error.errorCode ?? "—")
+                      description        \(error.message ?? "no reason given")
+                      http status        \(error.httpStatus.map(String.init) ?? "—")
+                    """)
+                    return false
+                }
+            }
+
+            self.log(heading, "Gave up after \(Self.maxDeferredAttempts) attempts; the issuer is still deferring")
+            return false
+        }
+    }
+
+    // MARK: - Step 8
+
+    /// `NotificationService.notify(session:token:notificationId:event:...)`
+    ///
+    /// Section 11. Tells the issuer the credential was stored. The harness stores nothing, so this
+    /// is honest only because the credential did arrive; a real wallet sends `.credentialFailure`
+    /// when its own storage refused it — the value iOS could not send at all before this pass.
+    func sendNotification(event: NotificationEvent = .credentialAccepted) async {
+        await run("8 · Notify the issuer") {
+            let heading = "8 · Notify the issuer"
+            guard let token = self.tokenResponse, token.accessToken != nil else {
+                self.log(heading, "Get an access token first — run step 5")
+                return false
+            }
+            guard let notificationId = self.notificationId else {
+                self.log(heading, "No notification_id yet — the issuer sends one with the credential, so run step 6")
+                return false
+            }
+
+            let outcome = await NotificationService().notify(
+                session: IssuanceSession(
+                    credentialOffer: self.offer,
+                    issuerConfig: self.issuerConfig,
+                    authConfig: self.authConfig
+                ),
+                token: token,
+                notificationId: notificationId,
+                event: event
+            )
+
+            let trace = """
+              endpoint           \(self.issuerConfig?.notificationEndPoint ?? "— (section 11 is optional)")
+              notification_id    \(notificationId)
+              event              \(event.rawValue)
+            """
+
+            switch outcome {
+            case .acknowledged:
+                self.log(heading, """
+                \(trace)
+                  outcome            acknowledged
+                """)
+                return true
+
+            case let .failed(error):
+                self.log(heading, """
+                \(trace)
+                  outcome            FAILED
+                  error              \(error.errorCode ?? "—")
+                  description        \(error.message ?? "no reason given")
+                  http status        \(error.httpStatus.map(String.init) ?? "—")
+                """)
+                return false
+            }
+        }
+    }
+
+    /// The harness polls a handful of times rather than forever; a wallet schedules instead.
+    private static let maxDeferredAttempts = 5
+    /// Used when the issuer names no interval.
+    private static let defaultDeferredWait: Double = 5
+    /// So a hostile or mistaken interval cannot hang the harness.
+    private static let maxDeferredWait: Double = 30
 
     /// Runs the steps in sequence, stopping at the first that does not produce a result.
     func runAll() async {
