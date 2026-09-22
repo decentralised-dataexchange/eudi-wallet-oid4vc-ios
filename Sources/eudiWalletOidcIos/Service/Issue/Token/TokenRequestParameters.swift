@@ -27,8 +27,9 @@ struct TokenRequestParameters {
         switch grant {
         case let .preAuthorized(code, txCode):
             out["pre-authorized_code"] = code
-            // Section 6.1: client authentication is OPTIONAL for this grant, and the previous
-            // implementation sent no client_id here. Unchanged.
+            // Section 6.1 makes client authentication OPTIONAL here; `clientIdentity` below decides
+            // whether one goes out, so this is no longer unconditionally absent.
+            if let clientId, !clientId.isEmpty { out["client_id"] = clientId }
             if let txCode, !txCode.isEmpty { out[txCodeParameterName] = txCode }
 
         case let .authorizationCode(code, codeVerifier, redirectUri):
@@ -57,9 +58,19 @@ struct TokenRequestParameters {
             grant: grant,
             // The same rule the authorization request uses: the wallet unit identifier from the
             // attestation, falling back to the DID (RFC 6749 section 4.1.3 -- the two legs agree).
-            clientId: IssueService.clientId(
-                wua: attestation?.attestationJwt ?? "",
-                fallbackDid: wallet.did
+            //
+            // `clientIdentity` then applies Appendix F.1 / section 12.3: a pre-authorized grant
+            // sends no client_id when the server advertises anonymous access, and pre-1.0 drafts
+            // never sent one at all.
+            clientId: IssueService.clientIdentity(
+                isPreAuthorisedCodeFlow: grant.isPreAuthorized,
+                preAuthorizedGrantAnonymousAccessSupported:
+                    session.authConfig?.preAuthorizedGrantAnonymousAccessSupported,
+                version: session.credentialOffer?.version,
+                clientId: IssueService.clientId(
+                    wua: attestation?.attestationJwt ?? "",
+                    fallbackDid: wallet.did
+                )
             ),
             // 1.0 calls it tx_code; the pre-1.0 drafts called it user_pin.
             txCodeParameterName: session.credentialOffer?.version == "v1" ? userPin : txCode,

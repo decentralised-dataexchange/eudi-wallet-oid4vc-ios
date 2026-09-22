@@ -42,6 +42,13 @@ public enum TokenGrant {
         }
     }
 
+    /// Whether this is the pre-authorized grant, for the rules section 6.1 and Appendix F.1
+    /// attach to it specifically.
+    var isPreAuthorized: Bool {
+        if case .preAuthorized = self { return true }
+        return false
+    }
+
     var code: String {
         switch self {
         case let .authorizationCode(code, _, _): return code
