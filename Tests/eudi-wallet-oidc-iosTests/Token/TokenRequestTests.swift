@@ -42,9 +42,14 @@ final class TokenRequestTests: XCTestCase {
         return try! JSONDecoder().decode(CredentialOffer.self, from: Data(json.utf8))
     }
 
-    private func session(version: String = "v2", txCode: String? = nil) -> IssuanceSession {
+    private func session(
+        version: String = "v2",
+        txCode: String? = nil,
+        anonymousAccess: Bool? = nil
+    ) -> IssuanceSession {
         var authConfig = AuthorisationServerWellKnownConfiguration()
         authConfig.tokenEndpoint = "https://as.example.com/token"
+        authConfig.preAuthorizedGrantAnonymousAccessSupported = anonymousAccess
         return IssuanceSession(
             credentialOffer: offer(version: version, txCode: txCode),
             issuerConfig: nil,
@@ -97,7 +102,21 @@ final class TokenRequestTests: XCTestCase {
         XCTAssertEqual(out["grant_type"], TokenGrant.preAuthorizedGrantType)
         XCTAssertEqual(out["pre-authorized_code"], "pre-1")
         XCTAssertNil(out["code"])
-        // Section 6.1: client authentication is OPTIONAL for this grant.
+        // Appendix F.1 and section 12.3: the client identifies itself unless the server advertises
+        // `pre-authorized_grant_anonymous_access_supported`.
+        XCTAssertEqual(out["client_id"], "did:key:zabc")
+    }
+
+    func testAPreAuthorizedGrantSendsNoClientIdWhenAnonymousAccessIsAllowed() {
+        let out = body(grant: .preAuthorized(code: "pre-1"), session: session(anonymousAccess: true))
+
+        XCTAssertEqual(out["pre-authorized_code"], "pre-1")
+        XCTAssertNil(out["client_id"])
+    }
+
+    func testADraftPreAuthorizedOfferStillSendsNoClientId() {
+        let out = body(grant: .preAuthorized(code: "pre-1"), session: session(version: "v1"))
+
         XCTAssertNil(out["client_id"])
     }
 
