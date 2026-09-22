@@ -123,6 +123,18 @@ protocol IssueServiceProtocol {
      - deferredCredentialEndPoint - end point to call the deferred credential
      **/
     //    - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
+    /// @see ``IssueService/requestDeferredCredential(session:token:transaction:attestation:encryption:dpopNonce:policy:)``
+    func requestDeferredCredential(
+        session: IssuanceSession,
+        token: TokenResponse,
+        transaction: DeferredTransaction,
+        attestation: WalletAttestation?,
+        encryption: CredentialEncryption?,
+        dpopNonce: String?,
+        policy: DeferredRequestPolicy
+    ) async -> CredentialOutcome
+
+    @available(*, deprecated, message: "Use requestDeferredCredential(session:token:transaction:...), which tells issuance_pending from invalid_transaction_id and reports the issuer's interval instead of returning nil.")
     func processDeferredCredentialRequest(acceptanceToken: String, deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?, jwks: [String: Any]?, encryptionRequired: Bool?, encValuesSupported: [String]?, isDPOPSupported: Bool, dpopKeyHandler: SecureKeyProtocol?, dpopKeyPublicJwk: [String: Any]?) async -> CredentialResponse?
     
     func getFormatFromIssuerConfig(

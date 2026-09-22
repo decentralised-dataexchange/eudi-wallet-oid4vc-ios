@@ -846,6 +846,40 @@ public class IssueService: NSObject, IssueServiceProtocol {
      **/
     //    - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
     
+    // MARK: - The deferred credential request (OpenID4VCI 1.0 section 9)
+
+    /// Asks the issuer for a credential it deferred.
+    ///
+    /// Returns the same ``CredentialOutcome`` as ``requestCredential(session:wallet:token:subject:issuer:attestation:keyAttestation:encryption:nonce:dpopNonce:policy:)``:
+    /// section 9.2 makes the Deferred Credential Response the Credential Response, and says it "MAY
+    /// itself be deferred again" — which arrives back as `.deferred` with a fresh handle and the
+    /// issuer's `interval`. A caller polls until it stops being `.deferred`, and stops for good on
+    /// `.failed`.
+    ///
+    /// - Parameter transaction: the handle. ``DeferredTransaction`` carries the 1.0 `transaction_id`
+    ///   and the draft `acceptance_token` as separate cases, replacing the `version` string the old
+    ///   function branched on.
+    public func requestDeferredCredential(
+        session: IssuanceSession,
+        token: TokenResponse,
+        transaction: DeferredTransaction,
+        attestation: WalletAttestation? = nil,
+        encryption: CredentialEncryption? = nil,
+        dpopNonce: String? = nil,
+        policy: DeferredRequestPolicy = .standard
+    ) async -> CredentialOutcome {
+        await DeferredRequestResolver(policy: policy).resolve(
+            session: session,
+            token: token,
+            transaction: transaction,
+            attestation: attestation,
+            encryption: encryption,
+            dpopNonce: dpopNonce,
+            urlSession: session_urlSession()
+        )
+    }
+
+    @available(*, deprecated, message: "Use requestDeferredCredential(session:token:transaction:...), which tells issuance_pending from invalid_transaction_id and reports the issuer's interval instead of returning nil.")
     public func processDeferredCredentialRequest(
         acceptanceToken: String,
         deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?, jwks: [String: Any]?, encryptionRequired: Bool?, encValuesSupported: [String]?, isDPOPSupported: Bool = false, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil) async -> CredentialResponse? {

@@ -7,6 +7,34 @@
 import Foundation
 public class NotificationService {
     public init() {}
+
+    /// Tells the issuer what happened to a credential (section 11).
+    ///
+    /// Returns a ``NotificationOutcome`` rather than nothing: `sendNoticationStatus` decoded a
+    /// failure into a local it then discarded, so a caller could not tell an acknowledged
+    /// notification from one the issuer refused — section 11.2's 204 from a 400 naming
+    /// `invalid_notification_id`.
+    public func notify(
+        session: IssuanceSession,
+        token: TokenResponse,
+        notificationId: String,
+        event: NotificationEvent,
+        eventDescription: String? = nil,
+        attestation: WalletAttestation? = nil,
+        dpopNonce: String? = nil
+    ) async -> NotificationOutcome {
+        await NotificationRequestResolver().resolve(
+            session: session,
+            token: token,
+            notificationId: notificationId,
+            event: event,
+            eventDescription: eventDescription,
+            attestation: attestation,
+            dpopNonce: dpopNonce
+        )
+    }
+
+    @available(*, deprecated, message: "Returns Void, so an acknowledged notification and a refused one are indistinguishable. Use notify(session:token:notificationId:event:), which returns a NotificationOutcome.")
     
     public func sendNoticationStatus(endPoint: String?, event: String?, notificationID: String?, accessToken: String, refreshToken: String, tokenEndPoint: String) async {
         guard let url = URL(string: endPoint ?? "") else { return }
@@ -35,7 +63,12 @@ public class NotificationService {
         }
     }
     
+    @available(*, deprecated, message: "Token refresh moved to TokenRefreshService, mirroring services/tokenRefresh/ in the Android SDK. Use TokenRefreshService().refresh(refreshToken:tokenEndpoint:).")
     public func refreshAccessToken(refreshToken: String, endPoint: String) async -> (String?, String?) {
+        await TokenRefreshService().refresh(refreshToken: refreshToken, tokenEndpoint: endPoint)
+    }
+
+    private func legacyRefreshAccessToken(refreshToken: String, endPoint: String) async -> (String?, String?) {
         guard let url = URL(string: endPoint ?? "") else { return (nil, nil)}
         var request = URLRequest(url: url)
         var params: [String: Any] = [:]
@@ -69,7 +102,4 @@ public class NotificationService {
     }
     
 }
-public enum NotificationStatus: String {
-    case credentialAccepted = "credential_accepted"
-    case credentialDeleted = "credential_deleted"
-}
+
