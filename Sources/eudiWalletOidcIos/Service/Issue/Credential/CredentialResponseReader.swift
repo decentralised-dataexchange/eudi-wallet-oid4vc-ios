@@ -16,8 +16,9 @@ import Foundation
 enum CredentialResponseReader {
 
     /// - Parameter fallbackTransactionId: the handle the caller is already polling with, reused
-    ///   when the issuer defers without naming one. Only the deferred leg passes it: on a first
-    ///   credential request there is no prior handle, so there is nothing to fall back to.
+    ///   when a non-conformant issuer defers without naming one — see the `interval` branch below.
+    ///   Only the deferred leg passes it, and only when its policy allows: on a first credential
+    ///   request there is no prior handle, so there is nothing to fall back to.
     /// - Throws: ``CredentialRequestError/unusable(_:status:)`` when the body cannot be read at all.
     static func read(
         _ result: HTTPCall.Result,
@@ -68,11 +69,17 @@ enum CredentialResponseReader {
             credentials = [single]
         }
         guard !credentials.isEmpty else {
-            // Some issuers signal "still pending" with 200 + interval instead of section 9.3's
-            // 400 + issuance_pending, and name no transaction id in the body either. The interval
-            // is the only positive evidence that this means "come back later" rather than
-            // "something went wrong", so it gates the fallback: reuse the handle the caller is
-            // already polling with, and polling continues instead of failing outright.
+            // A shape 1.0 does not define. Section 9.3 signals a pending credential with 400 and
+            // `issuance_pending`; section 9.2 makes `transaction_id` REQUIRED in a 200 that defers
+            // again, and `interval` is not a member of the success response at all. An issuer met
+            // in the field sends 200 with `interval` and nothing else, so read strictly this is
+            // "neither a credential nor a transaction id" and polling stops on a credential that
+            // is still coming.
+            //
+            // The caller decides whether to accept it -- DeferredRequestPolicy.acceptIntervalOnlyAsPending
+            // withholds the fallback when it should not be. The `interval` still gates it here:
+            // it is the only positive evidence the response means "come back later" rather than
+            // "something went wrong".
             if let interval = json["interval"] as? Double, let fallbackTransactionId {
                 return .deferred(transactionId: fallbackTransactionId, interval: interval)
             }
