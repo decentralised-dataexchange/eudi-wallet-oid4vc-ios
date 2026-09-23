@@ -432,6 +432,18 @@ final class CredentialRequestTests: XCTestCase {
         XCTAssertEqual(cNonce, "next")
     }
 
+    /// The deferred leg reuses the handle it is polling with when an issuer defers without naming
+    /// one. The credential leg must not: this is the *first* request, so there is no prior handle,
+    /// and inventing one would start polling something that was never allocated.
+    func testA200CarryingOnlyAnIntervalIsAFailureOnTheCredentialLeg() async {
+        let (_, _, outcome) = await capture(
+            session: session(),
+            subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil),
+            responseBody: #"{"interval":7}"#
+        )
+        guard case .failed = outcome else { return XCTFail("expected failure, got \(outcome)") }
+    }
+
     func testASingularDraftCredentialStillArrives() async {
         let (_, _, outcome) = await capture(
             session: session(),
