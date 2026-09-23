@@ -173,6 +173,30 @@ final class IssuerMetadataResolverTests: XCTestCase {
 
     /// No size check by default: issuer metadata carrying embedded base64 `display` logos runs to
     /// hundreds of KB legitimately, and a fixed cap rejected real issuers.
+    /// Section 12.2.2 treats `Accept` as the signal for whether the wallet supports signed
+    /// metadata, so a verifier that would refuse a signature must not ask for one.
+    func testTheAcceptHeaderAdvertisesJwtOnlyWhenTheWalletCanVerifyOne() async {
+        serve([insertionPath: v1Metadata()])
+        _ = await resolve(verifier: RejectingSignedMetadataVerifier())
+        XCTAssertEqual(StubURLProtocol.lastRequest?.value(forHTTPHeaderField: "Accept"), "application/json")
+
+        serve([insertionPath: v1Metadata()])
+        _ = await resolve(verifier: AcceptingSignedMetadataVerifier())
+        XCTAssertEqual(
+            StubURLProtocol.lastRequest?.value(forHTTPHeaderField: "Accept"),
+            "application/json, application/jwt"
+        )
+    }
+
+    /// The shipped default is temporarily false: asking for `application/jwt` is what breaks
+    /// an issuer whose signed metadata carries no `typ`. Pinned so that turning it back
+    /// on is a deliberate act with a test to update, not a silent change.
+    func testTheProductionDefaultDoesNotAskForSignedMetadata() async {
+        serve([insertionPath: v1Metadata()])
+        _ = await resolve()
+        XCTAssertEqual(StubURLProtocol.lastRequest?.value(forHTTPHeaderField: "Accept"), "application/json")
+    }
+
     func testALargeDocumentIsAcceptedByDefault() async {
         XCTAssertNil(DiscoveryPolicy.standard.maxMetadataBytes)
 
@@ -203,5 +227,14 @@ final class IssuerMetadataResolverTests: XCTestCase {
     func testADisallowedSchemeIsRefusedBeforeAnyRequest() async {
         let result = await IssuerMetadataResolver().resolve("file:///etc/passwd")
         XCTAssertTrue(result.configuration.error?.message?.contains("unsupported scheme") == true)
+    }
+}
+
+/// Reports the capability so the `Accept` header can be exercised independently of the shipped
+/// default, which is temporarily false.
+private struct AcceptingSignedMetadataVerifier: SignedMetadataVerifier {
+    let supportsSignedMetadata = true
+    func verify(jwt: String, expectedIssuerIdentifier: String) async throws -> Data {
+        throw DiscoveryError.signedMetadataRejected("not reached: these tests serve JSON")
     }
 }
