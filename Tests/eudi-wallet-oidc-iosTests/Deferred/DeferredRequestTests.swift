@@ -204,6 +204,13 @@ final class DeferredRequestTests: XCTestCase {
         XCTAssertEqual(interval, 7)
     }
 
+    /// The accommodation is opt-out: an issuer can be held to section 9.3 instead.
+    func testStrictRefusesTheIntervalOnlyResponseTheSpecificationDoesNotDefine() async {
+        let (_, _, outcome) = await resolve(policy: .strict, responseBody: #"{"interval":7}"#)
+
+        guard case .failed = outcome else { return XCTFail("expected failure, got \(outcome)") }
+    }
+
     /// The interval is what distinguishes "come back later" from a malformed body. Without it the
     /// response really is unreadable, and saying so beats polling something that will never arrive.
     func testA200WithNoIntervalAndNoIdsIsStillAFailure() async {

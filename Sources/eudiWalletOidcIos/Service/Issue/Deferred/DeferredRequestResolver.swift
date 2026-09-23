@@ -127,7 +127,10 @@ struct DeferredRequestResolver {
 
         if result.isSuccessful {
             return try CredentialResponseReader.read(
-                result, encryption: encryption, fallbackTransactionId: transaction.value
+                result,
+                encryption: encryption,
+                // Only offered when the policy allows it; see acceptIntervalOnlyAsPending.
+                fallbackTransactionId: policy.acceptIntervalOnlyAsPending ? transaction.value : nil
             )
         }
 
