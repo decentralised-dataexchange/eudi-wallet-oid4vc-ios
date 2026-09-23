@@ -8,17 +8,21 @@ import Foundation
 ///
 /// Extracted from ``CredentialRequestResolver`` because section 9.2 makes the **Deferred** Credential
 /// Response the same shape as the Credential Response — "the Deferred Credential Response ... MAY
-/// itself be deferred again" — so the credential leg, the deferred leg and re-issuance all read the
-/// same body. Three copies of this is how the plural `credentials` array came to be honoured in one
-/// place and dropped in the others.
+/// itself be deferred again" — so the credential leg and the deferred leg read the same body, and
+/// re-issuance reaches it through the credential leg. Three copies of this is how the plural
+/// `credentials` array came to be honoured in one place and dropped in the others.
 ///
 /// Sections 8.3 and 9.2. Mirrors `CredentialResponseReader` in the Android SDK.
 enum CredentialResponseReader {
 
+    /// - Parameter fallbackTransactionId: the handle the caller is already polling with, reused
+    ///   when the issuer defers without naming one. Only the deferred leg passes it: on a first
+    ///   credential request there is no prior handle, so there is nothing to fall back to.
     /// - Throws: ``CredentialRequestError/unusable(_:status:)`` when the body cannot be read at all.
     static func read(
         _ result: HTTPCall.Result,
-        encryption: CredentialEncryption
+        encryption: CredentialEncryption,
+        fallbackTransactionId: String? = nil
     ) throws -> CredentialOutcome {
         guard !result.data.isEmpty else {
             throw CredentialRequestError.unusable("The issuer returned an empty credential response")
@@ -64,6 +68,14 @@ enum CredentialResponseReader {
             credentials = [single]
         }
         guard !credentials.isEmpty else {
+            // Some issuers signal "still pending" with 200 + interval instead of section 9.3's
+            // 400 + issuance_pending, and name no transaction id in the body either. The interval
+            // is the only positive evidence that this means "come back later" rather than
+            // "something went wrong", so it gates the fallback: reuse the handle the caller is
+            // already polling with, and polling continues instead of failing outright.
+            if let interval = json["interval"] as? Double, let fallbackTransactionId {
+                return .deferred(transactionId: fallbackTransactionId, interval: interval)
+            }
             throw CredentialRequestError.unusable(
                 "The issuer returned neither a credential nor a transaction id"
             )

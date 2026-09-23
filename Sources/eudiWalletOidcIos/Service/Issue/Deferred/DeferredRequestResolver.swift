@@ -126,7 +126,9 @@ struct DeferredRequestResolver {
         )
 
         if result.isSuccessful {
-            return try CredentialResponseReader.read(result, encryption: encryption)
+            return try CredentialResponseReader.read(
+                result, encryption: encryption, fallbackTransactionId: transaction.value
+            )
         }
 
         let error = ErrorHandler.processError(
