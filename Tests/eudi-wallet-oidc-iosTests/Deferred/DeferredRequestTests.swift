@@ -190,6 +190,32 @@ final class DeferredRequestTests: XCTestCase {
         XCTAssertEqual(interval, 5)
     }
 
+    /// Some issuers answer a still-pending poll with 200 and an `interval`, naming no transaction
+    /// id at all, rather than section 9.3's 400 + `issuance_pending`. Read strictly that is
+    /// "neither a credential nor a transaction id" and the polling stops; the handle we are already
+    /// polling with is the one the issuer still means, so it is reused.
+    func testA200CarryingOnlyAnIntervalKeepsPollingWithTheHandleWeAlreadyHold() async {
+        let (_, _, outcome) = await resolve(responseBody: #"{"interval":7}"#)
+
+        guard case let .deferred(transactionId, interval) = outcome else {
+            return XCTFail("expected deferred, got \(outcome)")
+        }
+        XCTAssertEqual(transactionId, "txn-1")
+        XCTAssertEqual(interval, 7)
+    }
+
+    /// The interval is what distinguishes "come back later" from a malformed body. Without it the
+    /// response really is unreadable, and saying so beats polling something that will never arrive.
+    func testA200WithNoIntervalAndNoIdsIsStillAFailure() async {
+        let (_, _, outcome) = await resolve(responseBody: "{}")
+
+        guard case let .failed(error) = outcome else { return XCTFail("expected failure") }
+        XCTAssertTrue(
+            error.message?.contains("neither a credential nor a transaction id") == true,
+            error.message ?? ""
+        )
+    }
+
     /// iOS-only: the exact `Content-Type` compare this replaces missed a charset parameter.
     func testAnEncryptedResponseWithACharsetParameterIsStillRecognised() async {
         let (_, _, outcome) = await resolve(
