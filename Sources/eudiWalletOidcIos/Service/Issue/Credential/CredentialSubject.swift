@@ -106,7 +106,7 @@ public extension CredentialSubject {
     /// The 1.0-versus-draft test is whether the issuer publishes a nonce endpoint. That is a proxy
     /// rather than a version field, and a deliberate one: an earlier gate on "the token response
     /// carried no c_nonce" excluded issuers that publish a nonce endpoint *and* return a c_nonce
-    /// with the token -- BankID does both -- and they reject the draft body with "Invalid request
+    /// with the token -- servers exist that do both -- and they reject the draft body with "Invalid request
     /// format".
     static func of(
         session: IssuanceSession,

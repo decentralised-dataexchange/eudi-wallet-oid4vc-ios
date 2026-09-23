@@ -8,7 +8,7 @@ import Foundation
 ///
 /// The default, and the last transport consulted. RFC 8252: for a scanned offer the browser must
 /// make the request so the authorization server's session cookie lands there -- interactive servers
-/// such as BankID depend on it.
+/// depend on it.
 struct BrowserAuthorizationRequestTransport: AuthorizationRequestTransport {
 
     let kind: AuthorizationTransportKind = .browser

@@ -17,7 +17,7 @@ public struct WrappedVerificationResponse {
     /// with it, and the Wallet sends the user agent there.
     public var redirectUri: String?
     /// The `Location` header of a 3xx answer. Not part of OpenID4VP - kept only
-    /// for wallet-mediated authorization (BankID SUA answers the presentation
+    /// for wallet-mediated authorization (the server answers the presentation
     /// with /login;jsessionid=... and the BROWSER must visit it to continue the
     /// authorization to the code). Always ranks below `redirectUri`.
     public var location: String?

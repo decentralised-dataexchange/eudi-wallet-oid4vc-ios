@@ -25,7 +25,7 @@ public class NonceService: NonceServiceProtocol {
         
         var request = URLRequest(url: url)
         // OpenID4VCI 1.0 nonce endpoint is unauthenticated. A Bearer copy of a
-        // DPoP-bound access token makes strict issuers (e.g. BankID) answer 401,
+        // DPoP-bound access token makes strict issuers answer 401,
         // and the flow then loses its c_nonce — so no Authorization header is sent.
         _ = accessToken
         request.httpMethod = "POST"

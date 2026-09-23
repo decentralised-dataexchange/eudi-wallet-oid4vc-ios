@@ -14,6 +14,9 @@ final class StubURLProtocol: URLProtocol {
     /// Answers a request, or throws to simulate a transport failure.
     static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
+    /// The most recent request served, so a test can assert on headers it does not control.
+    static var lastRequest: URLRequest?
+
     static func session() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
@@ -39,6 +42,7 @@ final class StubURLProtocol: URLProtocol {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
+        StubURLProtocol.lastRequest = request
         do {
             let (response, data) = try handler(request)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
