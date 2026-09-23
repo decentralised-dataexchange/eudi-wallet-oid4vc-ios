@@ -16,7 +16,7 @@ import Foundation
 /// How it works: the wallet POSTs the authorization parameters plus
 /// `interaction_types_supported`, declaring what it can handle. The response carries a `type`:
 ///
-/// - `openid4vp_presentation` -- the server wants a presentation mid-issuance (the BankID SUA
+/// - `openid4vp_presentation` -- the server wants a presentation mid-issuance (the wallet-mediated
 ///   case). The wallet builds an authorization URL carrying `auth_session` and the embedded
 ///   `openid4vp_request`, with `client_id` rewritten to `iar:<endpoint>`.
 /// - anything else -- the response carries a `request_uri` to continue with in a browser.

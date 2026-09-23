@@ -48,7 +48,7 @@ public struct AuthorizationResponse {
     /// - ``AuthorizationOutcome/openInBrowser`` -- open in a browser, not a web view (RFC 8252), so
     ///   the authorization server's session cookie lands in the browser.
     /// - ``AuthorizationOutcome/presentationRequired`` -- an OpenID4VP request the issuer wants
-    ///   satisfied before it will authorize (the BankID SUA case). Pass unchanged to
+    ///   satisfied before it will authorize (the wallet-mediated authorization case). Pass unchanged to
     ///   `VerificationService.processAuthorisationRequest(data:)`.
     /// - ``AuthorizationOutcome/idTokenRequired`` -- the request to answer, carrying
     ///   `response_type=id_token` and the `redirect_uri` to post to.
