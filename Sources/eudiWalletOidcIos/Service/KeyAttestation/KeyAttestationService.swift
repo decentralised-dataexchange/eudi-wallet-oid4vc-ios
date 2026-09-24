@@ -87,9 +87,8 @@ public class KeyAttestationService {
             "alg": "ES256",
             "typ": "key-pop+jwt"
         ] as [String: Any]).toString() ?? ""
-        let now = Int(Date().timeIntervalSince1970)
         let payload = ([
-            "iat": now,
+            "iat": Int(WalletClock.issuedAt().timeIntervalSince1970),
             "nonce": nonce
         ] as [String: Any]).toString() ?? ""
         let headerData = Data(header.utf8)
@@ -110,7 +109,53 @@ public class KeyAttestationService {
         nonce: String,
         request: KeyAttestationRequest
     ) async -> KeyAttestationResponse? {
-        guard let url = URL(string: "\(baseUrl)/wallet-provider/key-attestation") else { return nil }
+        let outcome = await sendKeyAttestation(
+            baseUrl: baseUrl,
+            walletUnitAttestationJWT: walletUnitAttestationJWT,
+            walletUnitProofOfPossession: walletUnitProofOfPossession,
+            nonce: nonce,
+            request: request
+        )
+        return outcome.isSuccessful ? outcome.response : nil
+    }
+
+    /// Batch key attestation: one KA attesting every key in `attestedKeys`.
+    /// Hardware tier: `iosAppAttest` carries one App Attest object per key,
+    /// index-aligned, each attested with `nonce` in its challenge. Software
+    /// tier: `keyPops` carries one proof per key. Keep the key count at or
+    /// below the issuer's batch_size; a KA is single use, so extra keys are wasted.
+    ///
+    /// The HTTP status is kept: a 400 invalid_key_evidence (evidence count !=
+    /// key count) is reported in the outcome. No client-side alignment check is
+    /// done on purpose, so the wallet provider's own validation applies.
+    public static func requestBatchKeyAttestation(
+        baseUrl: String,
+        walletUnitAttestationJWT: String,
+        walletUnitProofOfPossession: String,
+        nonce: String,
+        attestedKeys: [[String: Any]],
+        keyPops: [String]? = nil,
+        iosAppAttest: [IosAppAttestEvidence]? = nil
+    ) async -> KeyAttestationOutcome {
+        await sendKeyAttestation(
+            baseUrl: baseUrl,
+            walletUnitAttestationJWT: walletUnitAttestationJWT,
+            walletUnitProofOfPossession: walletUnitProofOfPossession,
+            nonce: nonce,
+            request: KeyAttestationRequest(attestedKeys: attestedKeys, keyPops: keyPops, iosAppAttest: iosAppAttest)
+        )
+    }
+
+    private static func sendKeyAttestation(
+        baseUrl: String,
+        walletUnitAttestationJWT: String,
+        walletUnitProofOfPossession: String,
+        nonce: String,
+        request: KeyAttestationRequest
+    ) async -> KeyAttestationOutcome {
+        guard let url = URL(string: "\(baseUrl)/wallet-provider/key-attestation") else {
+            return KeyAttestationOutcome(httpCode: nil, response: nil, errorBody: "invalid url")
+        }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -123,28 +168,32 @@ public class KeyAttestationService {
         req.setValue("ios", forHTTPHeaderField: "X-Wallet-Unit-Platform")
 
         guard let body = try? JSONSerialization.data(withJSONObject: request.toDictionary(), options: []) else {
-            return nil
+            return KeyAttestationOutcome(httpCode: nil, response: nil, errorBody: "request not serialisable")
         }
         req.httpBody = body
 
-        let evidence = request.iosAppAttest != nil
-            ? "ios_app_attest"
-            : "key_pops(\(request.keyPops?.count ?? 0))"
+        let evidence: String
+        if let appAttest = request.iosAppAttest, !appAttest.isEmpty {
+            evidence = appAttest.count == 1 ? "ios_app_attest" : "ios_app_attest(\(appAttest.count))"
+        } else {
+            evidence = "key_pops(\(request.keyPops?.count ?? 0))"
+        }
         print("KaWatch: POST \(url.absoluteString) keys=\(request.attestedKeys.count) evidence=\(evidence) nonce=\(nonce)")
 
         do {
             let (data, resp) = try await NetworkLogger.send(req, tag: "key-attestation")
-            let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            guard (200..<300).contains(status) else {
-                print("KaWatch: WP KA response \(status): \(String(data: data, encoding: .utf8) ?? "")")
-                return nil
+            let status = (resp as? HTTPURLResponse)?.statusCode
+            guard let status, (200..<300).contains(status) else {
+                let error = String(data: data, encoding: .utf8)
+                print("KaWatch: WP KA response \(status.map(String.init) ?? "-"): \(error ?? "")")
+                return KeyAttestationOutcome(httpCode: status, response: nil, errorBody: error)
             }
-            let ka = try JSONDecoder().decode(KeyAttestationResponse.self, from: data)
-            print("KaWatch: WP KA response \(status): attestationType=\(ka.attestationType ?? "") keyStorage=\(ka.keyStorage ?? [])")
-            return ka
+            let ka = try? JSONDecoder().decode(KeyAttestationResponse.self, from: data)
+            print("KaWatch: WP KA response \(status): attestationType=\(ka?.attestationType ?? "") keyStorage=\(ka?.keyStorage ?? []) attestedKeysCount=\(ka?.attestedKeysCount.map(String.init) ?? "-")")
+            return KeyAttestationOutcome(httpCode: status, response: ka, errorBody: ka == nil ? String(data: data, encoding: .utf8) : nil)
         } catch {
             print("KaWatch: WP KA transport error: \(error)")
-            return nil
+            return KeyAttestationOutcome(httpCode: nil, response: nil, errorBody: error.localizedDescription)
         }
     }
 }
