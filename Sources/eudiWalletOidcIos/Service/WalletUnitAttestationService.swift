@@ -17,7 +17,10 @@ public class WalletUnitAttestationService {
     /// (x5c identity + client_status). Mirrors Android's TS3_PROFILE.
     public static let ts3Profile = "ts3"
     
-    public func initiateWalletUnitAttestation(walletProviderUrl: String, profile: String? = nil) async throws -> (String, WalletUnitAttestationResponse?){
+    /// `keyHandler`, when given, is the cnf key the attestation is bound to (so the
+    /// wallet unit keeps one client_id); otherwise the App Attest key id's Secure
+    /// Enclave key is used, as before.
+    public func initiateWalletUnitAttestation(walletProviderUrl: String, profile: String? = nil, keyHandler inputKeyHandler: SecureKeyProtocol? = nil) async throws -> (String, WalletUnitAttestationResponse?){
             baseURL = walletProviderUrl
             let service = DCAppAttestService.shared
             let inputString = await fetchNonceForDeviceIntegrityToken(nonceEndPoint:  "\(baseURL)/nonce")
@@ -32,7 +35,7 @@ public class WalletUnitAttestationService {
                 keyId = keyIDfromKeyChain ?? ""
             }
             
-        var keyHandler = SecureEnclaveHandler(keyID: keyId)
+        var keyHandler: SecureKeyProtocol = inputKeyHandler ?? SecureEnclaveHandler(keyID: keyId)
             do {
                 let attest = try await generateDeviceIntegrityToken(keyId: keyId, hash: hash)
                 let clientAssertion = await createClientAssertion(keyHandler: keyHandler)
@@ -48,7 +51,7 @@ public class WalletUnitAttestationService {
                 print("Error during attestation with keyId: \(keyId), regenerating key ID...")
                 keyId = try await generateKeyId()
                 storeKeyIdInKeychain(keyId) // Update Keychain with the new key ID
-                keyHandler = SecureEnclaveHandler(keyID: keyId)
+                keyHandler = inputKeyHandler ?? SecureEnclaveHandler(keyID: keyId)
                 // Retry the attestation process
                 let attestRetry = try await generateDeviceIntegrityToken(keyId: keyId, hash: hash)
                 let clientAssertionRetry = await createClientAssertion(keyHandler: keyHandler)
@@ -109,16 +112,168 @@ public class WalletUnitAttestationService {
         }
     }
     
+    /// Batch registration: one App Attest check, `keyHandlers.count` wallet
+    /// instance attestations. Each client assertion is signed by its own key and
+    /// carries that key in cnf.jwk; all share one client_id (`clientId`,
+    /// defaulting to the did:key of key 0). The App Attest challenge is
+    /// `BatchRequestHash` over the cnf keys, which the wallet provider
+    /// recomputes. The result is index-aligned with the keys; each attestation
+    /// is single use.
+    ///
+    /// Returns nil only when the flow failed before a request could be made
+    /// (App Attest, signing). An HTTP error is returned in the result
+    /// (httpCode / errorBody, no attestations) so the caller can fall back to
+    /// the single endpoint.
+    public func initiateBatchWalletUnitAttestation(
+        walletProviderUrl: String,
+        keyHandlers: [SecureKeyProtocol],
+        profile: String? = nil,
+        clientId: String? = nil
+    ) async -> BatchWalletAttestationResult? {
+        guard !keyHandlers.isEmpty else { return nil }
+        baseURL = walletProviderUrl
+        do {
+            var dids: [String] = []
+            var jwks: [[String: Any]] = []
+            for handler in keyHandlers {
+                guard let jwk = handler.getJWK(publicKey: handler.generateSecureKey()?.publicKey ?? Data()) else { return nil }
+                jwks.append(jwk)
+                dids.append(await createDIDforWUA(keyHandler: handler))
+            }
+            let sharedClientId = clientId ?? dids[0]
+
+            let nonceResponse = await fetchWalletProviderNonce(url: "\(baseURL)/nonce")
+            let nonce = nonceResponse?.nonce ?? nonceResponse?.cNonce ?? ""
+
+            // The batch hash binds the App Attest verdict to the cnf keys, not to the nonce.
+            let requestHash = BatchRequestHash.compute(jwks: jwks)
+            let hash = Data(SHA256.hash(data: Data(requestHash.utf8)))
+            let (keyId, attestation) = try await attestRegistrationKey(hash: hash)
+
+            var assertions: [String] = []
+            for handler in keyHandlers {
+                let assertion = await createClientAssertion(aud: baseURL, keyHandler: handler, clientId: sharedClientId)
+                if assertion.isEmpty { return nil }
+                assertions.append(assertion)
+            }
+
+            let wire = await processBatchWalletUnitAttestationRequest(
+                attestation: attestation,
+                nonce: nonce,
+                keyId: keyId,
+                clientAssertions: assertions,
+                profile: profile
+            )
+            let returned = wire.body?.walletUnitAttestations ?? []
+            if returned.count != keyHandlers.count {
+                print("Batch registration: requested \(keyHandlers.count) attestations, got \(returned.count) (HTTP \(wire.httpCode.map(String.init) ?? "-"))")
+            }
+            return BatchWalletAttestationResult(
+                clientId: sharedClientId,
+                requestHash: requestHash,
+                httpCode: wire.httpCode,
+                errorBody: wire.errorBody,
+                credentialOffer: wire.body?.credentialOffer,
+                credentialIssuer: wire.body?.credentialIssuer,
+                units: keyHandlers.indices.map { i in
+                    BatchWalletUnit(
+                        index: i,
+                        did: dids[i],
+                        keyHandler: keyHandlers[i],
+                        clientAssertion: assertions[i],
+                        walletUnitAttestation: i < returned.count ? returned[i] : nil
+                    )
+                }
+            )
+        } catch {
+            print("Batch registration failed: \(error)")
+            return nil
+        }
+    }
+
+    /// GET the wallet provider's nonce document ({service}/nonce or
+    /// {service}/wallet-provider/nonce): `nonce` goes with the App Attest
+    /// check, `c_nonce` is the key-attestation challenge.
+    public func fetchWalletProviderNonce(url: String) async -> NonceResponse? {
+        guard let url = URL(string: url) else { return nil }
+        do {
+            let (data, response) = try await NetworkLogger.send(url: url, tag: "wallet-provider-nonce")
+            guard let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status) else { return nil }
+            return try JSONDecoder().decode(NonceResponse.self, from: data)
+        } catch {
+            print("Nonce fetch failed: \(error)")
+            return nil
+        }
+    }
+
+    /// Attests the App Attest registration key from the Keychain against `hash`.
+    /// A key can be attested only once, so on failure a new key is minted,
+    /// stored and attested, as the single registration does.
+    private func attestRegistrationKey(hash: Data) async throws -> (keyId: String, attestation: String) {
+        var keyId = retrieveKeyIdFromKeychain() ?? ""
+        if keyId.isEmpty {
+            keyId = try await generateKeyId()
+            storeKeyIdInKeychain(keyId)
+        }
+        do {
+            return (keyId, try await generateDeviceIntegrityToken(keyId: keyId, hash: hash))
+        } catch {
+            print("Attestation with keyId \(keyId) failed, regenerating key ID...")
+            keyId = try await generateKeyId()
+            storeKeyIdInKeychain(keyId)
+            return (keyId, try await generateDeviceIntegrityToken(keyId: keyId, hash: hash))
+        }
+    }
+
+    private struct BatchWire {
+        let httpCode: Int?
+        let body: BatchCredentialOfferResponse?
+        let errorBody: String?
+    }
+
+    /// POST {baseUrl}/wallet-unit/request/batch; keeps the HTTP status for the caller.
+    private func processBatchWalletUnitAttestationRequest(attestation: String, nonce: String, keyId: String, clientAssertions: [String], profile: String?) async -> BatchWire {
+        guard let url = URL(string: "\(baseURL)/wallet-unit/request/batch") else { return BatchWire(httpCode: nil, body: nil, errorBody: "invalid url") }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(attestation, forHTTPHeaderField: "X-Wallet-Unit-Integrity-Token")
+        request.setValue("ios", forHTTPHeaderField: "X-Wallet-Unit-Platform")
+        request.setValue(nonce, forHTTPHeaderField: "X-Wallet-Unit-Nonce")
+        request.setValue(keyId, forHTTPHeaderField: "X-Wallet-Unit-KeyID")
+        var bodyDict: [String: Any] = [
+            "client_assertions": clientAssertions,
+            "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        ]
+        if let profile = profile, !profile.isEmpty {
+            bodyDict["profile"] = profile
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: bodyDict)
+        do {
+            let (data, response) = try await NetworkLogger.send(request, tag: "wallet-unit-attestation-batch")
+            let status = (response as? HTTPURLResponse)?.statusCode
+            if let status = status, (200..<300).contains(status) {
+                return BatchWire(httpCode: status, body: try? JSONDecoder().decode(BatchCredentialOfferResponse.self, from: data), errorBody: nil)
+            }
+            return BatchWire(httpCode: status, body: nil, errorBody: String(data: data, encoding: .utf8))
+        } catch {
+            return BatchWire(httpCode: nil, body: nil, errorBody: error.localizedDescription)
+        }
+    }
+
     public func createDIDforWUA(keyHandler: SecureKeyProtocol) async -> String {
            guard let jwk = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data()) else { return ""}
            let did = await DidService.shared.createDID(jwk: jwk) ?? ""
            return did
        }
     
-    public func createClientAssertion(aud: String = "", keyHandler: SecureKeyProtocol) async -> String {
+    /// `clientId`, when given, is the wallet unit's identity for iss / sub / client_id.
+    /// In a batch every assertion shares one client_id while kid and cnf name the
+    /// signing key.
+    public func createClientAssertion(aud: String = "", keyHandler: SecureKeyProtocol, clientId: String? = nil) async -> String {
         let jwk = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data())
         let did = await createDIDforWUA(keyHandler: keyHandler)
-        print("")
+        let subject = clientId ?? did
         let header = ([
             "alg": "ES256",
             "kid": "\(did)#\(did.replacingOccurrences(of: "did:key:", with: ""))",
@@ -129,13 +284,13 @@ public class WalletUnitAttestationService {
         let jti = UUID().uuidString
         let payload = ([
             "aud": aud ?? baseURL,
-            "client_id": did,
+            "client_id": subject,
             "cnf": ["jwk": jwk],
             "exp": exp,
             "iat": now,
-            "iss": did,
+            "iss": subject,
             "jti": "urn:uuid:\(jti)",
-            "sub": did
+            "sub": subject
         ] as [String: Any]).toString() ?? ""
         let headerData = Data(header.utf8)
         guard let idToken = keyHandler.sign(payload: payload, header: headerData, withKey: keyHandler.generateSecureKey()?.privateKey) else { return ""}
@@ -223,9 +378,14 @@ public class WalletUnitAttestationService {
         return response
     }
     
-    public func generateWUAProofOfPossession(keyHandler: SecureKeyProtocol, aud: String? = nil) async -> String {
+    /// `clientId`, when given, is the PoP `iss`: the client_id the attestation was
+    /// issued for (its `sub`). Otherwise the signing key's DID, as before.
+    public func generateWUAProofOfPossession(keyHandler: SecureKeyProtocol, aud: String? = nil, clientId: String? = nil) async -> String {
         let secureData = keyHandler.generateSecureKey()
-        let did = await createDIDforWUA(keyHandler: keyHandler)
+        var did = clientId ?? ""
+        if did.isEmpty {
+            did = await createDIDforWUA(keyHandler: keyHandler)
+        }
         let header = ([
             "alg": "ES256",
             "typ": "oauth-client-attestation-pop+jwt",
@@ -297,4 +457,10 @@ public struct WalletUnitAttestationResponse {
     public let credentialOffer: String?
     public let walletUnitAttestation: String?
     public let credentialIssuer: String?
+
+    public init(credentialOffer: String?, walletUnitAttestation: String?, credentialIssuer: String?) {
+        self.credentialOffer = credentialOffer
+        self.walletUnitAttestation = walletUnitAttestation
+        self.credentialIssuer = credentialIssuer
+    }
 }
