@@ -18,7 +18,7 @@ public class ReissueService {
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
         format: String,
-        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, keyHandler: SecureEnclaveHandler, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil, clientId: String? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil) async -> CredentialResponse? {
+        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, keyHandler: SecureEnclaveHandler, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil, clientId: String? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil, additionalProofKeyHandlers: [SecureKeyProtocol]? = nil) async -> CredentialResponse? {
 
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
@@ -142,6 +142,14 @@ public class ReissueService {
                 var proofsDict: [String: Any] = [:]
                 proofsDict["jwt"] = [idToken]
                 params["proofs"] = proofsDict
+            }
+
+            // OpenID4VCI 1.0 §8.2 batch: one more jwt proof per additional key. Always
+            // the plural `proofs`, whatever the configuration's shape.
+            if let additionalProofKeyHandlers, !additionalProofKeyHandlers.isEmpty {
+                guard let proofs = await IssueService.batchProofs(first: idToken, nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, issuer: issuer, keyHandlers: additionalProofKeyHandlers, credentialTypes: credentialTypes) else { return nil }
+                params.removeValue(forKey: "proof")
+                params["proofs"] = ["jwt": proofs]
             }
             
             if issuerConfig.credentialResponseEncryption != nil && issuerConfig.credentialResponseEncryption?.algValuesSupported?.contains("ECDH-ES") == true && issuerConfig.credentialResponseEncryption?.encValuesSupported?.contains("A128CBC-HS256") == true {

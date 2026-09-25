@@ -53,7 +53,7 @@ protocol IssueServiceProtocol {
      - accessToken: The access token for authentication.
      - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
      */
-    func processCredentialRequest(did: String, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String, credentialTypes: [String], tokenResponse: TokenResponse?, authDetails: AuthorizationDetails?, privateKey: ECPrivateKey?, isDpopSUpported: Bool, dpopKey: P256.Signing.PrivateKey?, dpopKeyHandler: SecureKeyProtocol?, dpopKeyPublicJwk: [String: Any]?, attachKeyAttestation: Bool, keyAttestationJwt: String?, clientId: String?, preAuthorizedGrantAnonymousAccessSupported: Bool?) async -> CredentialResponse?
+    func processCredentialRequest(did: String, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String, credentialTypes: [String], tokenResponse: TokenResponse?, authDetails: AuthorizationDetails?, privateKey: ECPrivateKey?, isDpopSUpported: Bool, dpopKey: P256.Signing.PrivateKey?, dpopKeyHandler: SecureKeyProtocol?, dpopKeyPublicJwk: [String: Any]?, attachKeyAttestation: Bool, keyAttestationJwt: String?, clientId: String?, preAuthorizedGrantAnonymousAccessSupported: Bool?, additionalProofKeyHandlers: [SecureKeyProtocol]?) async -> CredentialResponse?
     
     // Processes a deferred credential request to obtain the credential response in deffered manner.
     /** - Parameters

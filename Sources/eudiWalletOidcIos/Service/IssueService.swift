@@ -220,6 +220,21 @@ public class IssueService: NSObject, IssueServiceProtocol {
         return preAuthorizedGrantAnonymousAccessSupported == true ? nil : identity
     }
 
+    /// The proofs of a batch credential request: `first`, then one jwt proof per
+    /// handler with the same nonce, aud and iss, each signed by and naming its own
+    /// key. The additional proofs carry no key attestation: a batch covered by one
+    /// sends a single proof. Nil when any proof cannot be made.
+    static func batchProofs(first: String, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, issuer: String?, keyHandlers: [SecureKeyProtocol], credentialTypes: [String]) async -> [String]? {
+        var proofs = [first]
+        for handler in keyHandlers {
+            let jwk = handler.getJWK(publicKey: handler.generateSecureKey()?.publicKey ?? Data()) ?? [:]
+            let did = await DidService.shared.createDID(jwk: jwk) ?? ""
+            guard let proof = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, issuer: issuer, keyHandler: handler, credentialTypes: credentialTypes, keyAttestation: nil) else { return nil }
+            proofs.append(proof)
+        }
+        return proofs
+    }
+
     /// The key proof's `iss` for a credential request authorized by the offer's grant, including with an
     /// access token refreshed from it: RFC 6749 section 6 binds the refresh token to the client it was
     /// issued to. Nil omits `iss`. Pre-1.0 draft pre-authorized offers keep `did`.
@@ -652,7 +667,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
         format: String,
-        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, isDpopSUpported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil, clientId: String? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil) async -> CredentialResponse? {
+        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, isDpopSUpported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil, clientId: String? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil, additionalProofKeyHandlers: [SecureKeyProtocol]? = nil) async -> CredentialResponse? {
 
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
@@ -788,6 +803,14 @@ public class IssueService: NSObject, IssueServiceProtocol {
                 var proofsDict: [String: Any] = [:]
                 proofsDict["jwt"] = [idToken]
                 params["proofs"] = proofsDict
+            }
+
+            // OpenID4VCI 1.0 §8.2 batch: one more jwt proof per additional key. Always
+            // the plural `proofs`, whatever the configuration's shape.
+            if let additionalProofKeyHandlers, !additionalProofKeyHandlers.isEmpty {
+                guard let proofs = await IssueService.batchProofs(first: idToken, nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, issuer: issuer, keyHandlers: additionalProofKeyHandlers, credentialTypes: credentialTypes) else { return nil }
+                params.removeValue(forKey: "proof")
+                params["proofs"] = ["jwt": proofs]
             }
             
             if issuerConfig.credentialResponseEncryption != nil && issuerConfig.credentialResponseEncryption?.algValuesSupported?.contains("ECDH-ES") == true && issuerConfig.credentialResponseEncryption?.encValuesSupported?.contains("A128CBC-HS256") == true {

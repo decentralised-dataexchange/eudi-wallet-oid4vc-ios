@@ -220,6 +220,8 @@ public struct IssuerWellKnownConfiguration: Codable {
     public let nonceEndPoint: String?
     public let credentialResponseEncryption: CredentialResponseEncryptionModel?
     public let credentialRequestEncryption: CredentialRequestEncryption?
+    /// OpenID4VCI 1.0 §12.2.4: the issuer accepts several key proofs in one credential request.
+    public let batchCredentialIssuance: BatchCredentialIssuance?
     
     public init(from: IssuerWellKnownConfigurationResponse) {
         credentialIssuer = from.credentialIssuer
@@ -251,6 +253,7 @@ public struct IssuerWellKnownConfiguration: Codable {
         nonceEndPoint = from.nonceEndpoint
         credentialResponseEncryption = from.credentialResponseEncryption
         credentialRequestEncryption = from.credentialRequestEncryption
+        batchCredentialIssuance = from.batchCredentialIssuance
         error = nil
   
     }
@@ -286,6 +289,7 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         nonceEndPoint = from.nonceEndpoint
         credentialResponseEncryption = from.credentialResponseEncryption
         credentialRequestEncryption = from.credentialRequestEncryption
+        batchCredentialIssuance = from.batchCredentialIssuance
     }
     
     public init(mCredentialIssuer: String?,
@@ -304,6 +308,7 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         nonceEndPoint = nil
         credentialResponseEncryption = nil
         credentialRequestEncryption = nil
+        batchCredentialIssuance = nil
     }
     
     init(from: EUDIError) {
@@ -318,6 +323,17 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         nonceEndPoint = nil
         credentialResponseEncryption = nil
         credentialRequestEncryption = nil
+        batchCredentialIssuance = nil
+    }
+}
+
+/// `batch_credential_issuance` in Credential Issuer metadata (OpenID4VCI 1.0 §12.2.4).
+public struct BatchCredentialIssuance: Codable {
+    /// The most key proofs one credential request may carry.
+    public let batchSize: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case batchSize = "batch_size"
     }
 }
 
