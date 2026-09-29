@@ -196,4 +196,30 @@ public class KeyAttestationService {
             return KeyAttestationOutcome(httpCode: nil, response: nil, errorBody: error.localizedDescription)
         }
     }
+
+    /// True when the configuration lists `attestation` but not `jwt` in proof_types_supported
+    /// (ARF TS3 §2.2.2): the request must carry the KA as an `attestation` proof, with no PoP.
+    public static func isAttestationOnly(_ configuration: DataSharing?) -> Bool {
+        guard let proofTypes = configuration?.proofTypesSupported else { return false }
+        return proofTypes.attestation != nil && proofTypes.jwt == nil
+    }
+
+    /// For an `attestation` proof the issuer's c_nonce lives inside the KA (TS3 §2.2.2, OID4VCI F.3).
+    /// Checks the KA's `nonce` (or `c_nonce`) claim equals `nonce`. A nil `nonce` cannot be checked and passes.
+    public static func carriesNonce(keyAttestation: String, nonce: String?) -> Bool {
+        guard let nonce = nonce else { return true }
+        let parts = keyAttestation.split(separator: ".")
+        guard parts.count >= 2 else { return false }
+        var b64 = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while b64.count % 4 != 0 { b64 += "=" }
+        guard let data = Data(base64Encoded: b64),
+              let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            print("KaWatch: Failed to read nonce from key attestation")
+            return false
+        }
+        let value = (claims["nonce"] ?? claims["c_nonce"]) as? String
+        return value == nonce
+    }
 }

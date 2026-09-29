@@ -115,8 +115,9 @@ struct ProofTypeJwtResponse: Codable {
         case keyAttestationsRequired = "key_attestations_required"
     }
 }
-struct ProofTypesSupportedResponse: Codable {
+public struct ProofTypesSupportedResponse: Codable {
     let jwt: ProofTypeJwtResponse?
+    let attestation: ProofTypeJwtResponse?
 }
 
 struct DataSharingResponse: Codable {

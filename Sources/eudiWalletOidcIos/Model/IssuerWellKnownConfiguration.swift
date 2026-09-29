@@ -125,6 +125,7 @@ public struct DataSharing: Codable {
     public var docType: String?
     public var vct: String?
     public let credentialMetadata: CredentialMetadata?
+    public let proofTypesSupported: ProofTypesSupportedResponse?
     /// ARF TS3 v1.5: true when the issuer metadata declares
     /// proof_types_supported.jwt.key_attestations_required for this credential.
     /// Optional, not a defaulted Bool: this type is decoded back out of stored
@@ -149,6 +150,7 @@ public struct DataSharing: Codable {
         credentialDefinition = from.credentialDefinition == nil ? nil : IssuerCredentialDefinition(from: from.credentialDefinition!)
         docType = from.docType
         credentialMetadata = from.credentialMetadata
+        proofTypesSupported = from.proofTypesSupported
         keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
         hasProofTypesSupported = from.proofTypesSupported != nil
         keyStorage = from.proofTypesSupported?.jwt?.keyAttestationsRequired?.keyStorage
@@ -164,6 +166,7 @@ public struct DataSharing: Codable {
         vct = from.vct
         docType = from.docType
         credentialMetadata = from.credentialMetadata
+        proofTypesSupported = from.proofTypesSupported
         keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
         hasProofTypesSupported = from.proofTypesSupported != nil
         keyStorage = from.proofTypesSupported?.jwt?.keyAttestationsRequired?.keyStorage
@@ -178,6 +181,7 @@ public struct DataSharing: Codable {
             display = dataSharingDisplayList.map({ Display(from: $0)})
         }
         credentialMetadata = from.credentialMetadata
+        proofTypesSupported = from.proofTypesSupported
         cryptographicBindingMethodsSupported = from.cryptographicBindingMethodsSupported
         keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
         hasProofTypesSupported = from.proofTypesSupported != nil
