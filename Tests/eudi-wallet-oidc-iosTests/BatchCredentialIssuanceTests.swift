@@ -51,8 +51,9 @@ final class BatchCredentialIssuanceTests: XCTestCase {
             subject: .legacyFormat(format: nil)
         )
 
-        let list = proofs
+        guard case let .jwt(list) = proofs else { return XCTFail("expected jwt proofs, got \(proofs)") }
         XCTAssertEqual(list.count, 3)
+        XCTAssertTrue(proofs.isBatch)
         XCTAssertEqual(Set(list).count, 3, "each key must sign its own proof")
 
         for (index, proof) in list.enumerated() {
