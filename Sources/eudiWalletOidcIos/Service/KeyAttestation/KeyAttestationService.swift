@@ -199,6 +199,14 @@ public class KeyAttestationService {
 
     /// True when the configuration lists `attestation` but not `jwt` in proof_types_supported
     /// (ARF TS3 §2.2.2): the request must carry the KA as an `attestation` proof, with no PoP.
+    /// True when the configuration lists `attestation` but not `jwt` in `proof_types_supported`
+    /// (ARF TS3 §2.2.2): the request must then carry the key attestation as an `attestation`
+    /// proof, with no proof of possession.
+    ///
+    /// When the configuration lists **both**, this is `false` and the request sends `jwt`: a proof
+    /// of possession signed by the binding key is preferred wherever the issuer accepts one.
+    ///
+    /// Mirrors `KeyAttestationService.isAttestationOnly` in the Android SDK.
     public static func isAttestationOnly(_ configuration: DataSharing?) -> Bool {
         guard let proofTypes = configuration?.proofTypesSupported else { return false }
         return proofTypes.attestation != nil && proofTypes.jwt == nil
