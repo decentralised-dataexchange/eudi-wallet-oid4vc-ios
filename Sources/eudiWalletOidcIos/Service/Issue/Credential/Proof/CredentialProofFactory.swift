@@ -49,7 +49,24 @@ enum CredentialProofFactory {
         nonce: String?,
         subject: CredentialSubject,
         keyAttestation: String? = nil
-    ) async throws -> [String] {
+    ) async throws -> CredentialProofs {
+        let configuration = subject.metadataKey.flatMap {
+            session.issuerConfig?.credentialsSupported?.dataSharing?[$0]
+        }
+        if KeyAttestationService.isAttestationOnly(configuration) {
+            guard let keyAttestation, !keyAttestation.isEmpty else {
+                throw CredentialRequestError.proofFailed(
+                    "This issuer accepts only the attestation proof type and no key attestation is available"
+                )
+            }
+            guard KeyAttestationService.carriesNonce(keyAttestation: keyAttestation, nonce: nonce) else {
+                throw CredentialRequestError.proofFailed(
+                    "The key attestation does not carry this issuer's current c_nonce"
+                )
+            }
+            return .attestation(keyAttestation)
+        }
+
         var proofs = [try await create(
             session: session, wallet: wallet, keyHandler: keyHandler,
             issuer: issuer, nonce: nonce, subject: subject, keyAttestation: keyAttestation
@@ -67,7 +84,7 @@ enum CredentialProofFactory {
                 keyAttestation: nil
             ))
         }
-        return proofs
+        return .jwt(proofs)
     }
 
     static func create(

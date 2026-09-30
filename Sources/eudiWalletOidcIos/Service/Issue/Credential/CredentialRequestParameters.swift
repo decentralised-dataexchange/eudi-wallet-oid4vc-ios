@@ -26,7 +26,7 @@ enum CredentialRequestParameters {
     ///   with **no body at all**.
     static func build(
         subject: CredentialSubject,
-        proofs: [String],
+        proofs: CredentialProofs,
         session: IssuanceSession,
         encryption: CredentialEncryption?,
         policy: CredentialRequestPolicy
@@ -58,13 +58,21 @@ enum CredentialRequestParameters {
         // metadata." Both platforms previously keyed this off whether the configuration carried a
         // `credential_metadata` member, which is unrelated to whether the issuer wants the plural
         // form.
-        // A batch is more than one entry; §8.2's `proofs` is an array either way. The singular
-        // `proof` is the pre-1.0 shape and cannot express a batch at all, so a batch always takes
-        // the plural form regardless of what the metadata declares.
-        if policy.usePluralProofs, declaresProofTypes(session: session, subject: subject) || proofs.count > 1 {
-            params["proofs"] = [proofTypeJWT: proofs]
-        } else {
-            params["proof"] = ["proof_type": proofTypeJWT, "jwt": proofs.first ?? ""]
+        switch proofs {
+        case let .attestation(keyAttestation):
+            // §8.2: the attestation proof type carries the KA itself, and the issuer's c_nonce
+            // lives inside it. There is no jwt proof to send.
+            params["proofs"] = [proofTypeAttestation: [keyAttestation]]
+
+        case let .jwt(jwtProofs):
+            // A batch is more than one entry; §8.2's `proofs` is an array either way. The singular
+            // `proof` is the pre-1.0 shape and cannot express a batch at all, so a batch always
+            // takes the plural form regardless of what the metadata declares.
+            if policy.usePluralProofs, declaresProofTypes(session: session, subject: subject) || jwtProofs.count > 1 {
+                params["proofs"] = [proofTypeJWT: jwtProofs]
+            } else {
+                params["proof"] = ["proof_type": proofTypeJWT, "jwt": jwtProofs.first ?? ""]
+            }
         }
 
         if let responseEncryption = try responseEncryption(session: session, encryption: encryption) {
