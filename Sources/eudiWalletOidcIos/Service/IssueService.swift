@@ -220,6 +220,21 @@ public class IssueService: NSObject, IssueServiceProtocol {
         return preAuthorizedGrantAnonymousAccessSupported == true ? nil : identity
     }
 
+    /// The proofs of a batch credential request: `first`, then one jwt proof per
+    /// handler with the same nonce, aud and iss, each signed by and naming its own
+    /// key. The additional proofs carry no key attestation: a batch covered by one
+    /// sends a single proof. Nil when any proof cannot be made.
+    static func batchProofs(first: String, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, issuer: String?, keyHandlers: [SecureKeyProtocol], credentialTypes: [String]) async -> [String]? {
+        var proofs = [first]
+        for handler in keyHandlers {
+            let jwk = handler.getJWK(publicKey: handler.generateSecureKey()?.publicKey ?? Data()) ?? [:]
+            let did = await DidService.shared.createDID(jwk: jwk) ?? ""
+            guard let proof = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, issuer: issuer, keyHandler: handler, credentialTypes: credentialTypes, keyAttestation: nil) else { return nil }
+            proofs.append(proof)
+        }
+        return proofs
+    }
+
     /// The key proof's `iss` for a credential request authorized by the offer's grant, including with an
     /// access token refreshed from it: RFC 6749 section 6 binds the refresh token to the client it was
     /// issued to. Nil omits `iss`. Pre-1.0 draft pre-authorized offers keep `did`.
@@ -652,7 +667,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
         format: String,
-        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, isDpopSUpported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil, clientId: String? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil) async -> CredentialResponse? {
+        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, isDpopSUpported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil, clientId: String? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil, additionalProofKeyHandlers: [SecureKeyProtocol]? = nil) async -> CredentialResponse? {
 
             let jsonDecoder = JSONDecoder()
             guard let url = URL(string: issuerConfig.credentialEndpoint ?? "") else { return nil }
@@ -665,7 +680,7 @@ public class IssueService: NSObject, IssueServiceProtocol {
             let proofKeyAttestation = KeyAttestationService.forProof(walletProviderKa: keyAttestationJwt, attach: attachKeyAttestation)
             // Appendix F.1: iss is the client_id the token request sent, omitted when that was anonymous.
             let issuer = IssueService.proofIssuer(credentialOffer: credentialOffer, preAuthorizedGrantAnonymousAccessSupported: preAuthorizedGrantAnonymousAccessSupported, clientId: clientId, did: did)
-            guard let idToken = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, issuer: issuer, keyHandler: keyHandler, credentialTypes: credentialTypes, keyAttestation: proofKeyAttestation) else {return nil}
+            guard var idToken = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, issuer: issuer, keyHandler: keyHandler, credentialTypes: credentialTypes, keyAttestation: proofKeyAttestation) else {return nil}
             
             //let credentialTypes = getTypesFromCredentialOffer(credentialOffer: credentialOffer) ?? []
             let types = getTypesFromIssuerConfig(issuerConfig: issuerConfig, type: credentialTypes.last ?? "")
@@ -783,11 +798,48 @@ public class IssueService: NSObject, IssueServiceProtocol {
             // wallet picked a different one from run to run and could send the shape
             // belonging to a credential it was not requesting.
             let requestedConfig = credentialTypes.last.flatMap { issuerConfig.credentialsSupported?.dataSharing?[$0] }
-            if requestedConfig?.credentialMetadata != nil {
+            
+            let attestationOnly = KeyAttestationService.isAttestationOnly(requestedConfig)
+            
+            if attestationOnly {
+                // No proof of possession: the KA is the proof and must carry the issuer's c_nonce.
+                // Fail here, before any network call.
+                guard let ka = proofKeyAttestation else {
+                    print("KaWatch: Issuer supports only the attestation proof type but no key attestation is available")
+                    return CredentialResponse(fromError: EUDIError(from: ErrorResponse(
+                        message: "Key attestation required for the attestation proof type", code: nil)))
+                }
+                if !KeyAttestationService.carriesNonce(keyAttestation: ka, nonce: nonce) {
+                    print("KaWatch: Key attestation does not carry the issuer's current c_nonce")
+                    return CredentialResponse(fromError: EUDIError(from: ErrorResponse(
+                        message: "Key attestation does not contain the issuer c_nonce", code: nil)))
+                }
+            }
+            
+            if attestationOnly {
+                idToken = ""
+            } else {
+                guard let generated = await ProofService.generateProof(nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, did: did, issuer: issuer, keyHandler: keyHandler, credentialTypes: credentialTypes, keyAttestation: proofKeyAttestation) else {return nil}
+                idToken = generated
+            }
+            
+            if attestationOnly, let ka = proofKeyAttestation {
+                // TS3 §3.1: proofs.attestation holds the Wallet Provider-signed KA itself.
+                // Batch keys are already inside the KA, so no extra proofs are added.
                 params.removeValue(forKey: "proof")
-                var proofsDict: [String: Any] = [:]
-                proofsDict["jwt"] = [idToken]
-                params["proofs"] = proofsDict
+                params["proofs"] = ["attestation": [ka]]
+            } else {
+                if requestedConfig?.credentialMetadata != nil {
+                    params.removeValue(forKey: "proof")
+                    params["proofs"] = ["jwt": [idToken]]
+                }
+
+                // OpenID4VCI 1.0 §8.2 batch: one more jwt proof per additional key.
+                if let additionalProofKeyHandlers, !additionalProofKeyHandlers.isEmpty {
+                    guard let proofs = await IssueService.batchProofs(first: idToken, nonce: nonce, credentialOffer: credentialOffer, issuerConfig: issuerConfig, issuer: issuer, keyHandlers: additionalProofKeyHandlers, credentialTypes: credentialTypes) else { return nil }
+                    params.removeValue(forKey: "proof")
+                    params["proofs"] = ["jwt": proofs]
+                }
             }
             
             if issuerConfig.credentialResponseEncryption != nil && issuerConfig.credentialResponseEncryption?.algValuesSupported?.contains("ECDH-ES") == true && issuerConfig.credentialResponseEncryption?.encValuesSupported?.contains("A128CBC-HS256") == true {

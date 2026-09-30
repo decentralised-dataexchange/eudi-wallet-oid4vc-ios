@@ -115,8 +115,9 @@ struct ProofTypeJwtResponse: Codable {
         case keyAttestationsRequired = "key_attestations_required"
     }
 }
-struct ProofTypesSupportedResponse: Codable {
+public struct ProofTypesSupportedResponse: Codable {
     let jwt: ProofTypeJwtResponse?
+    let attestation: ProofTypeJwtResponse?
 }
 
 struct DataSharingResponse: Codable {
@@ -232,6 +233,7 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
     let nonceEndpoint: String?
     public let credentialResponseEncryption: CredentialResponseEncryptionModel?
     public let credentialRequestEncryption: CredentialRequestEncryption?
+    let batchCredentialIssuance: BatchCredentialIssuance?
     
     enum CodingKeys: String, CodingKey {
         case credentialIssuer = "credential_issuer"
@@ -245,6 +247,7 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
         case nonsceEndpoint = "nonce_endpoint"
         case credentialResponseEncryption = "credential_response_encryption"
         case credentialRequestEncryption = "credential_request_encryption"
+        case batchCredentialIssuance = "batch_credential_issuance"
     }
     
     public func encode(to encoder: Encoder) throws {
@@ -278,5 +281,6 @@ public struct IssuerWellKnownConfigurationResponse: Codable {
         nonceEndpoint = try? container.decode(String.self, forKey: .nonsceEndpoint)
         credentialResponseEncryption = try? container.decode(CredentialResponseEncryptionModel.self, forKey: .credentialResponseEncryption)
         credentialRequestEncryption = try? container.decode(CredentialRequestEncryption.self, forKey: .credentialRequestEncryption)
+        batchCredentialIssuance = try? container.decode(BatchCredentialIssuance.self, forKey: .batchCredentialIssuance)
     }
 }

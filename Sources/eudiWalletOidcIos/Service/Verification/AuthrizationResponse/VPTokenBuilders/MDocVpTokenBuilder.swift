@@ -311,6 +311,24 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
         return base64StringWithoutPadding
     }
     
+    /// The device key an mdoc is bound to: `deviceKeyInfo.deviceKey` of the MSO
+    /// in `issuerAuth`, as JWK coordinates (`x`, `y`, base64url). The mdoc
+    /// counterpart of an SD-JWT's `cnf.jwk`, for pairing a batch of mdocs with
+    /// the keys they were requested for. Nil when it cannot be read.
+    public func extractDeviceKeyFromIssuerSigned(credential: String) -> [String: String]? {
+        guard case let .array(elements)? = getIssuerAuth(credential: credential), elements.count > 2,
+              case let .byteString(payload) = elements[2],
+              let tagged = try? CBOR.decode(payload),
+              case let .tagged(tag, .byteString(msoBytes)) = tagged, tag.rawValue == 24,
+              let mso = try? CBOR.decode(msoBytes),
+              case let .map(deviceKeyInfo)? = mso[.utf8String("deviceKeyInfo")],
+              case let .map(coseKey)? = deviceKeyInfo[.utf8String("deviceKey")],
+              // COSE_Key labels: -2 = x, -3 = y (CBOR negative n encodes -1-n).
+              case let .byteString(x)? = coseKey[.negativeInt(1)],
+              case let .byteString(y)? = coseKey[.negativeInt(2)] else { return nil }
+        return ["x": Data(x).base64URLEncodedString(), "y": Data(y).base64URLEncodedString()]
+    }
+
     public func getIssuerAuth(credential: String) -> CBOR? {
         if let data = Data(base64URLEncoded: credential) {
             do {

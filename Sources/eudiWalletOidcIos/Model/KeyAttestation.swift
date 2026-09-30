@@ -29,17 +29,25 @@ public struct KeyAttestationRequest {
     public let attestedKeys: [[String: Any]]
     /// Software-tier proofs of possession, positionally aligned with attestedKeys.
     public let keyPops: [String]?
-    /// iOS hardware evidence (Apple App Attest).
-    public let iosAppAttest: IosAppAttestEvidence?
+    /// iOS hardware evidence (Apple App Attest), one per attested key, index-aligned.
+    public let iosAppAttest: [IosAppAttestEvidence]?
 
     public init(
         attestedKeys: [[String: Any]],
         keyPops: [String]? = nil,
-        iosAppAttest: IosAppAttestEvidence? = nil
+        iosAppAttest: [IosAppAttestEvidence]? = nil
     ) {
         self.attestedKeys = attestedKeys
         self.keyPops = keyPops
         self.iosAppAttest = iosAppAttest
+    }
+
+    /// The `ios_app_attest` wire value: a single object for exactly one key (the
+    /// original shape), a list index-aligned with `attested_keys` for two or more.
+    static func appAttestWire(_ evidence: [IosAppAttestEvidence]?) -> Any? {
+        guard let evidence, !evidence.isEmpty else { return nil }
+        let objects = evidence.map { ["attestation_object": $0.attestationObject, "key_id": $0.keyId] }
+        return objects.count == 1 ? objects[0] : objects
     }
 
     /// Serialise to the JSON shape the backend expects.
@@ -48,11 +56,8 @@ public struct KeyAttestationRequest {
         if let keyPops = keyPops, !keyPops.isEmpty {
             dict["key_pops"] = keyPops
         }
-        if let evidence = iosAppAttest {
-            dict["ios_app_attest"] = [
-                "attestation_object": evidence.attestationObject,
-                "key_id": evidence.keyId
-            ]
+        if let evidence = Self.appAttestWire(iosAppAttest) {
+            dict["ios_app_attest"] = evidence
         }
         return dict
     }
@@ -63,4 +68,20 @@ public struct KeyAttestationResponse: Codable {
     public let keyAttestation: String?
     public let attestationType: String?
     public let keyStorage: [String]?
+    /// How many keys the KA attests (batch key attestation).
+    public let attestedKeysCount: Int?
+}
+
+/// Result of a batch key-attestation request, keeping the HTTP status so a
+/// refusal such as 400 invalid_key_evidence reaches the caller.
+public struct KeyAttestationOutcome {
+    /// Nil when the request never reached the wallet provider.
+    public let httpCode: Int?
+    public let response: KeyAttestationResponse?
+    public let errorBody: String?
+
+    public var isSuccessful: Bool {
+        guard let httpCode else { return false }
+        return (200..<300).contains(httpCode) && response?.keyAttestation != nil
+    }
 }
