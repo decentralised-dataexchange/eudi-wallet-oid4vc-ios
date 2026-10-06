@@ -100,9 +100,10 @@ enum FormatResponse: String, Codable {
 }
 
 // MARK: - DataSharing
-// proof_types_supported.jwt.key_attestations_required (ARF TS3 v1.5). A non-nil
-// value means the issuer declared the requirement; key_storage carries the
-// attack-potential resistance it demands of the binding key (TS3 2.3.2).
+// proof_types_supported.<proof type>.key_attestations_required (OID4VCI 12.2.4,
+// ARF TS3 v1.5). A non-nil value means the issuer declared the requirement;
+// key_storage lists the attack-potential resistance levels it accepts for the
+// binding key (OID4VCI D.2, TS3 2.3.2).
 struct KeyAttestationsRequiredResponse: Codable {
     let keyStorage: [String]?
     enum CodingKeys: String, CodingKey {
@@ -118,6 +119,14 @@ struct ProofTypeJwtResponse: Codable {
 public struct ProofTypesSupportedResponse: Codable {
     let jwt: ProofTypeJwtResponse?
     let attestation: ProofTypeJwtResponse?
+
+    /// The key attestation requirement, from whichever proof type declares it.
+    /// TS3 2.2.2.2 wants it under both `jwt` and `attestation`; an
+    /// attestation-only issuer (TS3 2.2.2) lists just `attestation`, and reading
+    /// `jwt` alone missed its requirement.
+    var keyAttestationsRequired: KeyAttestationsRequiredResponse? {
+        jwt?.keyAttestationsRequired ?? attestation?.keyAttestationsRequired
+    }
 }
 
 struct DataSharingResponse: Codable {

@@ -28,8 +28,8 @@ public class KeyAttestationService {
         return issuerConfig?.credentialsSupported?.dataSharing?[type]
     }
 
-    /// True when the issuer metadata declares
-    /// proof_types_supported.jwt.key_attestations_required for `type`.
+    /// True when the issuer metadata declares key_attestations_required under
+    /// a supported proof type (`jwt` or `attestation`) for `type`.
     public static func isRequired(
         issuerConfig: IssuerWellKnownConfiguration?,
         type: String?
@@ -54,13 +54,21 @@ public class KeyAttestationService {
             || matching.cryptographicBindingMethodsSupported != nil
     }
 
-    /// True when the issuer demands iso_18045_high key storage for the binding
-    /// key (TS3 2.3.2). Drives whether the hardware tier is used at all.
-    public static func requiresHighKeyStorage(
+    /// True when the issuer constrains the binding key's storage at all:
+    /// key_attestations_required.key_storage is non-empty (OID4VCI 12.2.4).
+    /// Drives whether the hardware tier is used.
+    ///
+    /// The array lists the ISO 18045 levels the issuer accepts (OID4VCI D.2:
+    /// high, moderate, enhanced-basic, basic). The wallet provider grades a
+    /// software-tier key `software`, which matches none of them, so any
+    /// constraint needs a hardware-backed key - not only iso_18045_high.
+    /// Which level the hardware tier earns is the wallet provider's call
+    /// (TS3 2.2.2.1), not something the wallet can assert.
+    public static func requiresHardwareKeyStorage(
         issuerConfig: IssuerWellKnownConfiguration?,
         type: String?
     ) -> Bool {
-        config(issuerConfig, type)?.keyStorage?.contains("iso_18045_high") == true
+        config(issuerConfig, type)?.keyStorage?.isEmpty == false
     }
 
     /// The KA that goes on a credential-request proof. Only a wallet-provider

@@ -127,7 +127,7 @@ public struct DataSharing: Codable {
     public let credentialMetadata: CredentialMetadata?
     public let proofTypesSupported: ProofTypesSupportedResponse?
     /// ARF TS3 v1.5: true when the issuer metadata declares
-    /// proof_types_supported.jwt.key_attestations_required for this credential.
+    /// key_attestations_required under a supported proof type for this credential.
     /// Optional, not a defaulted Bool: this type is decoded back out of stored
     /// credential records, and a synthesised Decodable ignores default values -
     /// a non-optional would fail to decode every record written before TS3.
@@ -137,7 +137,7 @@ public struct DataSharing: Codable {
     /// TS3 2.2.2.2, which decides whether a KA is owed (2.2.2.1).
     public var hasProofTypesSupported: Bool?
     /// key_attestations_required.key_storage - the attack-potential resistance
-    /// the issuer demands of the binding key (TS3 2.3.2).
+    /// levels the issuer accepts for the binding key (OID4VCI D.2, TS3 2.3.2).
     public var keyStorage: [String]?
 
     init(from: DataSharingResponse) {
@@ -151,9 +151,9 @@ public struct DataSharing: Codable {
         docType = from.docType
         credentialMetadata = from.credentialMetadata
         proofTypesSupported = from.proofTypesSupported
-        keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
+        keyAttestationsRequired = from.proofTypesSupported?.keyAttestationsRequired != nil
         hasProofTypesSupported = from.proofTypesSupported != nil
-        keyStorage = from.proofTypesSupported?.jwt?.keyAttestationsRequired?.keyStorage
+        keyStorage = from.proofTypesSupported?.keyAttestationsRequired?.keyStorage
     }
     init(from: DataSharingResponseV2) {
         format = from.format
@@ -167,9 +167,9 @@ public struct DataSharing: Codable {
         docType = from.docType
         credentialMetadata = from.credentialMetadata
         proofTypesSupported = from.proofTypesSupported
-        keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
+        keyAttestationsRequired = from.proofTypesSupported?.keyAttestationsRequired != nil
         hasProofTypesSupported = from.proofTypesSupported != nil
-        keyStorage = from.proofTypesSupported?.jwt?.keyAttestationsRequired?.keyStorage
+        keyStorage = from.proofTypesSupported?.keyAttestationsRequired?.keyStorage
     }
     
     init(from: DataSharingOldFormatResponse) {
@@ -183,9 +183,9 @@ public struct DataSharing: Codable {
         credentialMetadata = from.credentialMetadata
         proofTypesSupported = from.proofTypesSupported
         cryptographicBindingMethodsSupported = from.cryptographicBindingMethodsSupported
-        keyAttestationsRequired = from.proofTypesSupported?.jwt?.keyAttestationsRequired != nil
+        keyAttestationsRequired = from.proofTypesSupported?.keyAttestationsRequired != nil
         hasProofTypesSupported = from.proofTypesSupported != nil
-        keyStorage = from.proofTypesSupported?.jwt?.keyAttestationsRequired?.keyStorage
+        keyStorage = from.proofTypesSupported?.keyAttestationsRequired?.keyStorage
     }
 }
 // MARK: - CredentialsSupportedObjectDisplay
