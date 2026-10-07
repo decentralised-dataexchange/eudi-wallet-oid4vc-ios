@@ -35,13 +35,21 @@ public class NotificationService {
         }
     }
     
-    public func refreshAccessToken(refreshToken: String, endPoint: String) async -> (String?, String?) {
+    public func refreshAccessToken(refreshToken: String, endPoint: String, wua: String = "", pop: String = "") async -> (String?, String?) {
         guard let url = URL(string: endPoint ?? "") else { return (nil, nil)}
         var request = URLRequest(url: url)
         var params: [String: Any] = [:]
         params = ["grant_type": "refresh_token", "refresh_token": refreshToken]
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+
+        let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
+        if wua != "" {
+            request.setValue(sanitisedWUA, forHTTPHeaderField: "OAuth-Client-Attestation")
+            request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
+            
+        }
         let postString = UIApplicationUtils.shared.getPostString(params: params)
         request.httpBody = postString.data(using: .utf8)
         
