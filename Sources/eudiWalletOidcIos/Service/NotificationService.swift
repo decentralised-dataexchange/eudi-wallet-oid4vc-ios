@@ -5,19 +5,32 @@
 //  Created by iGrant on 28/02/25.
 //
 import Foundation
+import CryptoKit
+
 public class NotificationService {
     public init() {}
     
-    public func sendNoticationStatus(endPoint: String?, event: String?, notificationID: String?, accessToken: String, refreshToken: String, tokenEndPoint: String) async {
+    public func sendNoticationStatus(endPoint: String?, event: String?, notificationID: String?, accessToken: String, refreshToken: String, tokenEndPoint: String, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil) async {
         guard let url = URL(string: endPoint ?? "") else { return }
         var request = URLRequest(url: url)
         var params: [String: Any] = [:]
-        params = ["notification_id": notificationID, "event": event]
+        params = ["notification_id": notificationID ?? "", "event": event ?? ""]
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue( "Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let requestBodyData = try? JSONSerialization.data(withJSONObject: params)
         request.httpBody =  requestBodyData
+        let athClaims: [String: Any] = ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken)]
+        let dpopProof: String?
+        if let dpopHandler = dpopKeyHandler, let dpopJwk = dpopKeyPublicJwk {
+            dpopProof = DPoPProofService.generateProof(tokenEndpoint: endPoint ?? "", keyHandler: dpopHandler, publicJwk: dpopJwk, claims: athClaims)
+        } else {
+            dpopProof = DPoPProofService.generateProof(tokenEndpoint: endPoint ?? "", dpopKey: dpopKey, claims: athClaims)
+        }
+        
+        if isDPOPSupported {
+            request.setValue(dpopProof, forHTTPHeaderField: "DPoP")
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
