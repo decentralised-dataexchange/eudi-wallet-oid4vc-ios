@@ -9,7 +9,8 @@
 //  identifier (x5c / kid / did / jwksUri). No device auth. iOS counterpart of the Android SDK's
 //  ServerTrustMechanismService.
 //
-//  Fail-closed: any failure resolves to "not trusted".
+//  Fail-closed: any failure resolves to "not trusted". An attempt that gets no response from the
+//  server is retried (`maxAttempts`), since a dropped connection must not read as "not on the list".
 //
 
 import Foundation
@@ -177,19 +178,58 @@ public class ServerTrustMechanismService: TrustMechanismServiceProtocol {
             print("TrustLookup ▶︎ [\(requestID)] body: \(Self.abbreviate(bodyString, limit: 300))")
         }
 
+        send(request, requestID: String(requestID), attempt: 1, completion: completion)
+    }
+
+    /// How many times one lookup is attempted when the server cannot be reached. The lookup is fast
+    /// and stateless, so an attempt that gets no response at all (no connection, DNS failure, a
+    /// dropped socket) is retried after a short pause rather than reported as untrusted at once.
+    /// Any response from the server is final: a non-2xx status or an undecodable body is still
+    /// "not trusted", but it is not retried, because the server did answer.
+    static let maxAttempts = 3
+
+    /// Pause before attempt 2, attempt 3, and so on.
+    private static func retryDelay(beforeAttempt attempt: Int) -> TimeInterval {
+        attempt <= 2 ? 0.5 : 1.0
+    }
+
+    private func send(_ request: URLRequest, requestID: String, attempt: Int,
+                      completion: @escaping (TrustListLookupResponse?) -> Void) {
+        let label = "[\(requestID)] attempt \(attempt)/\(Self.maxAttempts)"
+
+        /// No response from the server: retry while attempts remain.
+        func retryOrGiveUp(noResponse reason: String) {
+            guard attempt < Self.maxAttempts else {
+                print("TrustLookup ◀︎ \(label) NO RESPONSE (\(reason)), no attempts left, not trusted")
+                completion(nil)
+                return
+            }
+            let delay = Self.retryDelay(beforeAttempt: attempt + 1)
+            print("TrustLookup ◀︎ \(label) NO RESPONSE (\(reason)), retrying in \(delay)s")
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
+                self.send(request, requestID: requestID, attempt: attempt + 1, completion: completion)
+            }
+        }
+
         let startedAt = Date()
         URLSession.shared.dataTask(with: request) { data, response, error in
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
             let elapsed = String(format: "%.0fms", Date().timeIntervalSince(startedAt) * 1000)
             let decoded = data.flatMap { try? JSONDecoder().decode(TrustListLookupResponse.self, from: $0) }
 
-            print("TrustLookup ◀︎ [\(requestID)] status=\(status) in \(elapsed)\(error.map { " error=\($0.localizedDescription)" } ?? "")")
+            print("TrustLookup ◀︎ \(label) status=\(status) in \(elapsed)\(error.map { " error=\($0.localizedDescription)" } ?? "")")
             if let bodyString = data.flatMap({ String(data: $0, encoding: .utf8) }) {
-                print("TrustLookup ◀︎ [\(requestID)] response: \(Self.abbreviate(bodyString, limit: 1200))")
+                print("TrustLookup ◀︎ \(label) response: \(Self.abbreviate(bodyString, limit: 1200))")
             }
 
+            // Transport failure, the server never answered. Retry.
+            if let error = error, response == nil {
+                retryOrGiveUp(noResponse: error.localizedDescription)
+                return
+            }
+            // The server answered. Anything but a decodable 2xx is "not trusted", and final.
             guard error == nil, (200..<300).contains(status), let decoded = decoded else {
-                print("TrustLookup ◀︎ [\(requestID)] FAILED (decode=\(decoded == nil ? "nil" : "ok")) — not trusted")
+                print("TrustLookup ◀︎ \(label) FAILED (status=\(status) decode=\(decoded == nil ? "nil" : "ok")), not trusted")
                 completion(nil)
                 return
             }
@@ -197,7 +237,7 @@ public class ServerTrustMechanismService: TrustMechanismServiceProtocol {
             let summary = decoded.matchedEntries.map {
                 "\($0.service?.serviceTypeIdentifier ?? "-")[\($0.serviceStatus.rawValue)]@\($0.trustList?.name ?? $0.trustList?.url ?? "-")"
             }
-            print("TrustLookup ◀︎ [\(requestID)] match=\(decoded.match) entries=\(decoded.matchedEntries.count) granted=\(decoded.grantedEntries.count) \(summary)")
+            print("TrustLookup ◀︎ \(label) match=\(decoded.match) entries=\(decoded.matchedEntries.count) granted=\(decoded.grantedEntries.count) \(summary)")
             completion(decoded)
         }.resume()
     }
