@@ -64,6 +64,18 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             return await sendVPRequest(params: params, redirectURI: responseEndpoint, wua: wua, pop: pop)
         }
     
+    /// True when a request object carries no signature: the signature segment is empty, or the JOSE
+    /// header says `alg: none`. A header that cannot be read counts as signed, so the request goes on
+    /// to the client id scheme handler and fails its signature check there.
+    private func isUnsignedRequestObject(header: String, signature: String) -> Bool {
+        if signature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        guard let headerJson = header.decodeBase64(),
+              let headerData = headerJson.data(using: .utf8),
+              let headerDict = (try? JSONSerialization.jsonObject(with: headerData)) as? [String: Any],
+              let alg = headerDict["alg"] as? String else { return false }
+        return alg.caseInsensitiveCompare("none") == .orderedSame
+    }
+
     public func processAuthorisationRequest(data: String?) async -> (PresentationRequest?, EUDIError?) {
             guard let _ = data else { return (nil, nil) }
             
@@ -191,9 +203,13 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                         let jsonDecoder = JSONDecoder()
                         var model = try? jsonDecoder.decode(PresentationRequest.self, from: data)
                         if model == nil {
-                            if let jwtString = String(data: data, encoding: .utf8) {
+                            if let rawJwtString = String(data: data, encoding: .utf8) {
                                 do {
-                                    let segments = jwtString.split(separator: ".")
+                                    // A request object is header.payload.signature. An unsigned one
+                                    // (alg none) has an empty signature segment, which split(separator:)
+                                    // would drop, so split keeping empty parts.
+                                    let jwtString = rawJwtString.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let segments = jwtString.components(separatedBy: ".")
                                     if segments.count == 3 {
                                         guard let jsonPayload = try? jwtString.decodeJWT(jwtToken: jwtString) else { return (nil, nil) }
                                         guard let data = try? JSONSerialization.data(withJSONObject: jsonPayload, options: []) else { return (nil, nil) }
@@ -203,6 +219,16 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                                             model.request = jwtString
                                         } else {
                                             model.request = requestData
+                                        }
+                                        // OpenID4VP 1.0: a redirect_uri request MUST NOT be signed, so an
+                                        // unsigned request object is the normal shape for that scheme and
+                                        // is accepted as it is. For every other scheme the signature is
+                                        // what identifies the verifier, so an unsigned one is refused.
+                                        if isUnsignedRequestObject(header: segments[0], signature: segments[2]),
+                                           model.clientIDScheme != ClientIdScheme.redirectURI.rawValue {
+                                            debugPrint("VerificationService: unsigned request object for client id scheme '\(model.clientIDScheme ?? "")' - refusing")
+                                            let error = EUDIError(from: ErrorResponse(message:"Request validation failed", code: nil))
+                                            return (nil, error)
                                         }
                                         do {
                                             let updatedModel = try await ClientIdSchemeRequestHandler().handle(jwtRequest: model.request, presentationRequest: model)
