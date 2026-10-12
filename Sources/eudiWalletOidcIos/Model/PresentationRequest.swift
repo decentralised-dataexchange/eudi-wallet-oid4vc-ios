@@ -14,6 +14,10 @@ public struct PresentationRequest: Codable {
     public var clientMetaDataUri: String?
     public var transactionData: [String]?
     public var dcqlQuery: DCQLQuery?
+    /// Set when the request carried a `dcql_query` that could not be decoded into `DCQLQuery`.
+    /// `VerificationService` then refuses the request as invalid instead of letting it go on
+    /// without the query. Not part of the wire format.
+    public var dcqlQueryDecodingError: String?
     public var request: String?
     public var authSession: String?
     public var type: String?
@@ -93,7 +97,14 @@ public struct PresentationRequest: Codable {
         if clientIDScheme == nil, let clientId = clientId, let scheme = clientId.split(separator: ":").first {
             clientIDScheme = String(scheme)
         }
-        dcqlQuery = try container.decodeIfPresent(DCQLQuery.self, forKey: .dcqlQuery)
+        if container.contains(.dcqlQuery) {
+            do {
+                dcqlQuery = try container.decode(DCQLQuery.self, forKey: .dcqlQuery)
+            } catch {
+                dcqlQuery = nil
+                dcqlQueryDecodingError = DcqlQueryValidator.decodingMessage(error)
+            }
+        }
         authSession = try container.decodeIfPresent(String.self, forKey: .authSession)
         type = try container.decodeIfPresent(String.self, forKey: .type)
     }
