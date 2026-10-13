@@ -77,6 +77,27 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     }
 
     public func processAuthorisationRequest(data: String?) async -> (PresentationRequest?, EUDIError?) {
+        let (presentationRequest, error) = await processAuthorisationRequestUnchecked(data: data)
+        // Every entry point (by value, request object, request_uri, JWT, IAR) comes back through
+        // here, so a DCQL query that breaks OpenID4VP 1.0 is refused once, before any stored
+        // credential is read.
+        if let decodingError = presentationRequest?.dcqlQueryDecodingError {
+            return (nil, Self.invalidDcqlQuery(reason: decodingError))
+        }
+        if let dcql = presentationRequest?.dcqlQuery {
+            let violations = DcqlQueryValidator.validate(dcql)
+            if !violations.isEmpty {
+                return (nil, Self.invalidDcqlQuery(reason: violations.joined(separator: "; ")))
+            }
+        }
+        return (presentationRequest, error)
+    }
+
+    static func invalidDcqlQuery(reason: String) -> EUDIError {
+        EUDIError(from: ErrorResponse(message: "Invalid DCQL query: \(reason)", code: ErrorCodes.invalidDcqlQuery))
+    }
+
+    private func processAuthorisationRequestUnchecked(data: String?) async -> (PresentationRequest?, EUDIError?) {
             guard let _ = data else { return (nil, nil) }
             
             if let code = data {
@@ -100,6 +121,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                 var request = ""
                 var clientIDValue = ""
                 var dcqlQueryModel: DCQLQuery? = nil
+                var dcqlDecodingError: String? = nil
                 if URL(string: code)?.queryParameters?["type"] == "openid4vp_presentation" {
                     if let openid4vpRequest = URL(string: code)?.queryParameters?["openid4vp_request"] as? String,
                        let jsonData = openid4vpRequest.data(using: .utf8) {
@@ -130,6 +152,9 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                         do {
                             dcqlQueryModel = try JSONDecoder().decode(DCQLQuery.self, from: data)
                         } catch {
+                            // Malformed JSON, or a member of the wrong shape: refused by the
+                            // caller the same way as a structurally invalid query.
+                            dcqlDecodingError = DcqlQueryValidator.decodingMessage(error)
                         }
                     }
                 }
@@ -148,6 +173,7 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                                                                    clientMetaData: clientMetaData,
                                                                    presentationDefinitionUri: presentationDefinitionUri, clientMetaDataUri: clientMetaDataUri, clientIDScheme: clientIDScheme, transactionData: [""], dcqlQuery: dcqlQueryModel, request: request, authSession: authSession
                     )
+                    presentationRequest.dcqlQueryDecodingError = dcqlDecodingError
                     if presentationDefinition == "" && presentationDefinitionUri != "" {
                         let presentationDefinitionFromUri = await resolvePresentationDefinitionFromURI(url: presentationDefinitionUri)
                         presentationRequest.presentationDefinition = presentationDefinitionFromUri
