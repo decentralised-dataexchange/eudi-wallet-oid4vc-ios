@@ -5,6 +5,7 @@
 //  Created by Mumthasir mohammed on 11/03/24.
 //
 import Foundation
+import JOSESwift
 import CryptoKit
 import PresentationExchangeSdkiOS
 import SwiftCBOR
@@ -30,6 +31,9 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     /// - Parameters:
     ///   - keyhandler: A handler to encryption key generation class
     /// - Returns: An `VerificationService` object
+    /// Session used to fetch a request object by reference. Replaceable in tests.
+    var requestObjectSession: URLSession = .shared
+
     public required init(keyhandler: SecureKeyProtocol) {
         keyHandler = keyhandler
     }
@@ -217,17 +221,45 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                     return (presentationRquestDataModel, nil)
                 } else if requestUri != "" {
                     var request = URLRequest(url: URL(string: requestUri)!)
-                    request.httpMethod = "GET"
+                    // OpenID4VP 1.0 section 5.10: `request_uri_method=post` fetches the request
+                    // object with a form POST carrying the wallet metadata and a fresh nonce that
+                    // the verifier has to echo back in the request object. Anything else is the
+                    // plain GET of RFC 9101.
+                    let walletNonce: String? = RequestUriMethod.isPost(code) ? RequestUriMethod.newWalletNonce() : nil
+                    let encryptionKey: ECPrivateKey? = walletNonce != nil ? RequestUriMethod.newEncryptionKey() : nil
+                    if let walletNonce = walletNonce {
+                        request.httpMethod = "POST"
+                        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                        request.setValue(RequestUriMethod.requestObjectMediaType, forHTTPHeaderField: "Accept")
+                        request.httpBody = UIApplicationUtils.shared.getFormEncodedString(params: [
+                            RequestUriMethod.walletMetadataField: RequestUriMethod.walletMetadata(encryptionKey: encryptionKey),
+                            RequestUriMethod.walletNonceField: walletNonce
+                        ]).data(using: .utf8)
+                    } else {
+                        request.httpMethod = "GET"
+                    }
                     
                     do {
-                        let (data, response) = try await NetworkLogger.send(request, tag: "presentation-request")
+                        let (rawData, response) = try await NetworkLogger.send(request, tag: "presentation-request", session: requestObjectSession)
                         if let res = response as? HTTPURLResponse, res.statusCode >= 400 {
-                            let dataString = String(data: data, encoding: .utf8)
-                            let errorMsg = ErrorHandler.processError(data: data, contentType: res.value(forHTTPHeaderField: "Content-Type"))
+                            let errorMsg = ErrorHandler.processError(data: rawData, contentType: res.value(forHTTPHeaderField: "Content-Type"))
                             return(nil, errorMsg)
                         } else {
+                        // A verifier given our key may answer with an encrypted request object;
+                        // open it here so the rest of the handling sees the signed request JWT.
+                        var data = rawData
+                        if let key = encryptionKey, let body = String(data: rawData, encoding: .utf8) {
+                            guard let opened = RequestUriMethod.unwrapEncrypted(body, key: key),
+                                  let openedData = opened.data(using: .utf8) else {
+                                return (nil, EUDIError(from: ErrorResponse(message: "Request validation failed", code: nil)))
+                            }
+                            data = openedData
+                        }
                         let jsonDecoder = JSONDecoder()
                         var model = try? jsonDecoder.decode(PresentationRequest.self, from: data)
+                        if let model = model, !RequestUriMethod.nonceAccepted(sent: walletNonce, received: model.walletNonce) {
+                            return (nil, EUDIError(from: ErrorResponse(message: "Request validation failed", code: nil)))
+                        }
                         if model == nil {
                             if let rawJwtString = String(data: data, encoding: .utf8) {
                                 do {
@@ -253,6 +285,12 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
                                         if isUnsignedRequestObject(header: segments[0], signature: segments[2]),
                                            model.clientIDScheme != ClientIdScheme.redirectURI.rawValue {
                                             debugPrint("VerificationService: unsigned request object for client id scheme '\(model.clientIDScheme ?? "")' - refusing")
+                                            let error = EUDIError(from: ErrorResponse(message:"Request validation failed", code: nil))
+                                            return (nil, error)
+                                        }
+                                        // Section 5.10: a request object fetched by POST MUST carry the
+                                        // wallet_nonce it was asked for; without it the request is dropped.
+                                        if !RequestUriMethod.nonceAccepted(sent: walletNonce, received: model.walletNonce) {
                                             let error = EUDIError(from: ErrorResponse(message:"Request validation failed", code: nil))
                                             return (nil, error)
                                         }
