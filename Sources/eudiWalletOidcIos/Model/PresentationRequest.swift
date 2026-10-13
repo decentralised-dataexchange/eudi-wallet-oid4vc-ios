@@ -19,6 +19,8 @@ public struct PresentationRequest: Codable {
     /// without the query. Not part of the wire format.
     public var dcqlQueryDecodingError: String?
     public var request: String?
+    /// OpenID4VP 1.0 section 5.10: the nonce the wallet sent when it fetched the request object by POST.
+    public var walletNonce: String?
     public var authSession: String?
     public var type: String?
     
@@ -40,6 +42,7 @@ public struct PresentationRequest: Codable {
         case transactionData = "transaction_data"
         case dcqlQuery = "dcql_query"
         case request = "request"
+        case walletNonce = "wallet_nonce"
         case authSession = "auth_session"
         case type = "type"
     }
@@ -105,6 +108,7 @@ public struct PresentationRequest: Codable {
                 dcqlQueryDecodingError = DcqlQueryValidator.decodingMessage(error)
             }
         }
+        walletNonce = try container.decodeIfPresent(String.self, forKey: .walletNonce)
         authSession = try container.decodeIfPresent(String.self, forKey: .authSession)
         type = try container.decodeIfPresent(String.self, forKey: .type)
     }
