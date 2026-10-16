@@ -57,7 +57,7 @@ public struct CredentialResponse {
     public init(from outcome: CredentialOutcome) {
         switch outcome {
         case let .issued(credentials, notificationId, _):
-            credential = credentials.first
+            // Only `credentials`: wallets join `credential` with it, so setting both returns the first copy twice.
             self.credentials = credentials.map { CredentialItem(credential: $0) }
             notificationID = notificationId
             isDeferred = false
