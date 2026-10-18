@@ -50,6 +50,37 @@ public struct IssuanceSession {
     public var requiresTransactionCode: Bool {
         credentialOffer?.grants?.urnIETFParamsOauthGrantTypePreAuthorizedCode?.txCode != nil
     }
+
+    /// Whether this issuer is positively identified as a pre-1.0 draft.
+    ///
+    /// The one answer that decides both how the credential request names the credential and which
+    /// proof form it sends, so a request can never mix shapes from two revisions. 1.0 is the
+    /// default: the absence of a 1.0 feature proves nothing, since a 1.0 issuer that needs no
+    /// `c_nonce` publishes no nonce endpoint (section 12.2.4) and one that requires no key binding
+    /// declares no `proof_types_supported`. Any one of these markers is enough:
+    ///
+    ///  - the offer had a draft shape (EBSI, EWC), recorded by the offer parser as version "v1";
+    ///  - the metadata had the draft `credentials_supported` shape, recorded by discovery as
+    ///    version 1, or as the array shape ("v1") for a configuration stored before that field
+    ///    existed;
+    ///  - the token response carried `c_nonce` and the issuer publishes no nonce endpoint. 1.0
+    ///    moved `c_nonce` out of the token response, so this is how drafts 13 and 14 hand it out.
+    ///
+    /// A draft 13 or 14 issuer that returns no `c_nonce` shows none of these and is treated as
+    /// 1.0; ``CredentialRequestPolicy/legacy`` covers that case by hand.
+    ///
+    /// Mirrors `IssuanceSession.isDraftIssuer` in the Android SDK.
+    public func isDraftIssuer(token: TokenResponse?) -> Bool {
+        if credentialOffer?.version == Self.draftOfferVersion { return true }
+        if issuerConfig?.version == Self.draftMetadataVersion { return true }
+        if issuerConfig?.credentialsSupported?.version == Self.draftOfferVersion { return true }
+        let publishesNonceEndpoint = issuerConfig?.nonceEndPoint?.isEmpty == false
+        return !publishesNonceEndpoint && token?.cNonce?.isEmpty == false
+    }
+
+    /// The codes the offer and metadata parsers record for a pre-1.0 draft shape.
+    private static let draftOfferVersion = "v1"
+    private static let draftMetadataVersion = 1
 }
 
 /// The wallet's own key identity. `jwk` signs the ID token when one is asked for.

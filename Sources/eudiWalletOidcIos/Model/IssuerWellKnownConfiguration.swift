@@ -237,6 +237,11 @@ public struct IssuerWellKnownConfiguration: Codable {
     public let credentialRequestEncryption: CredentialRequestEncryption?
     /// OpenID4VCI 1.0 §12.2.4: the issuer accepts several key proofs in one credential request.
     public let batchCredentialIssuance: BatchCredentialIssuance?
+    /// Which metadata shape this was parsed from, the same codes as the Android SDK's
+    /// `IssuerWellKnownConfiguration.version`: 1 for the pre-1.0 `credentials_supported` drafts,
+    /// 2 for `credential_configurations_supported`. Set by the initialisers below, never read off
+    /// the wire. Optional so configurations stored before this field existed still decode.
+    public var version: Int? = nil
     
     public init(from: IssuerWellKnownConfigurationResponse) {
         credentialIssuer = from.credentialIssuer
@@ -272,7 +277,7 @@ public struct IssuerWellKnownConfiguration: Codable {
         credentialRequestEncryption = from.credentialRequestEncryption
         batchCredentialIssuance = from.batchCredentialIssuance
         error = nil
-  
+        version = 1
     }
 public init(from: IssuerWellKnownConfigurationResponseV2) {
         credentialIssuer = from.credentialIssuer
@@ -309,6 +314,7 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         credentialResponseEncryption = from.credentialResponseEncryption
         credentialRequestEncryption = from.credentialRequestEncryption
         batchCredentialIssuance = from.batchCredentialIssuance
+        version = 2
     }
     
     public init(mCredentialIssuer: String?,

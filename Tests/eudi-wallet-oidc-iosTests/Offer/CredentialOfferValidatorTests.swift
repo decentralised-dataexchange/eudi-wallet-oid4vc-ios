@@ -134,4 +134,13 @@ final class CredentialOfferValidatorTests: XCTestCase {
         XCTAssertEqual(result.version, "v1")
         XCTAssertEqual(result.credentials?.count, 2)
     }
+
+    /// A draft mdoc entry names itself by `doctype` alone, with no type chain.
+    func testADraftOfferNamedOnlyByDoctypeIsAccepted() throws {
+        let result = try validate("""
+        {"credential_issuer":"\(issuer)","credentials":[
+          {"format":"mso_mdoc","doctype":"org.iso.18013.5.1.mDL"}]}
+        """, version: .draft)
+        XCTAssertEqual(result.credentials?.count, 1)
+    }
 }

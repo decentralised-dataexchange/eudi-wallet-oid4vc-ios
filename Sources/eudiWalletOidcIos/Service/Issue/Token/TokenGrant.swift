@@ -21,8 +21,10 @@ public enum TokenGrant {
     ///
     /// - Parameter redirectUri: **must be the value the authorization request actually sent** --
     ///   read it from ``AuthorizationRequestInfo/redirectUri`` rather than re-deriving it. RFC 6749
-    ///   section 4.1.3 requires the two to be identical.
-    case authorizationCode(code: String, codeVerifier: String?, redirectUri: String? = nil)
+    ///   section 4.1.3 requires the two to be identical. The default is the authorization request's
+    ///   own default (`AuthorizationRequestParameters.defaultRedirectUri`), so the two agree when
+    ///   neither side was given one. `nil` omits the parameter.
+    case authorizationCode(code: String, codeVerifier: String?, redirectUri: String? = "openid://callback")
 
     /// The code the credential offer carried, for issuance the user never authorized in a browser.
     ///

@@ -7,6 +7,8 @@ import Foundation
 
 /// Where the chosen authorization server came from.
 public enum AuthorizationServerSource {
+    /// The draft-era singular `authorization_server` parameter.
+    case singularParameter
     /// The only entry the issuer declared.
     case soleEntry
     /// The entry the credential offer pointed at.
@@ -49,6 +51,19 @@ public struct AuthorizationServerSelector {
             .filter { !$0.isEmpty }
         let credentialIssuer = issuerConfig?.credentialIssuer?.trimmingCharacters(in: .whitespaces)
         let hint = hint?.trimmingCharacters(in: .whitespaces)
+
+        // Draft-era singular parameter. Still first, because it is what every pre-1.0 issuer
+        // publishes -- the EBSI conformance issuer among them -- and 1.0 issuers do not send it.
+        // The merged array above loses which form was declared; `declaresAuthorizationServers`
+        // keeps it.
+        if issuerConfig?.declaresAuthorizationServers == false, let singular = servers.first {
+            if let hint, !hint.isEmpty, hint != singular {
+                debugPrint("Ignoring the offer's authorization_server: this issuer declares a single authorization_server")
+            }
+            return AuthorizationServerSelection(
+                identifier: singular, source: .singularParameter, candidates: [singular]
+            )
+        }
 
         if servers.isEmpty {
             // "If this parameter is omitted, the entity providing the Credential Issuer is also

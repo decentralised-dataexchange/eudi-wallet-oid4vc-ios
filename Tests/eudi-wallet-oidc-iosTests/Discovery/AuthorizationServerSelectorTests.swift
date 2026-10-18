@@ -37,7 +37,26 @@ final class AuthorizationServerSelectorTests: XCTestCase {
     func testTheDraftSingularParameterIsUsedWhenPresent() throws {
         let selection = try selector.select(issuerConfig: config(singular: "https://as.example.com/auth-mock"))
         XCTAssertEqual(selection.identifier, "https://as.example.com/auth-mock")
-        XCTAssertEqual(selection.source, .soleEntry)
+        XCTAssertEqual(selection.source, .singularParameter)
+    }
+
+    /// Pre-1.0 issuers declare one server; an offer hint that names another is ignored, as it was
+    /// before the selection moved into the SDK.
+    func testTheDraftSingularParameterIgnoresAMismatchedHint() throws {
+        let selection = try selector.select(
+            issuerConfig: config(singular: "https://as.example.com/auth-mock"),
+            hint: "https://elsewhere.example.com"
+        )
+        XCTAssertEqual(selection.identifier, "https://as.example.com/auth-mock")
+        XCTAssertEqual(selection.source, .singularParameter)
+    }
+
+    /// The plural array still refuses a hint it does not list, as section 12.2.4 requires.
+    func testASoleEntryInThePluralArrayStillRefusesAMismatchedHint() throws {
+        XCTAssertThrowsError(try selector.select(
+            issuerConfig: config(servers: "[\"https://as.example.com\"]"),
+            hint: "https://elsewhere.example.com"
+        ))
     }
 
     func testASingleEntryIsUsed() throws {

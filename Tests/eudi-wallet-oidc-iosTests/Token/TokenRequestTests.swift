@@ -274,4 +274,12 @@ final class TokenRequestTests: XCTestCase {
 
         XCTAssertEqual(result.dpopNonce, "nonce-next")
     }
+
+    /// The default is the authorization request's own default, so the two agree when neither side
+    /// was given one (RFC 6749 section 4.1.3).
+    func testTheAuthorizationCodeGrantDefaultsTheRedirectToTheAuthorizationRequests() {
+        let out = body(grant: .authorizationCode(code: "abc", codeVerifier: nil))
+
+        XCTAssertEqual(out["redirect_uri"], AuthorizationRequestParameters.defaultRedirectUri)
+    }
 }

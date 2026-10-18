@@ -73,11 +73,13 @@ public enum CredentialSubject {
         }
     }
 
-    /// Whether the issuer's metadata makes the plural `proofs` object the right shape for this
-    /// credential (section 8.2). Public because it is a property of the *issuer*, not of this
-    /// SDK's internals, and a host that has to explain a rejected request needs it.
-    public func sendsPluralProofs(in session: IssuanceSession) -> Bool {
-        CredentialRequestParameters.declaresProofTypes(session: session, subject: self)
+    /// True when no field names a credential: a `format` alone asks for nothing.
+    var namesNothing: Bool {
+        guard case let .legacyFormat(_, types, definitionTypes, vct, docType, _) = self else {
+            return false
+        }
+        return (types ?? []).isEmpty && (definitionTypes ?? []).isEmpty
+            && (vct ?? "").isEmpty && (docType ?? "").isEmpty
     }
 
     /// One line naming which of section 8.2's forms this is, for logs and bug reports.
@@ -103,11 +105,9 @@ public extension CredentialSubject {
     ///    not returned";
     ///  - and drafts, which predate both, name the credential by `format` plus their own type field.
     ///
-    /// The 1.0-versus-draft test is whether the issuer publishes a nonce endpoint. That is a proxy
-    /// rather than a version field, and a deliberate one: an earlier gate on "the token response
-    /// carried no c_nonce" excluded issuers that publish a nonce endpoint *and* return a c_nonce
-    /// with the token -- servers exist that do both -- and they reject the draft body with "Invalid request
-    /// format".
+    /// The 1.0-versus-draft test is ``IssuanceSession/isDraftIssuer(token:)``, shared with the proof
+    /// form so one body never mixes the two revisions. 1.0 is the default there; an earlier gate on
+    /// "no nonce endpoint" sent the draft body to 1.0 issuers that simply require no `c_nonce`.
     static func of(
         session: IssuanceSession,
         token: TokenResponse,
@@ -115,13 +115,15 @@ public extension CredentialSubject {
     ) -> CredentialSubject {
         let details = (token.authorizationDetails ?? []).filter { $0.type == openIdCredential }
 
-        // Only take a detail that names *this* credential. Falling back to the first one when
-        // nothing matched sends another credential's `credential_identifier`, which the issuer
-        // answers with an error or a 500 -- and only for the credentials after the first, so it
-        // looks like one bad credential rather than a bad rule. A single detail is unambiguous and
-        // is the one-credential case.
-        let detail = details.first { matches($0, credential) } ?? (details.count == 1 ? details.first : nil)
-        if detail == nil, details.count > 1 {
+        // Only take a detail that names *this* credential. Borrowing one that names another sends
+        // that credential's `credential_identifier`, so the issuer hands out the first credential
+        // twice and the wallet stores the copy under the second's name. A single detail is still
+        // taken when it names no configuration at all, or when there is no offer entry to compare
+        // it with (reissuance without an offer).
+        let sole = details.count == 1 ? details.first : nil
+        let detail = details.first { matches($0, credential) }
+            ?? sole.flatMap { credential == nil || ($0.credentialConfigId ?? "").isEmpty ? $0 : nil }
+        if detail == nil, !details.isEmpty {
             debugPrint("""
                 no authorization_details entry names \(credential?.types?.first ?? "-"); \
                 naming it by configuration id instead of borrowing \
@@ -133,8 +135,7 @@ public extension CredentialSubject {
             return .byIdentifier(credentialIdentifier: identifier, offerCredential: credential)
         }
 
-        let publishesNonceEndpoint = session.issuerConfig?.nonceEndPoint?.isEmpty == false
-        if publishesNonceEndpoint {
+        if !session.isDraftIssuer(token: token) {
             let configurationId = detail?.credentialConfigId.flatMap { $0.isEmpty ? nil : $0 }
                 ?? credential?.types?.first.flatMap { $0.isEmpty ? nil : $0 }
             if let configurationId {

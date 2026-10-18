@@ -138,6 +138,7 @@ struct CredentialRequestResolver {
             subject: subject,
             proofs: proofs,
             session: session,
+            token: token,
             encryption: encryption,
             policy: policy
         )
@@ -217,20 +218,31 @@ struct CredentialRequestResolver {
             )
         }
 
-        // Section 8.3.1: "The Credential Issuer MAY return a new `c_nonce` value in an error
-        // response" -- so a rejected proof is often recoverable by signing again with it.
-        if allowRetry, policy.retryOnStaleNonce,
-           error?.errorCode == Self.invalidProof || error?.errorCode == Self.invalidNonce,
-           let fresh = freshNonce(from: result.data), !fresh.isEmpty {
-            debugPrint("issuer rejected the proof and supplied a fresh nonce; retrying once")
-            return try await send(
-                endpoint: endpoint, session: session, wallet: wallet, token: token,
-                subject: subject, issuer: issuer,
-                additionalProofKeyHandlers: additionalProofKeyHandlers,
-                attestation: attestation, keyAttestation: keyAttestation,
-                encryption: encryption, nonce: fresh, dpopNonce: dpopNonce,
-                allowRetry: false, urlSession: urlSession
-            )
+        // A rejected proof is often recoverable by signing again with a fresh nonce. Drafts return
+        // it in the error body ("The Credential Issuer MAY return a new `c_nonce` value in an error
+        // response"); 1.0 hands nonces out only at the Nonce Endpoint, so a bare `invalid_nonce`
+        // means "fetch another". Exactly once, and only if the nonce actually changed.
+        let staleProof = error?.errorCode == Self.invalidProof || error?.errorCode == Self.invalidNonce
+        if allowRetry, policy.retryOnStaleNonce, staleProof {
+            var fresh = freshNonce(from: result.data).flatMap { $0.isEmpty ? nil : $0 }
+            if fresh == nil, let nonceEndpoint = session.issuerConfig?.nonceEndPoint, !nonceEndpoint.isEmpty {
+                fresh = await NonceService().fetchNonceEndpoint(
+                    accessToken: token.accessToken,
+                    nonceEndPoint: nonceEndpoint,
+                    urlSession: urlSession
+                ).flatMap { $0.isEmpty ? nil : $0 }
+            }
+            if let fresh, fresh != nonce {
+                debugPrint("issuer rejected the proof; re-signing with a fresh nonce and retrying once")
+                return try await send(
+                    endpoint: endpoint, session: session, wallet: wallet, token: token,
+                    subject: subject, issuer: issuer,
+                    additionalProofKeyHandlers: additionalProofKeyHandlers,
+                    attestation: attestation, keyAttestation: keyAttestation,
+                    encryption: encryption, nonce: fresh, dpopNonce: issuedDPoPNonce ?? dpopNonce,
+                    allowRetry: false, urlSession: urlSession
+                )
+            }
         }
 
         // A 500 rarely carries a usable body, so the request that produced it is the evidence.

@@ -171,6 +171,12 @@ final class CredentialRequestTests: XCTestCase {
         return (seen, seenHeaders, outcome)
     }
 
+    /// The first jwt proof, from the plural `proofs` or the draft singular `proof`.
+    private static func proofJWT(in body: [String: Any]) -> String? {
+        (body["proofs"] as? [String: Any]).flatMap { ($0["jwt"] as? [String])?.first }
+            ?? ((body["proof"] as? [String: Any])?["jwt"] as? String)
+    }
+
     private static func body(of request: URLRequest) -> [String: Any] {
         guard let stream = request.httpBodyStream else {
             guard let data = request.httpBody else { return [:] }
@@ -236,24 +242,65 @@ final class CredentialRequestTests: XCTestCase {
         XCTAssertNil(body["proof"])
     }
 
-    func testProofSingularWhenProofTypesSupportedIsAbsent() async {
+    /// 1.0 defines only the plural form, so a 1.0 issuer that declares no `proof_types_supported`
+    /// still gets `proofs`. The old rule sent it the draft singular `proof`.
+    func testProofsPluralForA10IssuerWithoutProofTypesSupported() async {
         let (body, _, _) = await capture(
             session: session(hasProofTypes: false),
             subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil)
+        )
+        XCTAssertNotNil(body["proofs"])
+        XCTAssertNil(body["proof"])
+    }
+
+    /// A draft issuer -- here one that hands out `c_nonce` with the token and has no nonce
+    /// endpoint -- gets the singular `proof`, whatever its metadata declares.
+    func testProofSingularForADraftIssuer() async {
+        let (body, _, _) = await capture(
+            session: session(nonceEndpoint: nil, hasProofTypes: true),
+            subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil),
+            token: token(cNonce: "c-nonce-1")
         )
         XCTAssertNil(body["proofs"])
         XCTAssertEqual((body["proof"] as? [String: Any])?["proof_type"] as? String, "jwt")
     }
 
-    /// `credential_metadata` was the old trigger on both platforms. Section 8.2 keys the rule on
-    /// `proof_types_supported`, and this is the test that the old marker stopped mattering.
-    func testCredentialMetadataAloneDoesNotMakeProofsPlural() async {
-        let (body, _, _) = await capture(
-            session: session(hasProofTypes: false, credentialMetadata: true),
-            subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil)
+    /// The Legacy policy cannot express a batch; it fails rather than silently sending one proof.
+    func testTheLegacyPolicyRefusesABatch() async {
+        StubURLProtocol.handler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return (response, Data(#"{"credentials":[{"credential":"vc-1"}]}"#.utf8))
+        }
+        let outcome = await CredentialRequestResolver(policy: .legacy, keyHandler: StubKeyHandler()).resolve(
+            session: session(),
+            wallet: WalletIdentity(did: "did:key:zabc"),
+            token: token(),
+            subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil),
+            issuer: "did:key:zabc",
+            additionalProofKeyHandlers: [StubKeyHandler()],
+            nonce: "c-nonce-1",
+            urlSession: StubURLProtocol.session()
         )
-        XCTAssertNil(body["proofs"])
-        XCTAssertNotNil(body["proof"])
+        guard case let .failed(error) = outcome else {
+            return XCTFail("expected failed, got \(outcome)")
+        }
+        XCTAssertTrue(error.message?.contains("plural proofs") == true, error.message ?? "")
+    }
+
+    /// A legacy subject that names nothing is refused instead of sending `format` alone.
+    func testALegacySubjectThatNamesNothingIsRefused() async {
+        let (body, _, outcome) = await capture(
+            session: session(),
+            subject: .legacyFormat(format: "dc+sd-jwt")
+        )
+        XCTAssertTrue(body.isEmpty, "nothing should have been sent")
+        guard case let .failed(error) = outcome else {
+            return XCTFail("expected failed, got \(outcome)")
+        }
+        XCTAssertTrue(error.message?.contains("names no credential") == true, error.message ?? "")
     }
 
     func testPolicyCanForceTheSingularProof() async {
@@ -264,6 +311,33 @@ final class CredentialRequestTests: XCTestCase {
         )
         XCTAssertNil(body["proofs"])
         XCTAssertNotNil(body["proof"])
+    }
+
+    // MARK: - IssuanceSession.isDraftIssuer
+
+    func testA10IssuerIsTheDefault() {
+        XCTAssertFalse(session().isDraftIssuer(token: token()))
+        XCTAssertFalse(session(nonceEndpoint: nil).isDraftIssuer(token: token(cNonce: nil)))
+    }
+
+    func testADraftOfferMarksADraftIssuer() {
+        var offer = offer()
+        offer.version = "v1"
+        let draft = IssuanceSession(credentialOffer: offer, issuerConfig: issuerConfig(), authConfig: nil)
+        XCTAssertTrue(draft.isDraftIssuer(token: token()))
+    }
+
+    func testDraftMetadataMarksADraftIssuer() {
+        var config = issuerConfig()
+        config.version = 1
+        let draft = IssuanceSession(credentialOffer: offer(), issuerConfig: config, authConfig: nil)
+        XCTAssertTrue(draft.isDraftIssuer(token: token()))
+    }
+
+    /// Drafts 13 and 14 hand out `c_nonce` with the token; 1.0 moved it to the nonce endpoint.
+    func testATokenCNonceWithoutANonceEndpointMarksADraftIssuer() {
+        XCTAssertTrue(session(nonceEndpoint: nil).isDraftIssuer(token: token(cNonce: "c-nonce-1")))
+        XCTAssertFalse(session().isDraftIssuer(token: token(cNonce: "c-nonce-1")))
     }
 
     // MARK: - Section 8.2: which subject the token response requires
@@ -310,17 +384,58 @@ final class CredentialRequestTests: XCTestCase {
         XCTAssertEqual(id, "PID")
     }
 
-    /// One detail is unambiguous -- it is the single-credential case, and it must still be used.
-    func testASingleDetailIsUsedEvenWhenItDoesNotNameTheCredential() {
+    /// A sole detail that names another credential is not borrowed: its identifier would make the
+    /// issuer hand out that other credential, stored under this one's name.
+    func testASoleDetailNamingAnotherCredentialIsNotBorrowed() {
         let subject = CredentialSubject.of(
             session: session(),
-            token: token(authorizationDetails: [detail(configId: "OTHER", identifiers: ["cred-only"])]),
+            token: token(authorizationDetails: [detail(configId: "OTHER", identifiers: ["cred-other"])]),
+            credential: offer().credentials?.first
+        )
+        guard case let .byConfiguration(id, _) = subject else {
+            return XCTFail("expected byConfiguration, got \(subject)")
+        }
+        XCTAssertEqual(id, "PID")
+    }
+
+    /// A sole detail that names no configuration is the single-credential case and is used.
+    func testASoleDetailNamingNoConfigurationIsUsed() {
+        let subject = CredentialSubject.of(
+            session: session(),
+            token: token(authorizationDetails: [detail(identifiers: ["cred-only"])]),
             credential: offer().credentials?.first
         )
         guard case let .byIdentifier(identifier, _) = subject else {
             return XCTFail("expected byIdentifier, got \(subject)")
         }
         XCTAssertEqual(identifier, "cred-only")
+    }
+
+    /// Without an offer entry to compare with (reissuance), a sole detail is still used.
+    func testASoleDetailIsUsedWithoutAnOfferEntry() {
+        let subject = CredentialSubject.of(
+            session: session(),
+            token: token(authorizationDetails: [detail(configId: "OTHER", identifiers: ["cred-only"])]),
+            credential: nil
+        )
+        guard case let .byIdentifier(identifier, _) = subject else {
+            return XCTFail("expected byIdentifier, got \(subject)")
+        }
+        XCTAssertEqual(identifier, "cred-only")
+    }
+
+    /// A 1.0 issuer that needs no `c_nonce` publishes no nonce endpoint; it is still named by
+    /// configuration id, not by the draft `format` body.
+    func testA10IssuerWithoutANonceEndpointIsNamedByConfigurationId() {
+        let subject = CredentialSubject.of(
+            session: session(nonceEndpoint: nil),
+            token: token(cNonce: nil),
+            credential: offer().credentials?.first
+        )
+        guard case let .byConfiguration(id, _) = subject else {
+            return XCTFail("expected byConfiguration, got \(subject)")
+        }
+        XCTAssertEqual(id, "PID")
     }
 
     /// No nonce endpoint means a pre-1.0 issuer, which has neither identifier.
@@ -345,7 +460,7 @@ final class CredentialRequestTests: XCTestCase {
             subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil),
             keyHandler: keyHandler
         )
-        let jwt = (body["proof"] as? [String: Any])?["jwt"] as? String
+        let jwt = Self.proofJWT(in: body)
         let header = JWTParts.header(jwt ?? "")
         let claims = JWTParts.claims(jwt ?? "")
 
@@ -391,7 +506,7 @@ final class CredentialRequestTests: XCTestCase {
             ),
             keyHandler: keyHandler
         )
-        let jwt = (body["proof"] as? [String: Any])?["jwt"] as? String
+        let jwt = Self.proofJWT(in: body)
         let header = JWTParts.header(jwt ?? "")
 
         // The offer entry carries no trustFramework, so the `jwk` method takes the else-branch and
@@ -411,7 +526,7 @@ final class CredentialRequestTests: XCTestCase {
                 offerCredential: offer().credentials?.first
             )
         )
-        let header = JWTParts.header((body["proof"] as? [String: Any])?["jwt"] as? String ?? "")
+        let header = JWTParts.header(Self.proofJWT(in: body) ?? "")
         XCTAssertEqual(header?["kid"] as? String, "did:key:zabc#zabc")
         XCTAssertNil(header?["jwk"])
     }
@@ -578,6 +693,84 @@ final class CredentialRequestTests: XCTestCase {
 
     /// RFC 9449 section 8. The token endpoint has answered this challenge since step 4; the
     /// credential endpoint never has.
+    /// 1.0 hands nonces out only at the Nonce Endpoint, so a bare `invalid_nonce` with no
+    /// `c_nonce` in the body means "fetch another" -- once.
+    func testABareInvalidNonceFetchesAFreshNonceFromTheNonceEndpoint() async {
+        var noncesSent: [String] = []
+        StubURLProtocol.handler = { request in
+            let json = ["Content-Type": "application/json"]
+            if request.url?.path.contains("nonce") == true {
+                let ok = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: json)!
+                return (ok, Data(#"{"c_nonce":"from-endpoint"}"#.utf8))
+            }
+            if let nonce = JWTParts.claims(Self.proofJWT(in: Self.body(of: request)) ?? "")?["nonce"] as? String {
+                noncesSent.append(nonce)
+            }
+            if noncesSent.count == 1 {
+                let rejected = HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: json)!
+                return (rejected, Data(#"{"error":"invalid_nonce"}"#.utf8))
+            }
+            let ok = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: json)!
+            return (ok, Data(#"{"credentials":[{"credential":"vc-1"}]}"#.utf8))
+        }
+
+        let outcome = await CredentialRequestResolver(keyHandler: StubKeyHandler()).resolve(
+            session: session(),
+            wallet: WalletIdentity(did: "did:key:zabc"),
+            token: token(),
+            subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil),
+            issuer: "did:key:zabc",
+            nonce: "c-nonce-1",
+            urlSession: StubURLProtocol.session()
+        )
+
+        XCTAssertEqual(noncesSent, ["c-nonce-1", "from-endpoint"])
+        XCTAssertEqual(outcome.firstCredential, "vc-1")
+    }
+
+    /// The stale-nonce retry signs its DPoP proof with the nonce the server just issued, not the
+    /// one that was already spent.
+    func testTheStaleNonceRetryCarriesTheIssuedDPoPNonce() async {
+        var dpopNonces: [String?] = []
+        StubURLProtocol.handler = { request in
+            guard request.url?.path.contains("credential") == true else {
+                let ok = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                return (ok, Data("{}".utf8))
+            }
+            let dpop = request.value(forHTTPHeaderField: "DPoP") ?? ""
+            dpopNonces.append(JWTParts.claims(dpop)?["nonce"] as? String)
+            if dpopNonces.count == 1 {
+                let rejected = HTTPURLResponse(
+                    url: request.url!, statusCode: 400, httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json", "DPoP-Nonce": "dpop-2"]
+                )!
+                return (rejected, Data(#"{"error":"invalid_proof","c_nonce":"fresh-nonce"}"#.utf8))
+            }
+            let ok = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return (ok, Data(#"{"credentials":[{"credential":"vc-1"}]}"#.utf8))
+        }
+
+        let outcome = await CredentialRequestResolver(keyHandler: StubKeyHandler()).resolve(
+            session: session(),
+            wallet: WalletIdentity(did: "did:key:zabc"),
+            token: token(tokenType: "DPoP"),
+            subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil),
+            issuer: "did:key:zabc",
+            attestation: WalletAttestation(
+                attestationJwt: nil, proofOfPossession: nil, dpopKey: P256.Signing.PrivateKey()
+            ),
+            nonce: "c-nonce-1",
+            dpopNonce: "dpop-1",
+            urlSession: StubURLProtocol.session()
+        )
+
+        XCTAssertEqual(dpopNonces, ["dpop-1", "dpop-2"])
+        XCTAssertEqual(outcome.firstCredential, "vc-1")
+    }
+
     func testADPoPNonceChallengeIsRetriedOnce() async {
         var attempts = 0
         var authorizations: [String] = []
@@ -688,7 +881,7 @@ final class CredentialRequestTests: XCTestCase {
             subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil)
         )
         XCTAssertNil(body["credential_response_encryption"])
-        XCTAssertNotNil(body["proof"], "the body must not be empty")
+        XCTAssertNotNil(Self.proofJWT(in: body), "the body must not be empty")
         XCTAssertEqual(outcome.firstCredential, "vc-1")
     }
 

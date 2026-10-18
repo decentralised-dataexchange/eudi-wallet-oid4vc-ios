@@ -445,7 +445,7 @@ final class HarnessModel: ObservableObject {
                 let trace = """
                   credential         \(name)
                   subject            \(subject.describedForLog)
-                  proofs plural      \(subject.sendsPluralProofs(in: session))
+                  draft issuer       \(session.isDraftIssuer(token: token))
                   endpoint           \(issuerConfig.credentialEndpoint ?? "—")
                   nonce endpoint     \(issuerConfig.nonceEndPoint ?? "— (draft: c_nonce from the token)")
                 """

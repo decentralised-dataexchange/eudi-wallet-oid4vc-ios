@@ -35,7 +35,10 @@ struct CredentialOfferValidator {
             throw CredentialOfferError.invalid("The credential offer does not name any credentials")
         }
         let identifiers: [String] = credentials.compactMap { credential in
-            let value = specVersion == .v1_0 ? credential.types?.first : credential.types?.last
+            // A draft mdoc entry names itself by `doctype` alone, with no type chain.
+            let value = specVersion == .v1_0
+                ? credential.types?.first
+                : credential.types?.last ?? credential.doctype
             guard let value, !value.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
             return value
         }

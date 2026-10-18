@@ -13,15 +13,14 @@ import Foundation
 /// Mirrors `CredentialRequestPolicy` in the Android SDK.
 public struct CredentialRequestPolicy {
 
-    /// Send the plural `proofs` object when the issuer declares `proof_types_supported` for the
-    /// credential being requested.
+    /// Send the plural `proofs` object unless the issuer is positively identified as a pre-1.0
+    /// draft (see ``IssuanceSession/isDraftIssuer(token:)``).
     ///
-    /// Section 8.2: "The `proofs` parameter MUST be present if the `proof_types_supported`
-    /// parameter is present in the `credential_configurations_supported` parameter of the Issuer
-    /// metadata."
-    ///
-    /// On by default, because that is the rule. Both SDKs previously keyed this off whether the
-    /// configuration carried a `credential_metadata` member -- an unrelated marker.
+    /// Section 8.2 of 1.0 defines only `proofs`; the singular `proof` exists in the drafts alone.
+    /// On by default, because that is the rule. Off sends the singular `proof` to every issuer; it
+    /// changes the proof form only, so a caller stepping a draft issuer back by hand also passes a
+    /// ``CredentialSubject/legacyFormat(format:types:credentialDefinitionTypes:vct:docType:offerCredential:)``
+    /// so the body stays one revision throughout. A batch cannot be sent with this off.
     public var usePluralProofs: Bool
 
     /// Re-sign the proof and retry once when the issuer rejects it with a fresh nonce.

@@ -28,6 +28,7 @@ enum CredentialRequestParameters {
         subject: CredentialSubject,
         proofs: CredentialProofs,
         session: IssuanceSession,
+        token: TokenResponse?,
         encryption: CredentialEncryption?,
         policy: CredentialRequestPolicy
     ) throws -> [String: Any] {
@@ -42,6 +43,16 @@ enum CredentialRequestParameters {
             params["credential_configuration_id"] = configurationId
 
         case let .legacyFormat(format, types, definitionTypes, vct, docType, _):
+            // A body that names no credential cannot be satisfied by any issuer of any revision. It
+            // is what `CredentialSubject.of` falls through to when a 1.0 issuer gave nothing to
+            // name the credential by (no offer entry, no authorization_details), and sending it
+            // would put a draft `format` next to 1.0 `proofs`.
+            if subject.namesNothing {
+                throw CredentialRequestError.unusable(
+                    "The credential request names no credential: the offer entry and the "
+                        + "token's authorization_details gave no configuration id or type"
+                )
+            }
             // 1.0 has no `format` member; these are the draft shapes, and the one case to delete
             // when draft support goes.
             if let format { params["format"] = format }
@@ -53,11 +64,11 @@ enum CredentialRequestParameters {
             if let docType, !docType.isEmpty { params["doctype"] = docType }
         }
 
-        // Section 8.2: "The `proofs` parameter MUST be present if the `proof_types_supported`
-        // parameter is present in the `credential_configurations_supported` parameter of the Issuer
-        // metadata." Both platforms previously keyed this off whether the configuration carried a
-        // `credential_metadata` member, which is unrelated to whether the issuer wants the plural
-        // form.
+        // Section 8.2 of 1.0 defines only the plural `proofs`; the singular `proof` belongs to the
+        // drafts (draft 13 has only `proof`, draft 14 accepts either). So `proofs` is the default,
+        // and `proof` goes only to an issuer `IssuanceSession.isDraftIssuer` positively identifies
+        // as a draft: the same answer that chose the subject's shape above, so the body cannot mix
+        // a draft name with 1.0 proofs or the reverse.
         switch proofs {
         case let .attestation(keyAttestation):
             // §8.2: the attestation proof type carries the KA itself, and the issuer's c_nonce
@@ -67,8 +78,17 @@ enum CredentialRequestParameters {
         case let .jwt(jwtProofs):
             // A batch is more than one entry; §8.2's `proofs` is an array either way. The singular
             // `proof` is the pre-1.0 shape and cannot express a batch at all, so a batch always
-            // takes the plural form regardless of what the metadata declares.
-            if policy.usePluralProofs, declaresProofTypes(session: session, subject: subject) || jwtProofs.count > 1 {
+            // takes the plural form whatever the issuer's revision -- and a policy that forbids
+            // the plural form cannot send a batch. Failing here beats silently issuing one
+            // credential of the several the caller asked for.
+            let batch = jwtProofs.count > 1
+            if batch, !policy.usePluralProofs {
+                throw CredentialRequestError.unusable(
+                    "A batch of \(jwtProofs.count) proofs needs the plural proofs form, "
+                        + "which this CredentialRequestPolicy disables"
+                )
+            }
+            if policy.usePluralProofs, batch || !session.isDraftIssuer(token: token) {
                 params["proofs"] = [proofTypeJWT: jwtProofs]
             } else {
                 params["proof"] = ["proof_type": proofTypeJWT, "jwt": jwtProofs.first ?? ""]
@@ -80,16 +100,6 @@ enum CredentialRequestParameters {
         }
 
         return params
-    }
-
-    /// Whether the issuer declares `proof_types_supported` for **the credential being requested**.
-    ///
-    /// `hasProofTypesSupported` is already parsed onto the metadata model for the TS3 key
-    /// attestation rules, so the correct trigger was one field away the whole time.
-    static func declaresProofTypes(session: IssuanceSession, subject: CredentialSubject) -> Bool {
-        guard let key = subject.metadataKey else { return false }
-        return session.issuerConfig?.credentialsSupported?
-            .dataSharing?[key]?.hasProofTypesSupported == true
     }
 
     /// Section 10's `credential_response_encryption`, when the issuer supports the suite this SDK

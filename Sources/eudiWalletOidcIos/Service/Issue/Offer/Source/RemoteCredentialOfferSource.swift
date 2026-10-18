@@ -54,8 +54,12 @@ struct RemoteCredentialOfferSource: CredentialOfferSource {
 
         let http = response as? HTTPURLResponse
         if let status = http?.statusCode, status >= 400 {
+            // The body is an OAuth error object or an HTML page; ErrorHandler reduces either to
+            // something a user can read.
             let body = String(data: data, encoding: .utf8)
-            throw CredentialOfferError.fetchFailed(status: status, detail: body?.isEmpty == false ? body : nil)
+            let described = ErrorHandler.processError(data: data, contentType: http?.value(forHTTPHeaderField: "Content-Type"), httpStatus: status)?.message
+            let detail = described?.isEmpty == false ? described : (body?.isEmpty == false ? body : nil)
+            throw CredentialOfferError.fetchFailed(status: status, detail: detail)
         }
 
         let contentType = http?.value(forHTTPHeaderField: "Content-Type")
