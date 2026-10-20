@@ -53,6 +53,18 @@ class ErrorHandler {
             } else {
                 errorResponse = EUDIError(from: ErrorResponse(message:"Unexpected error. Please try again.", code: -1))
             }
-            return errorResponse
+            return errorResponse.map { withErrorCode($0, from: jsonObject) }
         }
+
+    /// The OAuth `error` code of the body: top level, or under `detail` as some
+    /// servers nest it. A wallet classifies by this code; the message stays as is.
+    private static func withErrorCode(_ error: EUDIError, from json: [String: Any]?) -> EUDIError {
+        var error = error
+        if let code = json?["error"] as? String, !code.isEmpty {
+            error.errorCode = code
+        } else if let detail = json?["detail"] as? [String: Any], let code = detail["error"] as? String, !code.isEmpty {
+            error.errorCode = code
+        }
+        return error
+    }
 }

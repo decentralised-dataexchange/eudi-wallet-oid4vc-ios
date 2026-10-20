@@ -67,11 +67,9 @@ public class NotificationService {
         request.httpBody = postString.data(using: .utf8)
         
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await NetworkLogger.send(request, tag: "token-refresh")
             let httpRes = response as? HTTPURLResponse
             if httpRes?.statusCode ?? 0 >= 400 {
-                let errorString = String(data: data, encoding: .utf8)
-                let error = EUDIError(from: ErrorResponse(message: errorString))
                 return (nil, nil)
             } else if httpRes?.statusCode ?? 0 == 200 {
                 let dataString = String(data: data, encoding: .utf8)
