@@ -24,7 +24,6 @@ final class DeferredRequestTests: XCTestCase {
         let json = """
         {
           "credentialIssuer": "https://issuer.example.com",
-          "declaresAuthorizationServers": false,
           "credentialEndpoint": "https://issuer.example.com/credential"
           \(deferredEndpoint.map { ", \"deferredCredentialEndpoint\": \"\($0)\"" } ?? "")
         }

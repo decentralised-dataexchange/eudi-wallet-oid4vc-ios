@@ -24,8 +24,7 @@ final class CredentialRequestTests: XCTestCase {
     // MARK: - Fixtures
 
     /// These models decode by **Swift property name** -- the snake_case wire mapping lives in the
-    /// separate `...Response` types. `declaresAuthorizationServers` is a non-optional `Bool`, and a
-    /// synthesised `Decodable` ignores property defaults, so it has to be present.
+    /// separate `...Response` types.
     private func issuerConfig(
         nonceEndpoint: String? = "https://issuer.example.com/nonce",
         configurationId: String = "PID",

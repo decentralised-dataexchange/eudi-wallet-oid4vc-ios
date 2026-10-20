@@ -97,6 +97,17 @@ final class AuthorizationServerSelectorTests: XCTestCase {
         XCTAssertEqual(selection.candidates.count, 2)
     }
 
+    /// A configuration stored before `declaresAuthorizationServers` existed decodes with the flag
+    /// false. Several servers can only have come from the plural form, so the offer hint still
+    /// picks among them rather than being ignored as a draft-era mismatch.
+    func testAStoredConfigurationWithSeveralServersAndNoFlagIsTreatedAsPlural() throws {
+        let stored = #"{"credentialIssuer":"https://issuer.example.com","authorizationServer":["https://as-a.example.com","https://as-b.example.com"]}"#
+        let config = try JSONDecoder().decode(IssuerWellKnownConfiguration.self, from: Data(stored.utf8))
+        let selection = try selector.select(issuerConfig: config, hint: "https://as-b.example.com")
+        XCTAssertEqual(selection.identifier, "https://as-b.example.com")
+        XCTAssertEqual(selection.source, .offerHint)
+    }
+
     func testNoIssuerAndNoServersIsRejected() {
         let empty = IssuerWellKnownConfiguration(
             from: EUDIError(from: ErrorResponse(message: nil, code: nil))

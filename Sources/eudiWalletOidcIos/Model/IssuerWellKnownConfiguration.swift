@@ -242,6 +242,39 @@ public struct IssuerWellKnownConfiguration: Codable {
     /// 2 for `credential_configurations_supported`. Set by the initialisers below, never read off
     /// the wire. Optional so configurations stored before this field existed still decode.
     public var version: Int? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case credentialIssuer, authorizationServer, declaresAuthorizationServers, credentialEndpoint,
+             deferredCredentialEndpoint, display, credentialsSupported, error, notificationEndPoint,
+             nonceEndPoint, credentialResponseEncryption, credentialRequestEncryption,
+             batchCredentialIssuance, version
+    }
+
+    /// Written out so that a configuration stored before `declaresAuthorizationServers` existed
+    /// still decodes. The synthesised initialiser ignores a property's default and treats every
+    /// non-optional key as required, and wallets persist this type inside each credential record,
+    /// so a required key would have emptied the issuer configuration of every existing credential
+    /// on upgrade. Encoding stays synthesised.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        credentialIssuer = try values.decodeIfPresent(String.self, forKey: .credentialIssuer)
+        authorizationServer = try values.decodeIfPresent([String].self, forKey: .authorizationServer)
+        declaresAuthorizationServers =
+            try values.decodeIfPresent(Bool.self, forKey: .declaresAuthorizationServers) ?? false
+        credentialEndpoint = try values.decodeIfPresent(String.self, forKey: .credentialEndpoint)
+        deferredCredentialEndpoint = try values.decodeIfPresent(String.self, forKey: .deferredCredentialEndpoint)
+        display = try values.decodeIfPresent([Display].self, forKey: .display)
+        credentialsSupported = try values.decodeIfPresent(CredentialSupportedObject.self, forKey: .credentialsSupported)
+        error = try values.decodeIfPresent(EUDIError.self, forKey: .error)
+        notificationEndPoint = try values.decodeIfPresent(String.self, forKey: .notificationEndPoint)
+        nonceEndPoint = try values.decodeIfPresent(String.self, forKey: .nonceEndPoint)
+        credentialResponseEncryption =
+            try values.decodeIfPresent(CredentialResponseEncryptionModel.self, forKey: .credentialResponseEncryption)
+        credentialRequestEncryption =
+            try values.decodeIfPresent(CredentialRequestEncryption.self, forKey: .credentialRequestEncryption)
+        batchCredentialIssuance = try values.decodeIfPresent(BatchCredentialIssuance.self, forKey: .batchCredentialIssuance)
+        version = try values.decodeIfPresent(Int.self, forKey: .version)
+    }
     
     public init(from: IssuerWellKnownConfigurationResponse) {
         credentialIssuer = from.credentialIssuer

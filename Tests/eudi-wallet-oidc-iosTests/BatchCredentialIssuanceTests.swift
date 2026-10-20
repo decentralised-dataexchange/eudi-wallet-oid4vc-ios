@@ -30,12 +30,7 @@ final class BatchCredentialIssuanceTests: XCTestCase {
     /// generates the first proof rather than being handed one — so all three keys are checked.
     func testEveryKeySignsItsOwnProofWithTheSameNonceAndAudience() async throws {
         let offer = try JSONDecoder().decode(CredentialOffer.self, from: Data(#"{"credentialIssuer":"https://issuer.example"}"#.utf8))
-        // `declaresAuthorizationServers` is a non-optional Bool and a synthesised Decodable ignores
-        // property defaults, so it has to be present.
-        let config = try JSONDecoder().decode(
-            IssuerWellKnownConfiguration.self,
-            from: Data(#"{"declaresAuthorizationServers":false}"#.utf8)
-        )
+        let config = try JSONDecoder().decode(IssuerWellKnownConfiguration.self, from: Data("{}".utf8))
         let keys = (0..<3).map { _ in P256.Signing.PrivateKey() }
         let handlers: [SecureKeyProtocol] = keys.map {
             CryptoKitHandler(secureKeyData: SecureKeyData(publicKey: $0.publicKey.rawRepresentation, privateKey: $0.rawRepresentation))

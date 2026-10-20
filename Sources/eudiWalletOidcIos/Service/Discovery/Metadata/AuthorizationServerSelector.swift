@@ -55,8 +55,12 @@ public struct AuthorizationServerSelector {
         // Draft-era singular parameter. Still first, because it is what every pre-1.0 issuer
         // publishes -- the EBSI conformance issuer among them -- and 1.0 issuers do not send it.
         // The merged array above loses which form was declared; `declaresAuthorizationServers`
-        // keeps it.
-        if issuerConfig?.declaresAuthorizationServers == false, let singular = servers.first {
+        // keeps it. A configuration stored before that flag existed decodes with it false, so a
+        // plural declaration is also recognised by its shape: the singular form never names more
+        // than one server. A plural declaration of exactly one server stored that way is read as
+        // the draft form, so a mismatched offer hint is ignored there rather than stopping the
+        // flow; the stored configuration is only reused where the offer is the stored one too.
+        if issuerConfig?.declaresAuthorizationServers == false, servers.count == 1, let singular = servers.first {
             if let hint, !hint.isEmpty, hint != singular {
                 debugPrint("Ignoring the offer's authorization_server: this issuer declares a single authorization_server")
             }

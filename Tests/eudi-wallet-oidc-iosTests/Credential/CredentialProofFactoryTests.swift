@@ -34,7 +34,6 @@ final class CredentialProofFactoryTests: XCTestCase {
             from: Data("""
             {
               "credentialIssuer": "https://issuer.example.com",
-              "declaresAuthorizationServers": false,
               "credentialEndpoint": "https://issuer.example.com/credential",
               "credentialsSupported": {
                 "version": "v2",

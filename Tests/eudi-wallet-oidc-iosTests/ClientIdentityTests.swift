@@ -26,12 +26,7 @@ final class ClientIdentityTests: XCTestCase {
 
     private func proofClaims(issuer: String?) async throws -> [String: Any] {
         let offer = try JSONDecoder().decode(CredentialOffer.self, from: Data("{}".utf8))
-        // `declaresAuthorizationServers` is a non-optional Bool and a synthesised Decodable ignores
-        // property defaults, so it has to be present even though nothing here reads it.
-        let config = try JSONDecoder().decode(
-            IssuerWellKnownConfiguration.self,
-            from: Data(#"{"declaresAuthorizationServers":false}"#.utf8)
-        )
+        let config = try JSONDecoder().decode(IssuerWellKnownConfiguration.self, from: Data("{}".utf8))
         // ProofService moved to CredentialProofFactory under Issue/Credential/Proof; the iss rule
         // this tests moved with it.
         let jwt = try await CredentialProofFactory.create(

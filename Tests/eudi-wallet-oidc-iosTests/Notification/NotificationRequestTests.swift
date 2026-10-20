@@ -21,8 +21,7 @@ final class NotificationRequestTests: XCTestCase {
     private func session(endpoint: String? = "https://issuer.example.com/notification") -> IssuanceSession {
         let json = """
         {
-          "credentialIssuer": "https://issuer.example.com",
-          "declaresAuthorizationServers": false
+          "credentialIssuer": "https://issuer.example.com"
           \(endpoint.map { ", \"notificationEndPoint\": \"\($0)\"" } ?? "")
         }
         """
