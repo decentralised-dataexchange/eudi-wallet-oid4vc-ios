@@ -60,8 +60,9 @@ enum MetadataFetcher {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue(acceptHeader(supportsSignedMetadata: supportsSignedMetadata),
-                         forHTTPHeaderField: "Accept")
+        // commenting this for now as we are not supporting signed metadata
+//        request.setValue(acceptHeader(supportsSignedMetadata: supportsSignedMetadata),
+//                         forHTTPHeaderField: "Accept")
         if let language = acceptLanguageHeader(policy: policy) {
             request.setValue(language, forHTTPHeaderField: "Accept-Language")
         }
