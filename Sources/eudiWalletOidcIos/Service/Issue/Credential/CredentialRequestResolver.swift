@@ -214,8 +214,12 @@ struct CredentialRequestResolver {
         // it in the error body ("The Credential Issuer MAY return a new `c_nonce` value in an error
         // response"); 1.0 hands nonces out only at the Nonce Endpoint, so a bare `invalid_nonce`
         // means "fetch another". Exactly once, and only if the nonce actually changed.
+        //
+        // Not when a key attestation travels with the proof: it is bound to the nonce the issuer
+        // just rejected and cannot be re-minted here, so the retry would fail on the attestation
+        // and report that failure in place of the issuer's first answer.
         let staleProof = error?.errorCode == Self.invalidProof || error?.errorCode == Self.invalidNonce
-        if allowRetry, policy.retryOnStaleNonce, staleProof {
+        if allowRetry, policy.retryOnStaleNonce, staleProof, keyAttestation == nil {
             var fresh = freshNonce(from: result.data).flatMap { $0.isEmpty ? nil : $0 }
             if fresh == nil, let nonceEndpoint = session.issuerConfig?.nonceEndPoint, !nonceEndpoint.isEmpty {
                 fresh = await NonceService().fetchNonceEndpoint(

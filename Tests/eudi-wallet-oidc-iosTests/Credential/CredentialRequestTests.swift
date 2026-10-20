@@ -690,6 +690,46 @@ final class CredentialRequestTests: XCTestCase {
         XCTAssertEqual(attempts, 1)
     }
 
+    /// A key attestation is bound to the nonce the issuer just rejected and cannot be re-minted
+    /// here, so a retry would fail on the attestation and report that in place of the issuer's own
+    /// answer. The issuer's code and status come back untouched instead.
+    func testAStaleNonceIsNotRetriedWhenAKeyAttestationTravelsWithTheProof() async {
+        var attempts = 0
+        StubURLProtocol.handler = { request in
+            if request.url?.path.contains("credential") == true { attempts += 1 }
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 400, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return (response, Data(#"{"error":"invalid_proof","c_nonce":"fresh-nonce"}"#.utf8))
+        }
+
+        let outcome = await CredentialRequestResolver(keyHandler: StubKeyHandler()).resolve(
+            session: session(),
+            wallet: WalletIdentity(did: "did:key:zabc"),
+            token: token(),
+            subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil),
+            issuer: "did:key:zabc",
+            keyAttestation: keyAttestation(carrying: "c-nonce-1"),
+            nonce: "c-nonce-1",
+            urlSession: StubURLProtocol.session()
+        )
+
+        XCTAssertEqual(attempts, 1)
+        guard case let .failed(error) = outcome else { return XCTFail("expected failure") }
+        XCTAssertEqual(error.errorCode, "invalid_proof")
+        XCTAssertEqual(error.httpStatus, 400)
+    }
+
+    /// A key attestation JWT whose payload carries `nonce`; the signature is not checked here.
+    private func keyAttestation(carrying nonce: String) -> String {
+        let payload = Data("{\"nonce\":\"\(nonce)\"}".utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return "eyJhbGciOiJFUzI1NiJ9.\(payload).signature"
+    }
+
     /// RFC 9449 section 8. The token endpoint has answered this challenge since step 4; the
     /// credential endpoint never has.
     /// 1.0 hands nonces out only at the Nonce Endpoint, so a bare `invalid_nonce` with no
