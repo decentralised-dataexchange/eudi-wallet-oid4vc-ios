@@ -1,0 +1,343 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0ADA61FDF16CD4F5867E7B8A /* HarnessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB358919BF62714B40D55211 /* HarnessView.swift */; };
+		2C9CA22901395E3A3FD6E55B /* HarnessModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB25F935272A7E0C4E73E2F /* HarnessModel.swift */; };
+		6554DBD6147718898BBBC9F9 /* HarnessApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B24CE3F4DE2EA196084CA586 /* HarnessApp.swift */; };
+		6A575556AA544A62F65DB39D /* HarnessKeyHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F43AD07B7E57381050F82E /* HarnessKeyHandler.swift */; };
+		7247EAE5DE65393AD2603FF0 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2069DB4D73578F21E0341849 /* QRScannerView.swift */; };
+		87D58E072A730F252BF6BC74 /* eudiWalletOidcIos in Frameworks */ = {isa = PBXBuildFile; productRef = 2099E45F8E51A0B6A0AC093C /* eudiWalletOidcIos */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1DB25F935272A7E0C4E73E2F /* HarnessModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarnessModel.swift; sourceTree = "<group>"; };
+		2069DB4D73578F21E0341849 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		8466A20DEC0BB4C1210F292E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		AC748E9F0F8B4322B0D0AB98 /* eudi-wallet-oid4vc-ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "eudi-wallet-oid4vc-ios"; path = ..; sourceTree = SOURCE_ROOT; };
+		B24CE3F4DE2EA196084CA586 /* HarnessApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarnessApp.swift; sourceTree = "<group>"; };
+		D3E473950CF7C898DE998767 /* Harness.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Harness.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F9F43AD07B7E57381050F82E /* HarnessKeyHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarnessKeyHandler.swift; sourceTree = "<group>"; };
+		FB358919BF62714B40D55211 /* HarnessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarnessView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		CD0891400EC7CA3E7DCB88CF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				87D58E072A730F252BF6BC74 /* eudiWalletOidcIos in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		5A46B0D24AB7DF64B93F488B = {
+			isa = PBXGroup;
+			children = (
+				CEE945B9CB6BEBD18A0710AB /* Harness */,
+				F2461AF6DDAAD80A1FA23C08 /* Packages */,
+				8B9F84DC775F556DAE85C788 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		8B9F84DC775F556DAE85C788 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D3E473950CF7C898DE998767 /* Harness.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		CEE945B9CB6BEBD18A0710AB /* Harness */ = {
+			isa = PBXGroup;
+			children = (
+				B24CE3F4DE2EA196084CA586 /* HarnessApp.swift */,
+				F9F43AD07B7E57381050F82E /* HarnessKeyHandler.swift */,
+				1DB25F935272A7E0C4E73E2F /* HarnessModel.swift */,
+				FB358919BF62714B40D55211 /* HarnessView.swift */,
+				8466A20DEC0BB4C1210F292E /* Info.plist */,
+				2069DB4D73578F21E0341849 /* QRScannerView.swift */,
+			);
+			path = Harness;
+			sourceTree = "<group>";
+		};
+		F2461AF6DDAAD80A1FA23C08 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				AC748E9F0F8B4322B0D0AB98 /* eudi-wallet-oid4vc-ios */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		9CAE8F41437D5C28E2B50B85 /* Harness */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C6F05FE989F73732C255F5CA /* Build configuration list for PBXNativeTarget "Harness" */;
+			buildPhases = (
+				093CFC9C0B64433157F91DE8 /* Sources */,
+				CD0891400EC7CA3E7DCB88CF /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Harness;
+			packageProductDependencies = (
+				2099E45F8E51A0B6A0AC093C /* eudiWalletOidcIos */,
+			);
+			productName = Harness;
+			productReference = D3E473950CF7C898DE998767 /* Harness.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		632666F4A8537121A1E942DC /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = EFDC44680DE6372609389CE8 /* Build configuration list for PBXProject "Harness" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 5A46B0D24AB7DF64B93F488B;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4FC43294F7E5DE6AE0D8BB3F /* XCLocalSwiftPackageReference ".." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 8B9F84DC775F556DAE85C788 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				9CAE8F41437D5C28E2B50B85 /* Harness */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		093CFC9C0B64433157F91DE8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6554DBD6147718898BBBC9F9 /* HarnessApp.swift in Sources */,
+				6A575556AA544A62F65DB39D /* HarnessKeyHandler.swift in Sources */,
+				2C9CA22901395E3A3FD6E55B /* HarnessModel.swift in Sources */,
+				0ADA61FDF16CD4F5867E7B8A /* HarnessView.swift in Sources */,
+				7247EAE5DE65393AD2603FF0 /* QRScannerView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		26A7E8C4A6E878110EB346AB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		3801847D37DBC7ABC9DE5931 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Harness/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.igrant.eudiwalletoidc.harness;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		94B92EF382ECB9158B705277 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A694A26AFD9C264E01D3F604 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Harness/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.igrant.eudiwalletoidc.harness;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C6F05FE989F73732C255F5CA /* Build configuration list for PBXNativeTarget "Harness" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A694A26AFD9C264E01D3F604 /* Debug */,
+				3801847D37DBC7ABC9DE5931 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EFDC44680DE6372609389CE8 /* Build configuration list for PBXProject "Harness" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				26A7E8C4A6E878110EB346AB /* Debug */,
+				94B92EF382ECB9158B705277 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		4FC43294F7E5DE6AE0D8BB3F /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2099E45F8E51A0B6A0AC093C /* eudiWalletOidcIos */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = eudiWalletOidcIos;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 632666F4A8537121A1E942DC /* Project object */;
+}

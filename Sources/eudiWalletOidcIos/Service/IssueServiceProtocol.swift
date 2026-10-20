@@ -25,6 +25,36 @@ protocol IssueServiceProtocol {
     ///   - codeVerifier - to build the authorisation request
     /// - Returns: code if successful; otherwise, nil.
     func processAuthorisationRequest(did: String, credentialOffer: CredentialOffer, codeVerifier: String, authServer: AuthorisationServerWellKnownConfiguration, credentialFormat: String, docType: String, issuerConfig: IssuerWellKnownConfiguration?, redirectURI: String?, isApiCallRequired: Bool?, wua: String, pop: String) async -> WrappedResponse?
+
+    /// The authorization request.
+    ///
+    /// Replaces ``processAuthorisationRequest(did:credentialOffer:codeVerifier:authServer:credentialFormat:docType:issuerConfig:redirectURI:isApiCallRequired:wua:pop:)``,
+    /// whose `data: String?` meant six different things and left the caller re-parsing query
+    /// parameters off a URL to work out which. Switch on ``AuthorizationResponse/outcome``.
+    func requestAuthorization(
+        session: IssuanceSession,
+        wallet: WalletIdentity,
+        attestation: WalletAttestation?,
+        codeVerifier: String,
+        selection: CredentialSelection,
+        redirectUri: String?,
+        mode: AuthorizationMode,
+        policy: AuthorizationRequestPolicy
+    ) async -> AuthorizationResponse
+
+    /// Answers an authorization server that asked for an ID token rather than authorizing directly.
+    ///
+    /// Reached when ``requestAuthorization(session:wallet:attestation:codeVerifier:selection:redirectUri:mode:policy:)``
+    /// answers with ``AuthorizationOutcome/idTokenRequired``, whose `url` is the `location` to pass
+    /// here. Declared on the Android interface all along; it was missing here.
+    func processAuthorisationRequestUsingIdToken(
+        did: String,
+        authServerWellKnownConfig: AuthorisationServerWellKnownConfiguration,
+        redirectURI: String,
+        nonce: String,
+        state: String,
+        clientID: String
+    ) async -> String?
     
     // Processes the token request to obtain the access token.
     /** - Parameters
@@ -40,6 +70,22 @@ protocol IssueServiceProtocol {
      - Returns: A `TokenResponse` object if the request is successful, otherwise `nil`.
      */
     func processTokenRequest(did: String, tokenEndPoint: String?, code: String, codeVerifier: String, isPreAuthorisedCodeFlow: Bool, userPin: String?, version: String?, wua: String, pop: String, redirectURI: String?, isDPOPSupported: Bool, dpopKey: P256.Signing.PrivateKey?, dpopKeyHandler: SecureKeyProtocol?, dpopKeyPublicJwk: [String: Any]?, preAuthorizedGrantAnonymousAccessSupported: Bool?) async -> TokenResponse?
+
+    /// The token request.
+    ///
+    /// Replaces the fourteen-parameter form above, in which illegal grant/`tx_code` combinations
+    /// were expressible. The grant is a ``TokenGrant``, so section 6.1's "`tx_code` MUST only be
+    /// used if the grant_type is `urn:ietf:params:oauth:grant-type:pre-authorized_code`" cannot be
+    /// broken, and the DPoP key travels inside ``WalletAttestation`` where ARF TS3's `cnf` rule is
+    /// checkable rather than a mismatch a caller can make silently.
+    func requestToken(
+        session: IssuanceSession,
+        wallet: WalletIdentity,
+        attestation: WalletAttestation?,
+        grant: TokenGrant,
+        dpopNonce: String?,
+        policy: TokenRequestPolicy
+    ) async -> TokenResponse
     
     
     // Processes a credential request to the specified credential endpoint.
@@ -53,6 +99,23 @@ protocol IssueServiceProtocol {
      - accessToken: The access token for authentication.
      - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
      */
+    /// @see ``IssueService/requestCredential(session:wallet:token:subject:attestation:keyAttestation:encryption:nonce:dpopNonce:policy:)``
+    func requestCredential(
+        session: IssuanceSession,
+        wallet: WalletIdentity,
+        token: TokenResponse,
+        subject: CredentialSubject,
+        issuer: String?,
+        additionalProofKeyHandlers: [SecureKeyProtocol],
+        attestation: WalletAttestation?,
+        keyAttestation: String?,
+        encryption: CredentialEncryption?,
+        nonce: String?,
+        dpopNonce: String?,
+        policy: CredentialRequestPolicy
+    ) async -> CredentialOutcome
+
+    @available(*, deprecated, message: "Use requestCredential(session:wallet:token:subject:...), which returns a CredentialOutcome naming issued, deferred and failed instead of a CredentialResponse? where nil meant a dozen different things.")
     func processCredentialRequest(did: String, nonce: String, credentialOffer: CredentialOffer, issuerConfig: IssuerWellKnownConfiguration, accessToken: String, format: String, credentialTypes: [String], tokenResponse: TokenResponse?, authDetails: AuthorizationDetails?, privateKey: ECPrivateKey?, isDpopSUpported: Bool, dpopKey: P256.Signing.PrivateKey?, dpopKeyHandler: SecureKeyProtocol?, dpopKeyPublicJwk: [String: Any]?, attachKeyAttestation: Bool, keyAttestationJwt: String?, clientId: String?, preAuthorizedGrantAnonymousAccessSupported: Bool?, additionalProofKeyHandlers: [SecureKeyProtocol]?) async -> CredentialResponse?
     
     // Processes a deferred credential request to obtain the credential response in deffered manner.
@@ -61,6 +124,18 @@ protocol IssueServiceProtocol {
      - deferredCredentialEndPoint - end point to call the deferred credential
      **/
     //    - Returns: A `CredentialResponse` object if the request is successful, otherwise `nil`.
+    /// @see ``IssueService/requestDeferredCredential(session:token:transaction:attestation:encryption:dpopNonce:policy:)``
+    func requestDeferredCredential(
+        session: IssuanceSession,
+        token: TokenResponse,
+        transaction: DeferredTransaction,
+        attestation: WalletAttestation?,
+        encryption: CredentialEncryption?,
+        dpopNonce: String?,
+        policy: DeferredRequestPolicy
+    ) async -> CredentialOutcome
+
+    @available(*, deprecated, message: "Use requestDeferredCredential(session:token:transaction:...), which tells issuance_pending from invalid_transaction_id and reports the issuer's interval instead of returning nil.")
     func processDeferredCredentialRequest(acceptanceToken: String, deferredCredentialEndPoint: String, version: String?, accessToken: String?, privateKey: ECPrivateKey?, jwks: [String: Any]?, encryptionRequired: Bool?, encValuesSupported: [String]?, isDPOPSupported: Bool, dpopKeyHandler: SecureKeyProtocol?, dpopKeyPublicJwk: [String: Any]?) async -> CredentialResponse?
     
     func getFormatFromIssuerConfig(

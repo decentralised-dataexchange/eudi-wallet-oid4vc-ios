@@ -214,7 +214,18 @@ public struct DisplayCover: Codable {
 }
 public struct IssuerWellKnownConfiguration: Codable {
     public let credentialIssuer: String?
+
+    /// The authorization servers, with the draft's singular `authorization_server` and 1.0's plural
+    /// `authorization_servers` merged into one array.
     public let authorizationServer: [String]?
+
+    /// Whether the issuer declared the **plural** `authorization_servers` (OpenID4VCI 1.0) rather
+    /// than the draft's singular `authorization_server`.
+    ///
+    /// The merge above loses that distinction, and sections 5.1.2 and 6.1 attach the `resource`
+    /// parameter and the authorization detail's `locations` to the plural form specifically. Kept
+    /// so those conditions can be evaluated the same way the Android SDK evaluates them.
+    public var declaresAuthorizationServers: Bool = false
     public let credentialEndpoint: String?
     public let deferredCredentialEndpoint: String?
     public let display: [Display]?
@@ -226,6 +237,44 @@ public struct IssuerWellKnownConfiguration: Codable {
     public let credentialRequestEncryption: CredentialRequestEncryption?
     /// OpenID4VCI 1.0 §12.2.4: the issuer accepts several key proofs in one credential request.
     public let batchCredentialIssuance: BatchCredentialIssuance?
+    /// Which metadata shape this was parsed from, the same codes as the Android SDK's
+    /// `IssuerWellKnownConfiguration.version`: 1 for the pre-1.0 `credentials_supported` drafts,
+    /// 2 for `credential_configurations_supported`. Set by the initialisers below, never read off
+    /// the wire. Optional so configurations stored before this field existed still decode.
+    public var version: Int? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case credentialIssuer, authorizationServer, declaresAuthorizationServers, credentialEndpoint,
+             deferredCredentialEndpoint, display, credentialsSupported, error, notificationEndPoint,
+             nonceEndPoint, credentialResponseEncryption, credentialRequestEncryption,
+             batchCredentialIssuance, version
+    }
+
+    /// Written out so that a configuration stored before `declaresAuthorizationServers` existed
+    /// still decodes. The synthesised initialiser ignores a property's default and treats every
+    /// non-optional key as required, and wallets persist this type inside each credential record,
+    /// so a required key would have emptied the issuer configuration of every existing credential
+    /// on upgrade. Encoding stays synthesised.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        credentialIssuer = try values.decodeIfPresent(String.self, forKey: .credentialIssuer)
+        authorizationServer = try values.decodeIfPresent([String].self, forKey: .authorizationServer)
+        declaresAuthorizationServers =
+            try values.decodeIfPresent(Bool.self, forKey: .declaresAuthorizationServers) ?? false
+        credentialEndpoint = try values.decodeIfPresent(String.self, forKey: .credentialEndpoint)
+        deferredCredentialEndpoint = try values.decodeIfPresent(String.self, forKey: .deferredCredentialEndpoint)
+        display = try values.decodeIfPresent([Display].self, forKey: .display)
+        credentialsSupported = try values.decodeIfPresent(CredentialSupportedObject.self, forKey: .credentialsSupported)
+        error = try values.decodeIfPresent(EUDIError.self, forKey: .error)
+        notificationEndPoint = try values.decodeIfPresent(String.self, forKey: .notificationEndPoint)
+        nonceEndPoint = try values.decodeIfPresent(String.self, forKey: .nonceEndPoint)
+        credentialResponseEncryption =
+            try values.decodeIfPresent(CredentialResponseEncryptionModel.self, forKey: .credentialResponseEncryption)
+        credentialRequestEncryption =
+            try values.decodeIfPresent(CredentialRequestEncryption.self, forKey: .credentialRequestEncryption)
+        batchCredentialIssuance = try values.decodeIfPresent(BatchCredentialIssuance.self, forKey: .batchCredentialIssuance)
+        version = try values.decodeIfPresent(Int.self, forKey: .version)
+    }
     
     public init(from: IssuerWellKnownConfigurationResponse) {
         credentialIssuer = from.credentialIssuer
@@ -236,6 +285,8 @@ public struct IssuerWellKnownConfiguration: Codable {
             authServerArray = [from.authorizationServer ?? ""]
         }
         authorizationServer = authServerArray
+        declaresAuthorizationServers =
+            from.authorizationServer == nil && !(from.authorizationServers ?? []).isEmpty
         credentialEndpoint = from.credentialEndpoint
         deferredCredentialEndpoint = from.deferredCredentialEndpoint
         
@@ -259,7 +310,7 @@ public struct IssuerWellKnownConfiguration: Codable {
         credentialRequestEncryption = from.credentialRequestEncryption
         batchCredentialIssuance = from.batchCredentialIssuance
         error = nil
-  
+        version = 1
     }
 public init(from: IssuerWellKnownConfigurationResponseV2) {
         credentialIssuer = from.credentialIssuer
@@ -270,6 +321,8 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         authServerArray = [from.authorizationServer ?? ""]
     }
     authorizationServer = authServerArray
+    declaresAuthorizationServers =
+        from.authorizationServer == nil && !(from.authorizationServers ?? []).isEmpty
         credentialEndpoint = from.credentialEndpoint
         deferredCredentialEndpoint = from.deferredCredentialEndpoint
         
@@ -294,6 +347,7 @@ public init(from: IssuerWellKnownConfigurationResponseV2) {
         credentialResponseEncryption = from.credentialResponseEncryption
         credentialRequestEncryption = from.credentialRequestEncryption
         batchCredentialIssuance = from.batchCredentialIssuance
+        version = 2
     }
     
     public init(mCredentialIssuer: String?,
