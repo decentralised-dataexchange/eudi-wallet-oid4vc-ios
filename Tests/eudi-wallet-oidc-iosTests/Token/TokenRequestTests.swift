@@ -210,6 +210,17 @@ final class TokenRequestTests: XCTestCase {
         XCTAssertEqual(result.error?.httpStatus, 400)
     }
 
+    /// A 2xx whose body does not decode came back as an empty response: no token and no error, so
+    /// the caller could not tell what had happened.
+    func testAnUnreadableSuccessBodyIsAFailure() async {
+        StubURLProtocol.respond(contentType: "text/html", body: "<html>gateway</html>")
+
+        let result = await resolve()
+
+        XCTAssertNil(result.accessToken)
+        XCTAssertNotNil(result.error)
+    }
+
     /// Section 6.1: failing here saves spending a one-time code on a request that cannot succeed.
     func testAMissingTransactionCodeFailsBeforeTheRequestIsMade() async {
         let result = await resolve(session: session(txCode: "{}"))

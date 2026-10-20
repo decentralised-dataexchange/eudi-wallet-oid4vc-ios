@@ -100,8 +100,13 @@ struct TokenRequestResolver {
         let issuedNonce = result.header("DPoP-Nonce")
 
         if result.isSuccessful {
-            var model = (try? JSONDecoder().decode(TokenResponse.self, from: result.data))
-                ?? TokenResponse()
+            // A 2xx whose body does not decode -- a proxy's HTML page, a server sending numbers as
+            // strings -- is a failure the caller must see, not an empty response with no error.
+            guard var model = try? JSONDecoder().decode(TokenResponse.self, from: result.data) else {
+                var failed = TokenResponse(error: EUDIError(message: "The token response could not be read"))
+                failed.dpopNonce = issuedNonce
+                return failed
+            }
             model.lpid = result.header("legal-pid-attestation")
             model.lpidPop = result.header("legal-pid-attestation-pop")
             model.dpopKey = attestation?.dpopKey
