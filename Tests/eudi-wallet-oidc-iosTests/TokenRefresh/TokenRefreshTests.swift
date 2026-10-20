@@ -3,6 +3,7 @@
 //
 
 import XCTest
+import CryptoKit
 @testable import eudiWalletOidcIos
 
 /// The refresh request body, its headers and the answers it reads (RFC 6749 section 6).
@@ -57,6 +58,108 @@ final class TokenRefreshTests: XCTestCase {
 
         XCTAssertNil(seen()?.value(forHTTPHeaderField: "OAuth-Client-Attestation"))
         XCTAssertNil(seen()?.value(forHTTPHeaderField: "OAuth-Client-Attestation-PoP"))
+        XCTAssertNil(seen()?.value(forHTTPHeaderField: "DPoP"))
+        let form = seen().map { String(decoding: Self.body(of: $0), as: UTF8.self) } ?? ""
+        XCTAssertFalse(form.contains("client_id="), form)
+    }
+
+    /// RFC 6749 section 3.2.1: the client identifies itself on the refresh as it did on the token
+    /// request, by the wallet unit identifier the attestation carries as `sub`.
+    func testTheClientIdIsTheAttestationsSubject() async {
+        let seen = capture(body: "{}")
+
+        _ = await refresh(attestation: WalletAttestation(attestationJwt: wua(sub: "wallet-unit-1"), proofOfPossession: "pop.jwt"))
+
+        let form = seen().map { String(decoding: Self.body(of: $0), as: UTF8.self) } ?? ""
+        XCTAssertTrue(form.contains("client_id=wallet-unit-1"), form)
+    }
+
+    /// RFC 9449 section 5: tokens bound to a DPoP key are refreshed with a proof for that key. A
+    /// token-endpoint proof names the method and the endpoint and carries no `ath`.
+    func testADPoPKeyAddsAProofForTheTokenEndpoint() async {
+        let seen = capture(body: "{}")
+
+        _ = await refresh(attestation: attestationWithKey())
+
+        let claims = JWTParts.claims(seen()?.value(forHTTPHeaderField: "DPoP") ?? "")
+        XCTAssertEqual(claims?["htm"] as? String, "POST")
+        XCTAssertEqual(claims?["htu"] as? String, "https://as.example.com/token")
+        XCTAssertNil(claims?["ath"])
+        XCTAssertNil(claims?["nonce"])
+    }
+
+    /// RFC 9449 section 8: a `DPoP-Nonce` on the refusal is put in the proof and the request sent
+    /// again, once.
+    func testADPoPNonceChallengeIsRetriedOnceWithTheNonce() async {
+        var nonces: [String?] = []
+        StubURLProtocol.handler = { request in
+            nonces.append(JWTParts.claims(request.value(forHTTPHeaderField: "DPoP") ?? "")?["nonce"] as? String)
+            if nonces.count == 1 {
+                let challenged = HTTPURLResponse(
+                    url: request.url!, statusCode: 400, httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json", "DPoP-Nonce": "n-1"]
+                )!
+                return (challenged, Data(#"{"error":"use_dpop_nonce"}"#.utf8))
+            }
+            let ok = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return (ok, Data(#"{"access_token":"at-2","refresh_token":"rt-2"}"#.utf8))
+        }
+
+        let (accessToken, refreshToken) = await refresh(attestation: attestationWithKey())
+
+        XCTAssertEqual(nonces, [nil, "n-1"])
+        XCTAssertEqual(accessToken, "at-2")
+        XCTAssertEqual(refreshToken, "rt-2")
+    }
+
+    func testASecondNonceChallengeGivesUpRatherThanLooping() async {
+        var attempts = 0
+        StubURLProtocol.handler = { request in
+            attempts += 1
+            let challenged = HTTPURLResponse(
+                url: request.url!, statusCode: 400, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json", "DPoP-Nonce": "n-\(attempts)"]
+            )!
+            return (challenged, Data(#"{"error":"use_dpop_nonce"}"#.utf8))
+        }
+
+        let (accessToken, _) = await refresh(attestation: attestationWithKey())
+
+        XCTAssertEqual(attempts, 2)
+        XCTAssertNil(accessToken)
+    }
+
+    /// Without a key there is nothing to put a nonce in, so a challenge is just a refusal.
+    func testANonceChallengeWithoutAKeyIsNotRetried() async {
+        var attempts = 0
+        StubURLProtocol.handler = { request in
+            attempts += 1
+            let challenged = HTTPURLResponse(
+                url: request.url!, statusCode: 400, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json", "DPoP-Nonce": "n-1"]
+            )!
+            return (challenged, Data(#"{"error":"use_dpop_nonce"}"#.utf8))
+        }
+
+        _ = await refresh()
+
+        XCTAssertEqual(attempts, 1)
+    }
+
+    private func attestationWithKey() -> WalletAttestation {
+        WalletAttestation(attestationJwt: nil, proofOfPossession: nil, dpopKey: P256.Signing.PrivateKey())
+    }
+
+    /// A wallet unit attestation whose payload carries `sub`; the signature is not checked here.
+    private func wua(sub: String) -> String {
+        let payload = Data("{\"sub\":\"\(sub)\"}".utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return "eyJhbGciOiJFUzI1NiJ9.\(payload).signature"
     }
 
     func testTheAttestationAndItsProofTravelAsHeaders() async {
