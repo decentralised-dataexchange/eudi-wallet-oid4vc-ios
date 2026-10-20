@@ -9,6 +9,34 @@ import CryptoKit
 
 public class NotificationService {
     public init() {}
+
+    /// Tells the issuer what happened to a credential (section 11).
+    ///
+    /// Returns a ``NotificationOutcome`` rather than nothing: `sendNoticationStatus` decoded a
+    /// failure into a local it then discarded, so a caller could not tell an acknowledged
+    /// notification from one the issuer refused — section 11.2's 204 from a 400 naming
+    /// `invalid_notification_id`.
+    public func notify(
+        session: IssuanceSession,
+        token: TokenResponse,
+        notificationId: String,
+        event: NotificationEvent,
+        eventDescription: String? = nil,
+        attestation: WalletAttestation? = nil,
+        dpopNonce: String? = nil
+    ) async -> NotificationOutcome {
+        await NotificationRequestResolver().resolve(
+            session: session,
+            token: token,
+            notificationId: notificationId,
+            event: event,
+            eventDescription: eventDescription,
+            attestation: attestation,
+            dpopNonce: dpopNonce
+        )
+    }
+
+    @available(*, deprecated, message: "Returns Void, so an acknowledged notification and a refused one are indistinguishable. Use notify(session:token:notificationId:event:), which returns a NotificationOutcome.")
     
     public func sendNoticationStatus(endPoint: String?, event: String?, notificationID: String?, accessToken: String, refreshToken: String, tokenEndPoint: String, isDPOPSupported: Bool = false, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil) async {
         guard let url = URL(string: endPoint ?? "") else { return }
@@ -48,47 +76,14 @@ public class NotificationService {
         }
     }
     
+    @available(*, deprecated, message: "Token refresh moved to TokenRefreshService, mirroring services/tokenRefresh/ in the Android SDK. Use TokenRefreshService().refresh(refreshToken:tokenEndpoint:attestation:).")
     public func refreshAccessToken(refreshToken: String, endPoint: String, wua: String = "", pop: String = "") async -> (String?, String?) {
-        guard let url = URL(string: endPoint ?? "") else { return (nil, nil)}
-        var request = URLRequest(url: url)
-        var params: [String: Any] = [:]
-        params = ["grant_type": "refresh_token", "refresh_token": refreshToken]
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
-
-        let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
-        if wua != "" {
-            request.setValue(sanitisedWUA, forHTTPHeaderField: "OAuth-Client-Attestation")
-            request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
-            
-        }
-        let postString = UIApplicationUtils.shared.getPostString(params: params)
-        request.httpBody = postString.data(using: .utf8)
-        
-        do {
-            let (data, response) = try await NetworkLogger.send(request, tag: "token-refresh")
-            let httpRes = response as? HTTPURLResponse
-            if httpRes?.statusCode ?? 0 >= 400 {
-                return (nil, nil)
-            } else if httpRes?.statusCode ?? 0 == 200 {
-                let dataString = String(data: data, encoding: .utf8)
-                let dict = UIApplicationUtils.shared.convertToDictionary(text: String(dataString ?? "{}")) ?? [:]
-                let accessToken = dict["access_token"] as? String
-                let refreshToken = dict["refresh_token"] as? String
-                return (accessToken, refreshToken)
-            }
-        } catch {
-            let nsError = error as NSError
-            let errorCode = nsError.code
-            let error = EUDIError(from: ErrorResponse(message:error.localizedDescription, code: errorCode))
-            return (nil, nil)
-        }
-        return (nil, nil)
+        await TokenRefreshService().refresh(
+            refreshToken: refreshToken,
+            tokenEndpoint: endPoint,
+            attestation: wua.isEmpty ? nil : WalletAttestation(attestationJwt: wua, proofOfPossession: pop)
+        )
     }
     
 }
-public enum NotificationStatus: String {
-    case credentialAccepted = "credential_accepted"
-    case credentialDeleted = "credential_deleted"
-}
+

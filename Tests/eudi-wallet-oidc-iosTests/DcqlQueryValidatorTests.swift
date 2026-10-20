@@ -6,12 +6,8 @@ import XCTest
 /// the live path validates. Shapes that `DCQLQuery` cannot represent fail at decode time;
 /// those are covered at the end through `VerificationService`, which reports them with the
 /// same error code.
-/// The by-value request path never touches the key handler, so a stub is enough.
-private final class StubKeyHandler: NSObject, SecureKeyProtocol {
-    var keyStorageType: SecureKeyTypes = .cryptoKit
-    func generateSecureKey() -> SecureKeyData? { nil }
-    func sign(payload: String, header: Data, withKey privateKey: Data?) -> String? { nil }
-}
+/// The by-value request path never touches the key handler, so the shared `StubKeyHandler` in
+/// `Credential/` serves here too.
 
 final class DcqlQueryValidatorTests: XCTestCase {
 
