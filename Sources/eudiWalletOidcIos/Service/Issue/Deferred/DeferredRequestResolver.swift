@@ -81,14 +81,19 @@ struct DeferredRequestResolver {
         // The draft form authenticates with the handle itself and sends nothing; 1.0 uses the
         // access token from the credential request and names the transaction in the body.
         let accessToken: String
-        var wantsDPoP = false
+        var dpop: String?
         switch transaction {
         case let .legacyAcceptanceToken(handle):
             accessToken = handle
         case .transactionId:
             accessToken = token.accessToken ?? ""
-            wantsDPoP = token.tokenType?.caseInsensitiveCompare("DPoP") == .orderedSame
-                || attestation?.hasDPoPKey == true
+            // RFC 9449 section 4.2: the deferred endpoint is a resource server too. As on the
+            // credential endpoint, the key decides the scheme; without one the token goes as Bearer.
+            dpop = attestation?.dpopProof(
+                for: endpoint,
+                nonce: dpopNonce,
+                extraClaims: ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken)]
+            )
         }
 
         var request = try await buildRequest(
@@ -97,21 +102,6 @@ struct DeferredRequestResolver {
             encryption: encryption,
             attestation: attestation
         )
-
-        var dpop: String?
-        if wantsDPoP {
-            // RFC 9449 section 4.2: the deferred endpoint is a resource server too.
-            dpop = attestation?.dpopProof(
-                for: endpoint,
-                nonce: dpopNonce,
-                extraClaims: ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken)]
-            )
-            guard dpop != nil else {
-                throw CredentialRequestError.unusable(
-                    "This token is DPoP-bound but no DPoP proof could be produced"
-                )
-            }
-        }
         request.setValue(
             "\(dpop != nil ? "DPoP" : "Bearer") \(accessToken)",
             forHTTPHeaderField: "Authorization"

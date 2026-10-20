@@ -812,22 +812,19 @@ final class CredentialRequestTests: XCTestCase {
         XCTAssertTrue(authorizations.allSatisfy { $0.hasPrefix("DPoP ") }, "\(authorizations)")
     }
 
-    /// A DPoP-bound token with no key to prove possession must fail before the request, not send
-    /// `Authorization: DPoP ...` with no proof attached -- which is what the old flag-driven
-    /// branch did.
-    func testADPoPTokenWithNoKeyFailsRatherThanSendingAnUnprovenHeader() async {
-        StubURLProtocol.respond(status: 200, body: #"{"credentials":[{"credential":"vc-1"}]}"#)
-        let outcome = await CredentialRequestResolver(keyHandler: StubKeyHandler()).resolve(
+    /// The stored token says `DPoP` but the key it was bound to is not at hand -- re-issuance from
+    /// a persisted record is the usual case. The request still goes out, as Bearer and without a
+    /// proof, as the Android SDK sends it; never as `Authorization: DPoP ...` with no proof
+    /// attached, which is what the old flag-driven branch did. The issuer decides.
+    func testADPoPTokenWithNoKeySendsBearerRatherThanAnUnprovenDPoPHeader() async {
+        let (_, headers, outcome) = await capture(
             session: session(),
-            wallet: WalletIdentity(did: "did:key:zabc"),
-            token: token(tokenType: "DPoP"),
             subject: .byConfiguration(credentialConfigurationId: "PID", offerCredential: nil),
-            issuer: "did:key:zabc",
-            nonce: "c-nonce-1",
-            urlSession: StubURLProtocol.session()
+            token: token(tokenType: "DPoP")
         )
-        guard case let .failed(error) = outcome else { return XCTFail("expected failure") }
-        XCTAssertTrue(error.message?.contains("DPoP") == true, error.message ?? "")
+        XCTAssertEqual(headers["Authorization"], "Bearer access-1")
+        XCTAssertNil(headers["DPoP"])
+        XCTAssertEqual(outcome.firstCredential, "vc-1")
     }
 
     func testABearerTokenSendsBearer() async {

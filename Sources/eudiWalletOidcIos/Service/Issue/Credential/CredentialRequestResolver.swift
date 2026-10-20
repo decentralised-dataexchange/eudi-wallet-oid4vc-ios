@@ -157,26 +157,18 @@ struct CredentialRequestResolver {
             attestation: attestation
         )
 
-        // Section 8.2 does not say which scheme to use; RFC 9449 does -- the token's own
-        // `token_type` is what says whether the access token is sender-constrained. The previous
-        // implementation branched on a caller-supplied `isDpopSUpported` flag instead, so a
-        // caller could send `Authorization: DPoP ...` with no proof attached.
+        // RFC 9449 section 7.1: the proof is what makes the scheme DPoP, so the key decides it,
+        // as in the Android SDK. Without a key the token goes as Bearer and a sender-constrained
+        // one is then refused by the issuer with `invalid_token`; refusing it here instead broke
+        // re-issuance, whose stored token says `DPoP` while the key it was bound to is held by the
+        // wallet, not the record. The previous implementation branched on a caller-supplied
+        // `isDpopSUpported` flag and could send `Authorization: DPoP ...` with no proof attached.
         let accessToken = token.accessToken ?? ""
-        let wantsDPoP = token.tokenType?.caseInsensitiveCompare("DPoP") == .orderedSame
-            || attestation?.hasDPoPKey == true
-        var dpop: String?
-        if wantsDPoP {
-            dpop = attestation?.dpopProof(
-                for: endpoint,
-                nonce: dpopNonce,
-                extraClaims: ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken)]
-            )
-            guard dpop != nil else {
-                throw CredentialRequestError.unusable(
-                    "This token is DPoP-bound but no DPoP proof could be produced"
-                )
-            }
-        }
+        let dpop = attestation?.dpopProof(
+            for: endpoint,
+            nonce: dpopNonce,
+            extraClaims: ["ath": DPoPProofService.computeAccessTokenHash(token: accessToken)]
+        )
         request.setValue(
             "\(dpop != nil ? "DPoP" : "Bearer") \(accessToken)",
             forHTTPHeaderField: "Authorization"

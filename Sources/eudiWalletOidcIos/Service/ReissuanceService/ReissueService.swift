@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CryptoKit
 import JOSESwift
 
 public class ReissueService {
@@ -18,7 +19,7 @@ public class ReissueService {
         issuerConfig: IssuerWellKnownConfiguration,
         accessToken: String,
         format: String,
-        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, keyHandler: SecureEnclaveHandler, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil, clientId: String? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil, additionalProofKeyHandlers: [SecureKeyProtocol]? = nil) async -> CredentialResponse? {
+        credentialTypes: [String], tokenResponse: TokenResponse? = nil, authDetails: AuthorizationDetails? = nil, privateKey: ECPrivateKey?, keyHandler: SecureEnclaveHandler, attachKeyAttestation: Bool = false, keyAttestationJwt: String? = nil, clientId: String? = nil, preAuthorizedGrantAnonymousAccessSupported: Bool? = nil, additionalProofKeyHandlers: [SecureKeyProtocol]? = nil, dpopKey: P256.Signing.PrivateKey? = nil, dpopKeyHandler: SecureKeyProtocol? = nil, dpopKeyPublicJwk: [String: Any]? = nil) async -> CredentialResponse? {
 
             // Re-issuance is a credential request with a fresh proof; only where the inputs come
             // from differs -- a stored credential record rather than a live offer. It used to be a
@@ -62,6 +63,18 @@ public class ReissueService {
                 ),
                 // §8.2 batch: one proof per additional key, built inside the proof factory.
                 additionalProofKeyHandlers: additionalProofKeyHandlers ?? [],
+                // RFC 9449 section 7.1: the stored token is DPoP-bound when the wallet still holds
+                // the key it was bound to, by either route; the key decides the scheme, as the
+                // Android SDK's `dpopKey` parameter does.
+                attestation: (dpopKey != nil || (dpopKeyHandler != nil && dpopKeyPublicJwk != nil))
+                    ? WalletAttestation(
+                        attestationJwt: nil,
+                        proofOfPossession: nil,
+                        dpopKey: dpopKey,
+                        dpopKeyHandler: dpopKeyHandler,
+                        dpopKeyPublicJwk: dpopKeyPublicJwk
+                      )
+                    : nil,
                 // ARF TS3 v1.5: the wallet-provider Key Attestation travels in the proof header.
                 keyAttestation: KeyAttestationService.forProof(
                     walletProviderKa: keyAttestationJwt, attach: attachKeyAttestation

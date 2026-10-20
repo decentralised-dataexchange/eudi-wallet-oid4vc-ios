@@ -129,6 +129,14 @@ final class DeferredRequestTests: XCTestCase {
         XCTAssertFalse(headers["DPoP"]?.isEmpty ?? true)
     }
 
+    /// The stored token says `DPoP` but no key is at hand: Bearer and no proof, as on the
+    /// credential endpoint. The issuer decides whether to accept it.
+    func testADPoPTokenWithNoKeyGoesAsBearerOnTheDeferredEndpoint() async {
+        let (_, headers, _) = await resolve(token: token(tokenType: "DPoP"))
+        XCTAssertEqual(headers["Authorization"], "Bearer at-1")
+        XCTAssertNil(headers["DPoP"])
+    }
+
     // MARK: - reading the answer
 
     func testACredentialEndsThePolling() async {
