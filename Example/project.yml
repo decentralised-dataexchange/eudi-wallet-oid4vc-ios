@@ -24,7 +24,7 @@ targets:
       properties:
         CFBundleDisplayName: EUDI Harness
         UILaunchScreen: {}
-        NSCameraUsageDescription: Scanning a credential offer QR code.
+        NSCameraUsageDescription: Scanning a credential offer or presentation request QR code.
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
     settings:

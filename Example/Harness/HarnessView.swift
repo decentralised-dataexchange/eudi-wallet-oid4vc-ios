@@ -40,8 +40,8 @@ struct HarnessView: View {
 
     private var input: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Pasting matters as much as scanning here: an offer link from a ticket or a log is
-            // the common case when chasing a specific issuer's behaviour.
+            // Pasting matters as much as scanning here: an offer or request link from a ticket or a
+            // log is the common case when chasing a specific issuer's or verifier's behaviour.
             TextEditor(text: $model.scannedInput)
                 .font(.system(.caption, design: .monospaced))
                 .frame(height: 72)
@@ -68,6 +68,10 @@ struct HarnessView: View {
             step("6 · Request credential") { await model.requestCredential() }
             step("7 · Request deferred credential") { await model.requestDeferredCredential() }
             step("8 · Notify the issuer") { await model.sendNotification() }
+
+            Divider().padding(.vertical, 4)
+
+            step("P1 · Resolve presentation request") { await model.resolveAuthorizationRequest() }
 
             Divider().padding(.vertical, 4)
 

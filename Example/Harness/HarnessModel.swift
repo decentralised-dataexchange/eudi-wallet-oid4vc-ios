@@ -14,7 +14,8 @@ import eudiWalletOidcIos
 /// None of that is visible from the configuration a host reads, and it is the difference between
 /// "this issuer is non-conformant here" and "something is broken".
 ///
-/// Steps 5 onward get a method each as the revamp reaches them.
+/// Steps 5 onward get a method each as the revamp reaches them. The presentation side starts
+/// with step P1; matching and submission get theirs as the verification revamp reaches them.
 @MainActor
 final class HarnessModel: ObservableObject {
 
@@ -45,6 +46,9 @@ final class HarnessModel: ObservableObject {
     /// Set when step 6 or step 7 issues, so step 8 has something to acknowledge.
     private var notificationId: String?
 
+    /// The presentation side: set by step P1, read by the matching and submission steps to come.
+    private var presentationRequest: PresentationRequest?
+
     /// The transaction code, when the offer asks for one.
     @Published var txCode = ""
 
@@ -66,6 +70,7 @@ final class HarnessModel: ObservableObject {
         tokenResponse = nil
         deferredTransaction = nil
         notificationId = nil
+        presentationRequest = nil
         output = ""
         log("Scanned", data)
     }
@@ -638,6 +643,55 @@ final class HarnessModel: ObservableObject {
     /// So a hostile or mistaken interval cannot hang the harness.
     private static let maxDeferredWait: Double = 30
 
+    // MARK: - Step P1
+
+    /// `VerificationService.resolveAuthorizationRequest(data:policy:)`
+    ///
+    /// The first presentation step. Prints which source claimed the request (by value, request_uri,
+    /// request object, interactive authorization request), which spec revision it follows, and what
+    /// the client identifier check established about the verifier, none of which the resolved
+    /// request alone says.
+    func resolveAuthorizationRequest() async {
+        await run("P1 · Resolve presentation request") {
+            let heading = "P1 · Resolve presentation request"
+            guard !self.scannedInput.trimmingCharacters(in: .whitespaces).isEmpty else {
+                self.log(heading, "Scan or paste a presentation request first")
+                return false
+            }
+
+            let service = VerificationService(keyhandler: HarnessKeyHandler())
+            switch await service.resolveAuthorizationRequest(data: self.scannedInput) {
+            case .failed(let error):
+                self.log(heading, """
+                  outcome            FAILED
+                  error              \(error.errorCode ?? error.code.map(String.init) ?? "-")
+                  description        \(error.message ?? "no reason given")
+                """)
+                return false
+
+            case .resolved(let resolved):
+                let request = resolved.request
+                self.presentationRequest = request
+                self.log(heading, """
+                  spec revision      \(Self.describe(specVersion: resolved.specVersion))
+                  source             \(resolved.source)
+                  client_id          \(request.clientId ?? "-")
+                  client prefix      \(resolved.verifier.identifier.prefix.value ?? "none (pre-registered)")
+                  client verified    \(Self.describe(verifier: resolved.verifier))
+                  response_type      \(request.responseType ?? "-")
+                  response_mode      \(request.responseMode ?? "-")
+                  response_uri       \(request.responseUri ?? request.redirectUri ?? "-")
+                  nonce              \(request.nonce ?? "-")
+                  query              \(Self.describe(query: request))
+                  transaction_data   \(request.transactionData?.count ?? 0) entries
+                  client_metadata    \(request.clientMetaData?.isEmpty == false ? "present" : "-")
+                  request object     \(request.request?.isEmpty == false ? "yes" : "no")
+                """)
+                return true
+            }
+        }
+    }
+
     /// Runs the steps in sequence, stopping at the first that does not produce a result.
     func runAll() async {
         output = ""
@@ -712,6 +766,28 @@ final class HarnessModel: ObservableObject {
         case .draft: return "pre-1.0 draft"
         case nil: return "—"
         }
+    }
+
+    private static func describe(specVersion: PresentationRequestSpecVersion) -> String {
+        switch specVersion {
+        case .v1_0: return "OpenID4VP 1.0"
+        case .draft: return "pre-1.0 draft (presentation_definition)"
+        }
+    }
+
+    private static func describe(verifier: VerifierIdentity) -> String {
+        var text = verifier.verified ? "yes" : "no"
+        if verifier.anchored { text += ", anchored to a trust anchor" }
+        if let reason = verifier.reason { text += "  (\(reason))" }
+        return text
+    }
+
+    private static func describe(query request: PresentationRequest) -> String {
+        if let credentials = request.dcqlQuery?.credentials {
+            return "dcql_query  " + credentials.map { "\($0.id):\($0.format)" }.joined(separator: ", ")
+        }
+        if request.presentationDefinition?.isEmpty == false { return "presentation_definition (draft)" }
+        return "none (scope=\(request.scope ?? "-"))"
     }
 
     private static func describe(grants: Grants?) -> String {
