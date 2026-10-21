@@ -8,7 +8,8 @@ import XCTest
 
 /// One test per row of the leg 1 case matrix (VERIFICATION_REVAMP_PLAN_IOS.md), named after it.
 /// Fetches go to `StubURLProtocol`; the request objects use the `redirect_uri` prefix, whose
-/// handler checks no signature, so no certificate handling is involved.
+/// handler checks no signature, so no certificate handling is involved. The client identifier
+/// rows of leg 2 are in `ClientIdentifierVerifierTests`.
 final class PresentationRequestResolverTests: XCTestCase {
 
     private let clientId = "redirect_uri:https://verifier.example/response"
@@ -135,7 +136,7 @@ final class PresentationRequestResolverTests: XCTestCase {
         XCTAssertEqual(request?.clientId, clientId)
         XCTAssertEqual(request?.nonce, "n-1")
         XCTAssertEqual(request?.state, "s-1")
-        XCTAssertEqual(request?.responseUri, "")
+        XCTAssertEqual(request?.responseUri, "https://verifier.example/response", "filled from the redirect_uri client id since leg 2")
         XCTAssertEqual(request?.presentationDefinition, "")
         XCTAssertEqual(request?.transactionData, [], "was [\"\"], which no step read")
     }
@@ -353,12 +354,14 @@ final class PresentationRequestResolverTests: XCTestCase {
                        ["by_value", "request_uri", "request", "openid4vp_request"])
     }
 
-    func testAClientIdSchemeWithNoHandlerFailsAndTheAdapterKeepsNilNil() async throws {
+    func testAnUnknownPrefixResolvesAsAPreRegisteredClientAndTheAdapterNowReturnsIt() async throws {
+        // Until leg 2 this failed and the adapter answered (nil, nil).
         let data = uri([("request", requestObject(claims(clientId: "unknown:verifier")))])
-        let failure = try failed(await resolve(data))
-        XCTAssertEqual(failure.message, "The client identifier prefix is not supported")
+        let resolved = try resolved(await resolve(data))
+        XCTAssertEqual(resolved.verifier.identifier.prefix, .preRegistered)
+        XCTAssertFalse(resolved.verifier.verified)
         let (request, error) = await legacy(data)
-        XCTAssertNil(request)
+        XCTAssertEqual(request?.clientId, "unknown:verifier")
         XCTAssertNil(error)
     }
 }

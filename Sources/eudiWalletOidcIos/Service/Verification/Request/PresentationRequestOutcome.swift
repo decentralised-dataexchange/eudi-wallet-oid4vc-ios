@@ -30,4 +30,8 @@ public struct ResolvedPresentationRequest {
 
     /// The registry name of the transfer mechanism that carried it, for logs.
     public let source: String
+
+    /// What the client identifier check established about the verifier: which prefix, whether
+    /// the request is authenticated, whether the key is anchored.
+    public let verifier: VerifierIdentity
 }

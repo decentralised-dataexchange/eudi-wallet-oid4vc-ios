@@ -27,8 +27,8 @@ struct RequestObjectSource: PresentationRequestSource {
             }
             let request = try RequestObjectParser.parse(byParameter)
             try RequestObjectParser.requireMatchingClientId(AuthorizationRequestURI.queryParam(data, "client_id"), request)
-            return try await RequestObjectParser.verifyClient(request)
+            return request
         }
-        return try await RequestObjectParser.verifyClient(try RequestObjectParser.parse(data))
+        return try RequestObjectParser.parse(data)
     }
 }

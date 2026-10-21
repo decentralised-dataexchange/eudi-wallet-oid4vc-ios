@@ -69,7 +69,6 @@ struct RemotePresentationRequestSource: PresentationRequestSource {
         if body.isEmpty { throw PresentationRequestError.emptyResponse }
 
         var request: PresentationRequest
-        var isRequestObject = false
         if let json = parseJson(body) {
             // Not in OpenID4VP 1.0, which requires a request object (section 5.10.1). Kept for
             // the verifiers that answer with the bare parameters.
@@ -78,7 +77,6 @@ struct RemotePresentationRequestSource: PresentationRequestSource {
         } else {
             request = try RequestObjectParser.parse(body)
             try RequestObjectParser.requireSignedUnlessRedirectUri(body, request, policy: policy)
-            isRequestObject = true
         }
         // Section 5.10.1: a request object fetched by POST MUST carry the wallet_nonce it was
         // asked for; without it the request is dropped.
@@ -86,9 +84,6 @@ struct RemotePresentationRequestSource: PresentationRequestSource {
             throw PresentationRequestError.nonceMismatch
         }
         try RequestObjectParser.requireMatchingClientId(clientIdFromUri, request)
-        if isRequestObject {
-            request = try await RequestObjectParser.verifyClient(request)
-        }
         return request
     }
 

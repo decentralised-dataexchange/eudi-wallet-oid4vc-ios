@@ -13,20 +13,23 @@ import Foundation
 /// carrying a description a user can read, never a bare nil.
 ///
 /// Every source funnels through `complete`, so a rule that applies to all of them, such as the
-/// DCQL validation, is written once.
+/// DCQL validation and the client identifier check, is written once.
 struct PresentationRequestResolver {
 
     let policy: PresentationRequestPolicy
     let sources: [PresentationRequestSource]
     let presentationDefinitionUriResolver: PresentationDefinitionUriResolver
     let clientMetadataUriResolver: ClientMetadataUriResolver
+    let clientIdentifierVerifier: ClientIdentifierVerifier
 
     init(policy: PresentationRequestPolicy = .default, session: URLSession = .shared,
-         sources: [PresentationRequestSource]? = nil) {
+         sources: [PresentationRequestSource]? = nil,
+         clientIdentifierVerifier: ClientIdentifierVerifier = ClientIdentifierVerifier()) {
         self.policy = policy
         self.sources = sources ?? Self.defaultSources(session: session)
         self.presentationDefinitionUriResolver = PresentationDefinitionUriResolver(session: session)
         self.clientMetadataUriResolver = ClientMetadataUriResolver(session: session)
+        self.clientIdentifierVerifier = clientIdentifierVerifier
     }
 
     /// Ordered: OpenID4VP 1.0 mechanisms first, the issuance profile extension last.
@@ -126,8 +129,11 @@ struct PresentationRequestResolver {
         }
         // --- end legacy ---
 
+        // Section 5.9: who the verifier is, by the rules of its client identifier prefix.
+        let verifier = try await clientIdentifierVerifier.verify(&request, policy: policy)
+
         debugPrint("PresentationRequestResolver: resolved a \(specVersion) presentation request from \(source.name)")
-        return ResolvedPresentationRequest(request: request, specVersion: specVersion, source: source.name)
+        return ResolvedPresentationRequest(request: request, specVersion: specVersion, source: source.name, verifier: verifier)
     }
 
     private static func isBlank(_ value: String?) -> Bool {

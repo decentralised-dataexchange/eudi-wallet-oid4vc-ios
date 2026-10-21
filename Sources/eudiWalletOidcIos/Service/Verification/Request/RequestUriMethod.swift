@@ -112,7 +112,9 @@ enum RequestUriMethod {
                 "dc+sd-jwt": ["sd-jwt_alg_values": ["ES256"], "kb-jwt_alg_values": ["ES256"]],
                 "mso_mdoc": ["issuerauth_alg_values": [-7], "deviceauth_alg_values": [-7]]
             ],
-            "client_id_prefixes_supported": ["x509_san_dns", "x509_hash", "verifier_attestation", "decentralized_identifier", "redirect_uri"],
+            // Derived from the client identifier registry, so the advertisement and the enforcement
+            // cannot drift apart.
+            "client_id_prefixes_supported": ClientIdentifierVerifier().supportedPrefixes(.default),
             "response_modes_supported": ["direct_post", "direct_post.jwt"],
             "request_object_signing_alg_values_supported": ["ES256"]
         ]

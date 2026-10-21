@@ -35,11 +35,13 @@ enum PresentationRequestError: Error {
     /// `redirect_uri`, the only prefix OpenID4VP 1.0 section 5.9 allows unsigned.
     case unsignedRequestObject
 
-    /// A client identifier scheme handler refused the request object.
-    case requestValidationFailed
+    /// The request broke the rules of its client identifier prefix (OpenID4VP 1.0 section 5.9.3),
+    /// so the verifier is not who the client_id says. Section 8.5 files this under invalid_request.
+    case clientNotVerified(String)
 
-    /// The client identifier scheme has no handler, so nothing vouches for the verifier.
-    case unrecognisedClient
+    /// Section 8.5: "The Wallet does not support the Client Identifier Prefix passed in the
+    /// Authorization Request."
+    case unsupportedClientIdPrefix(String)
 
     /// OpenID4VP 1.0 section 5.10.1: "The Client Identifier value in the client_id Authorization
     /// Request parameter and the Request Object client_id claim value MUST be identical, including
@@ -65,8 +67,9 @@ enum PresentationRequestError: Error {
         case .fetchFailed(let error): return error.message ?? "Unable to process request"
         case .emptyResponse: return "Response is null or empty."
         case .malformed(let detail): return detail
-        case .nonceMismatch, .unsignedRequestObject, .requestValidationFailed: return "Request validation failed"
-        case .unrecognisedClient: return "The client identifier prefix is not supported"
+        case .nonceMismatch, .unsignedRequestObject: return "Request validation failed"
+        case .clientNotVerified(let detail): return "The verifier could not be authenticated: \(detail)"
+        case .unsupportedClientIdPrefix(let prefix): return "The client identifier prefix '\(prefix)' is not supported"
         case .clientIdMismatch: return "The client_id in the request does not match the request object"
         case .invalidDcqlQuery(let reason): return "Invalid DCQL query: \(reason)"
         case .presentationDefinitionUnavailable(let detail):
@@ -82,7 +85,7 @@ enum PresentationRequestError: Error {
             return error
         case .invalidDcqlQuery:
             return EUDIError(message: message, code: ErrorCodes.invalidDcqlQuery)
-        case .ambiguousRequest, .clientIdMismatch:
+        case .ambiguousRequest, .clientIdMismatch, .clientNotVerified, .unsupportedClientIdPrefix:
             return EUDIError(message: message, code: nil, errorCode: Self.invalidRequest)
         default:
             return EUDIError(message: message, code: nil)

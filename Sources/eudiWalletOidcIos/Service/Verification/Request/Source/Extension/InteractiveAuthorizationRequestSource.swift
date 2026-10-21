@@ -38,6 +38,9 @@ struct InteractiveAuthorizationRequestSource: PresentationRequestSource {
         request.type = AuthorizationRequestURI.queryParam(data, "type") ?? ""
         // The issuer's client id, without the redirect_uri prefix, as this path has always sent it.
         request.clientId = issuerClientId.replacingOccurrences(of: "redirect_uri:", with: "")
+        // The scheme the decoder took from the inner object's client_id describes the verifier, not
+        // the issuer client id above; left in place it would steer the client identifier check.
+        request.clientIDScheme = nil
         request.request = requestObject
         return request
     }

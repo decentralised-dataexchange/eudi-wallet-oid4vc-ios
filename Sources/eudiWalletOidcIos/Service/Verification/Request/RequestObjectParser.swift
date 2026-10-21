@@ -8,8 +8,9 @@ import Foundation
 /// The RFC 9101 request object: a JWT whose payload is the set of authorization request
 /// parameters. Shared by every source that receives one, by value or by reference.
 ///
-/// Signature verification is not done here. It belongs to the client identifier step, because the
-/// key that must have signed the object depends on the client identifier prefix.
+/// Signature verification is not done here. It belongs to the client identifier step
+/// (`ClientIdentifierVerifier`), because the key that must have signed the object depends on the
+/// client identifier prefix.
 enum RequestObjectParser {
 
     /// True when `data` is a compact JWT, signed or `alg: none`: three segments, the first a JSON
@@ -53,7 +54,8 @@ enum RequestObjectParser {
     static func requireSignedUnlessRedirectUri(_ jwt: String, _ request: PresentationRequest,
                                                policy: PresentationRequestPolicy) throws {
         if policy.allowUnsignedRequestObjects { return }
-        if isUnsigned(jwt), request.clientIDScheme != ClientIdScheme.redirectURI.rawValue {
+        let prefix = ClientIdentifier.parse(request.clientId ?? "", legacyScheme: request.clientIDScheme).prefix
+        if isUnsigned(jwt), prefix != .redirectUri {
             debugPrint("RequestObjectParser: unsigned request object for client id scheme '\(request.clientIDScheme ?? "")' - refusing")
             throw PresentationRequestError.unsignedRequestObject
         }
@@ -69,22 +71,6 @@ enum RequestObjectParser {
         if fromUri != fromObject {
             throw PresentationRequestError.clientIdMismatch(fromUri: fromUri, fromRequestObject: fromObject)
         }
-    }
-
-    /// The client identifier scheme handler, as the request object path has always run it. Leg 2
-    /// of the verification revamp replaces it with the client identifier verifier.
-    static func verifyClient(_ request: PresentationRequest) async throws -> PresentationRequest {
-        let verified: PresentationRequest?
-        do {
-            verified = try await ClientIdSchemeRequestHandler().handle(jwtRequest: request.request, presentationRequest: request)
-        } catch let error as PresentationRequestError {
-            throw error
-        } catch {
-            debugPrint("RequestObjectParser: client identifier check failed: \(error)")
-            throw PresentationRequestError.requestValidationFailed
-        }
-        guard let verified else { throw PresentationRequestError.unrecognisedClient }
-        return verified
     }
 
     private static func header(of segment: String) -> [String: Any]? {

@@ -68,23 +68,22 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
             return await sendVPRequest(params: params, redirectURI: responseEndpoint, wua: wua, pop: pop)
         }
     
-    /// True when a request object carries no signature: the signature segment is empty, or the JOSE
-    /// header says `alg: none`. A header that cannot be read counts as signed, so the request goes on
-    /// to the client id scheme handler and fails its signature check there.
+    /// Resolves scanned data into a presentation request (OpenID4VP 1.0 section 5) and verifies the
+    /// verifier's identity by its client identifier prefix (section 5.9). The outcome says who the
+    /// verifier is in `ResolvedPresentationRequest.verifier`.
     public func resolveAuthorizationRequest(data: String?, policy: PresentationRequestPolicy = .default) async -> PresentationRequestOutcome {
         await PresentationRequestResolver(policy: policy, session: requestObjectSession).resolve(data)
     }
 
-    /// Kept for integrators on the previous API. Blank or unrecognised input, and a client
-    /// identifier scheme with no handler, still answer `(nil, nil)` as before; every other outcome
-    /// maps onto the tuple.
+    /// Kept for integrators on the previous API. Blank or unrecognised input still answers
+    /// `(nil, nil)` as before; every other outcome maps onto the tuple.
     @available(*, deprecated, renamed: "resolveAuthorizationRequest(data:policy:)",
                message: "Use resolveAuthorizationRequest, which returns a typed outcome instead of a tuple of optionals")
     public func processAuthorisationRequest(data: String?) async -> (PresentationRequest?, EUDIError?) {
         switch await PresentationRequestResolver(session: requestObjectSession).resolveTyped(data) {
         case .success(let resolved):
             return (resolved.request, nil)
-        case .failure(.noRequest), .failure(.unrecognisedClient):
+        case .failure(.noRequest):
             return (nil, nil)
         case .failure(let error):
             return (nil, error.eudiError)

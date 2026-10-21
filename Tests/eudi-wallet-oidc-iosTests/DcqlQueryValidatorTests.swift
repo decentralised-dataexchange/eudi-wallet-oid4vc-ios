@@ -359,7 +359,8 @@ final class DcqlQueryValidatorTests: XCTestCase {
 
     private func byValueRequest(dcqlQuery: String) -> String {
         let encoded = dcqlQuery.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
-        return "openid4vp://?client_id=x509_san_dns%3Averifier.example&response_type=vp_token&response_mode=direct_post&nonce=n1&state=s1&response_uri=https%3A%2F%2Fverifier.example%2Fcb&dcql_query=\(encoded)"
+        // redirect_uri, the one prefix a by-value request can carry: the others need a signed request object.
+        return "openid4vp://?client_id=redirect_uri%3Ahttps%3A%2F%2Fverifier.example%2Fcb&response_type=vp_token&response_mode=direct_post&nonce=n1&state=s1&response_uri=https%3A%2F%2Fverifier.example%2Fcb&dcql_query=\(encoded)"
     }
 
     func testByValueRequestWithInvalidIdIsRefused() async {

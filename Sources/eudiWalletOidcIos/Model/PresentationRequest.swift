@@ -5,6 +5,7 @@
 //  Created by Mumthasir mohammed on 18/03/24.
 //
 import Foundation
+import AnyCodable
 public struct PresentationRequest: Codable {
     public var state, clientId, clientIDScheme,  redirectUri, responseType, responseMode, scope, nonce, requestUri: String?
     public var responseUri: String?
@@ -23,6 +24,9 @@ public struct PresentationRequest: Codable {
     public var walletNonce: String?
     public var authSession: String?
     public var type: String?
+    /// OpenID4VP 1.0 section 5.11: attestations about the verifier from third parties, as the JSON
+    /// array received. Carried, not yet validated.
+    public var verifierInfo: String?
     
     enum CodingKeys: String, CodingKey {
         case state = "state"
@@ -45,6 +49,7 @@ public struct PresentationRequest: Codable {
         case walletNonce = "wallet_nonce"
         case authSession = "auth_session"
         case type = "type"
+        case verifierInfo = "verifier_info"
     }
     
     public init(state: String?, clientId: String?, redirectUri: String?, responseUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: String?, clientMetaData:  String?, presentationDefinitionUri: String?, clientMetaDataUri: String?, clientIDScheme: String?, transactionData: [String], dcqlQuery: DCQLQuery? = nil, request: String?, authSession: String?) {
@@ -111,6 +116,13 @@ public struct PresentationRequest: Codable {
         walletNonce = try container.decodeIfPresent(String.self, forKey: .walletNonce)
         authSession = try container.decodeIfPresent(String.self, forKey: .authSession)
         type = try container.decodeIfPresent(String.self, forKey: .type)
+        if let entries = try? container.decode([AnyCodable].self, forKey: .verifierInfo),
+           let data = try? JSONEncoder().encode(entries) {
+            verifierInfo = String(data: data, encoding: .utf8)
+        } else {
+            // A request re-decoded after encoding carries the array as the string kept above.
+            verifierInfo = try? container.decodeIfPresent(String.self, forKey: .verifierInfo)
+        }
     }
 }
 public struct ClientMetaData: Codable {
