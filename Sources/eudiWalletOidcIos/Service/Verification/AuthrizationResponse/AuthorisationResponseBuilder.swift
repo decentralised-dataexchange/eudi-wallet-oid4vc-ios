@@ -153,7 +153,7 @@ class AuthorisationResponseBuilder {
                     itemWithTilda = "\(item)~"
                 }
                 var updatedKeyHandler = keyHandler
-                 updatedKeyHandler = SecureEnclaveHandler(keyID: keyIds[index])
+                 updatedKeyHandler = SecureEnclaveHandler.presentationKey(keyIds[index])
                 if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(issuerSignedJwt: itemWithTilda, claims: claims, keyHandler: updatedKeyHandler), let vct = dict["vct"] as? String, !vct.isEmpty {
                     //Fixme: need to update the vp_token creation using SDJWTVpTokenBuilder
                     var updatedCred = "\(itemWithTilda ?? "")\(keyBindingJwt)"

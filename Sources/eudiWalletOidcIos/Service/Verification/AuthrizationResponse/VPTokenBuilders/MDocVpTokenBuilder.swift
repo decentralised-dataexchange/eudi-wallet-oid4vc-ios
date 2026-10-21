@@ -145,11 +145,11 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     let emptyNameSpace = encodeEmptyDeviceNameSpaces()
                     // Sign DeviceAuth with the credential's bound device key — the key whose public
                     // half the issuer put in the MSO deviceKeyInfo.deviceKey — resolved via its keyId.
-                    // Mirrors SD-JWT key binding (SecureEnclaveHandler(keyID: keyIds[index])) and the
+                    // Mirrors SD-JWT key binding (SecureEnclaveHandler.presentationKey(keyIds[index])) and the
                     // Android builder (which signs with the credential's device JWK). Falls back to the
                     // generic keyHandler when no per-credential keyId was supplied.
                     let signingKeyHandler: SecureKeyProtocol = index < keyIds.count
-                        ? SecureEnclaveHandler(keyID: keyIds[index])
+                        ? SecureEnclaveHandler.presentationKey(keyIds[index])
                         : keyHandler
                     _ = signingKeyHandler.generateSecureKey()
                     let privateKey: SecKey? = signingKeyHandler.getSecurePrivateKey()
@@ -284,7 +284,7 @@ public class MDocVpTokenBuilder : VpTokenBuilder{
                     // (same key the issuer placed in MSO deviceKeyInfo.deviceKey). Falls back to the
                     // generic keyHandler when no per-credential keyId was supplied.
                     let signingKeyHandler: SecureKeyProtocol = index < keyIds.count
-                        ? SecureEnclaveHandler(keyID: keyIds[index])
+                        ? SecureEnclaveHandler.presentationKey(keyIds[index])
                         : keyHandler
                     _ = signingKeyHandler.generateSecureKey()
                     let devicePrivateKey: SecKey? = signingKeyHandler.getSecurePrivateKey()

@@ -60,7 +60,7 @@ class SDJWTVpTokenBuilder : VpTokenBuilder{
         var processedResults: [String] = []
         for (index,item) in credentials.enumerated() {
                var updtedKeyHandler = keyHandler
-                updtedKeyHandler = SecureEnclaveHandler(keyID: keyIds[index])
+                updtedKeyHandler = SecureEnclaveHandler.presentationKey(keyIds[index])
                let itemWithTilda = item.hasSuffix("~") ? item : "\(item)~"
                
                if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(
