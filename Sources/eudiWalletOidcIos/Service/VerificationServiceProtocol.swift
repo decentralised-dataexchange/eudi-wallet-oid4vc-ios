@@ -23,11 +23,16 @@ protocol VerificationServiceProtocol {
         credentialsList: [[String]]?,
         wua: String,
         pop: String, isSca: Bool, keyIds: [[String]], amrInherenceFactor: String?, amrKnowledgeFactor: String?) async -> WrappedVerificationResponse?
+    /// Resolves scanned data into a presentation request (OpenID4VP 1.0 section 5): by value, by
+    /// `request` object, behind a `request_uri`, or as an interactive authorization request.
+    func resolveAuthorizationRequest(data: String?, policy: PresentationRequestPolicy) async -> PresentationRequestOutcome
+
     /**
      Processes an authorization request and extracts a PresentationRequest object asynchronously.
      - Parameter data: The authorization request data.
      - Returns: The extracted PresentationRequest object, or nil if the input data is invalid or cannot be processed.
      */
+    @available(*, deprecated, renamed: "resolveAuthorizationRequest(data:policy:)")
     func processAuthorisationRequest(data: String?) async -> (PresentationRequest?, EUDIError?)
     /**
      Processes the provided presentation definition data and returns a PresentationDefinitionModel object.

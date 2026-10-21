@@ -7,10 +7,6 @@
 
 import Foundation
 
-enum PresentationRequestError: Error {
-    case requestValidationFailed
-}
-
 class ClientIdSchemeRequestHandler {
     func handle(jwtRequest: String?, presentationRequest: PresentationRequest) async throws -> PresentationRequest? {
         guard let scheme = ClientIdScheme(from: presentationRequest.clientIDScheme ?? "") else { return nil }
