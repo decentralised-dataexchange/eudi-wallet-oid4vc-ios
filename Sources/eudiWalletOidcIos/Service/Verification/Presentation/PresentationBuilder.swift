@@ -13,18 +13,7 @@ import Foundation
 /// where the first of its kind was.
 public struct PresentationBuilder {
 
-    /// When true, a credential whose proof cannot be made goes out as the previous API sent it:
-    /// an SD-JWT without its key binding JWT, an mdoc with an empty `deviceAuth`, anything else as
-    /// it is. The new API refuses the response instead.
-    let lenient: Bool
-
-    public init() {
-        self.lenient = false
-    }
-
-    init(lenient: Bool) {
-        self.lenient = lenient
-    }
+    public init() {}
 
     /// - Throws: `PresentationError` when a proof cannot be made.
     public func build(_ selected: [SelectedCredential], inputs: PresentationInputs) async throws -> [Presentation] {
@@ -40,48 +29,35 @@ public struct PresentationBuilder {
             transcript = made
             return made
         }
-        let mdoc = MdocVpTokenBuilder(unsigned: lenient)
+        let mdoc = MdocVpTokenBuilder()
         var out: [Presentation] = []
         var w3cDone = false
         var mdocDone = false
         for (credential, format) in withFormat {
             switch format {
             case .sdJwt:
-                out.append(try attempt(credential, .sdJwt, fallback: SdJwtVpTokenBuilder.presented(credential)) {
-                    try SdJwtVpTokenBuilder().present(credential, inputs)
-                })
+                out.append(try SdJwtVpTokenBuilder().present(credential, inputs))
             case .mdoc where draft:
                 guard !mdocDone else { continue }
                 mdocDone = true
                 let all = withFormat.filter { $0.1 == .mdoc }.map { $0.0 }
                 let transcript = await sessionTranscript()
-                out.append(try attempt(credential, .mdoc) { try mdoc.presentAll(all, inputs, transcript) })
+                out.append(try mdoc.presentAll(all, inputs, transcript))
             case .mdoc:
                 let transcript = await sessionTranscript()
-                out.append(try attempt(credential, .mdoc) { try mdoc.present(credential, inputs, transcript) })
+                out.append(try mdoc.present(credential, inputs, transcript))
             case .w3cVp where draft:
                 guard !w3cDone else { continue }
                 w3cDone = true
                 let all = withFormat.filter { $0.1 == .w3cVp }.map { $0.0 }
-                out.append(try attempt(credential, .w3cVp) { try JwtVpTokenBuilder().aggregate(all, inputs) })
+                out.append(try JwtVpTokenBuilder().aggregate(all, inputs))
             case .w3cVp:
-                out.append(try attempt(credential, .w3cVp) { try JwtVpTokenBuilder().present(credential, inputs) })
+                out.append(try JwtVpTokenBuilder().present(credential, inputs))
             case nil:
-                guard lenient else { throw PresentationError.unsupportedFormat(credential.entryId) }
-                out.append(Presentation(entryIds: [credential.entryId], format: .sdJwt, token: credential.credential))
+                throw PresentationError.unsupportedFormat(credential.entryId)
             }
         }
         return out
-    }
-
-    private func attempt(_ credential: SelectedCredential, _ format: PresentationFormat, fallback: String? = nil,
-                         _ block: () throws -> Presentation) throws -> Presentation {
-        do {
-            return try block()
-        } catch {
-            guard lenient else { throw error }
-            return Presentation(entryIds: [credential.entryId], format: format, token: fallback ?? credential.credential)
-        }
     }
 
     /// mdoc when there is no `.`, SD-JWT when there is a `~` or a `vct`, W3C VC for any other JWT.

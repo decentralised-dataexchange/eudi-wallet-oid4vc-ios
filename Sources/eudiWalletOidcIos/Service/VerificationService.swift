@@ -14,14 +14,6 @@ import Security
 import ASN1Decoder
 
 
-private extension String {
-    /// nil when empty or only whitespace, so a `??` chain treats an absent
-    /// parameter and one present-but-empty alike - query parsing delivers both.
-    var nilIfBlank: String? {
-        trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self
-    }
-}
-
 public class VerificationService: NSObject, VerificationServiceProtocol {
     
     var keyHandler: SecureKeyProtocol
@@ -39,35 +31,61 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     }
     
     
+    /// What the previous API answered when the verifier accepted without a redirect.
+    static let acceptedPlaceholder = "https://www.example.com?code=1"
+
+    /// Builds the presentations for the selected credentials, shapes the Authorization Response for
+    /// the request's response mode (OpenID4VP 1.0 section 8), encrypts it when asked and posts it.
+    /// Over the Digital Credentials API the parameters are handed back for the platform to deliver.
+    ///
+    /// - Parameters:
+    ///   - selected: the credentials the user chose, each named by the query entry it answers.
+    ///   - identity: the wallet's DID; the service's key handler is its key.
+    ///   - attestation: the wallet unit attestation, sent as client attestation headers.
+    ///   - authentication: how the user authenticated, for a strong customer authentication.
+    public func submitPresentation(request: PresentationRequest, selected: [SelectedCredential], identity: WalletIdentity,
+                                   attestation: WalletAttestation? = nil,
+                                   authentication: AuthenticationMethods? = nil) async -> PresentationOutcome {
+        await PresentationSubmitter().submit(request, selected: selected, identity: identity, holderKey: keyHandler,
+                                             attestation: attestation, authentication: authentication)
+    }
+
+    /// Kept for integrators on the previous API. The credentials and key ids arrive as lists aligned
+    /// by position with the query; the outcome is wrapped the way callers of this entry point
+    /// expect, placeholder redirect included.
+    @available(*, deprecated, message: "Use submitPresentation, which takes SelectedCredential values and returns a typed outcome")
     public func processOrSendAuthorizationResponse(
         did: String,
         presentationRequest: PresentationRequest?,
         credentialsList: [[String]]?,
         wua: String,
         pop: String, isSca: Bool = false, keyIds: [[String]] = [], amrInherenceFactor: String?, amrKnowledgeFactor: String?) async -> WrappedVerificationResponse? {
-            
-            guard let params = await AuthorisationResponseHandler().prepareAuthorisationResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds, amrInherenceFactor: amrInherenceFactor, amrKnowledgeFactor: amrKnowledgeFactor),
-                  !params.isEmpty else {
-                // Building the response failed. Posting the empty set that used to
-                // stand in for it is worse than not posting: the verifier answers a
-                // bodyless response by redirecting to its login page, so the failure
-                // surfaced as a browser opening rather than as an error.
-                return WrappedVerificationResponse(error: EUDIError(from: ErrorResponse(
-                    message: "Could not build the presentation response", code: nil)))
-            }
-            // OpenID4VP 1.0 8.2: for direct_post the Authorization Response is
-            // POSTed to response_uri, and redirect_uri MUST NOT be present. Only
-            // the by-value parser used to alias the two, so a signed request
-            // object - which carries response_uri and nothing else - resolved to
-            // nil here and the presentation was never sent. redirect_uri stays as
-            // a fallback for the redirect-based response modes.
-            guard let responseEndpoint = presentationRequest?.responseUri?.nilIfBlank
-                    ?? presentationRequest?.redirectUri?.nilIfBlank else {
-                return nil
-            }
-            return await sendVPRequest(params: params, redirectURI: responseEndpoint, wua: wua, pop: pop)
+        guard let request = presentationRequest else {
+            return WrappedVerificationResponse(error: EUDIError(message: "Could not build the presentation response", errorCode: "invalid_request"))
         }
-    
+        guard let selected = LegacySelection.from(request, groups: credentialsList, keyIds: keyIds) else {
+            return WrappedVerificationResponse(error: EUDIError(message: "The selected credentials do not match the query", errorCode: "invalid_request"))
+        }
+        let outcome = await submitPresentation(
+            request: request,
+            selected: selected,
+            identity: WalletIdentity(did: did),
+            attestation: WalletAttestation(attestationJwt: wua, proofOfPossession: pop),
+            authentication: isSca ? AuthenticationMethods(inherence: amrInherenceFactor, knowledge: amrKnowledgeFactor) : nil)
+        switch outcome {
+        case .accepted(let redirectUri, let location, let code):
+            if let redirectUri { return WrappedVerificationResponse(redirectUri: redirectUri) }
+            if let location { return WrappedVerificationResponse(location: location) }
+            // Callers of this entry point read the code out of the placeholder to continue issuance.
+            if let code { return WrappedVerificationResponse(data: "https://www.example.com?code=\(code)") }
+            return WrappedVerificationResponse(data: Self.acceptedPlaceholder)
+        case .delivered:
+            return WrappedVerificationResponse(data: Self.acceptedPlaceholder)
+        case .refused(let error):
+            return WrappedVerificationResponse(error: error)
+        }
+    }
+
     /// Resolves scanned data into a presentation request (OpenID4VP 1.0 section 5) and verifies the
     /// verifier's identity by its client identifier prefix (section 5.9). The outcome says who the
     /// verifier is in `ResolvedPresentationRequest.verifier`.
@@ -100,74 +118,6 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         }
     }
 
-    private func sendVPRequest(params: [String: Any], redirectURI: String, wua: String, pop: String) async -> WrappedVerificationResponse? {
-        // OpenID4VP 1.0 8.2 requires application/x-www-form-urlencoded. getPostString
-        // joined key=value with no escaping at all, so any value carrying "+", "/"
-        // or "=" reached the Verifier corrupted - base64 vp_tokens (mdoc) above all.
-        let postString = UIApplicationUtils.shared.getFormEncodedString(params: params)
-        // What the verifier actually receives. A verifier that cannot correlate
-        // the response to its session tends to answer with a redirect to its
-        // login page rather than an error, so the fields it correlates on -
-        // state above all - are worth seeing without turning on body tracing.
-        let paramsData = postString.data(using: .utf8)
-        let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
-        var request = URLRequest(url: URL(string: redirectURI)!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.setValue(sanitisedWUA, forHTTPHeaderField: "OAuth-Client-Attestation")
-        request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
-        request.httpBody = paramsData
-        
-        // Performing the token request
-        var responseUrl = ""
-        do {
-            let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-            
-            let (data, response) = try await NetworkLogger.send(request, tag: "vp-token-response", session: session)
-            
-            
-            let httpres = response as? HTTPURLResponse
-            
-            // The success case OpenID4VP 8.2 defines comes first: 200 with a body
-            // that MAY carry redirect_uri. A 302 is not in the specification and is
-            // only read afterwards, as a vendor accommodation.
-            if httpres?.statusCode == 200 || httpres?.statusCode == 204 {
-                let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
-                if let redirectUri = json?["redirect_uri"] as? String {
-                    return WrappedVerificationResponse(redirectUri: redirectUri)
-                } else if let code = json?["code"] as? String {
-                    return WrappedVerificationResponse(data: "https://www.example.com?code=\(code)")
-                } else {
-                    // Presentation accepted, nowhere to send the user.
-                    return WrappedVerificationResponse(data: "https://www.example.com?code=1")
-                }
-            } else if httpres?.statusCode == 302 {
-                if let location = httpres?.value(forHTTPHeaderField: "Location") {
-                    responseUrl = location
-                    let url = URL.init(string: location)
-                    if let errorDescription = url?.queryParameters?["error_description"] as? String {
-                        let error = errorDescription.replacingOccurrences(of: "+", with: " ").data(using: .utf8)
-                        return WrappedVerificationResponse(data: nil, error: ErrorHandler.processError(data: error, contentType: httpres?.value(forHTTPHeaderField: "Content-Type")))
-                    } else {
-                        return WrappedVerificationResponse(location: responseUrl)
-                    }
-                } else {
-                    return WrappedVerificationResponse(data: "https://www.example.com?code=1")
-                }
-            } else if httpres?.statusCode ?? 400 >= 400 {
-                return WrappedVerificationResponse(data: nil, error: ErrorHandler.processError(data: data, contentType: httpres?.value(forHTTPHeaderField: "Content-Type")))
-            } else{
-                guard let dataString = String(data: data, encoding: .utf8) else {
-                    return WrappedVerificationResponse(data: "data", error: nil)
-                }
-                return WrappedVerificationResponse(data: dataString, error: nil)
-            }
-        } catch {
-            debugPrint("JSON Serialization Error: \(error)")
-            return nil
-        }
-    }
-    
     public static func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel {
         do {
             guard let presentationDefinition = presentationDefinition else {
@@ -397,11 +347,3 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         return updatedDescriptor
     }
 }
-extension VerificationService: URLSessionDelegate, URLSessionTaskDelegate {
-    public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        // Stops the redirection, and returns (internally) the response body.
-        completionHandler(nil)
-    }
-}
-
-

@@ -53,8 +53,7 @@ struct SessionTranscript {
     /// the DC API handover for the `dc_api` response modes, the OpenID4VP handover otherwise.
     static func forRequest(_ request: PresentationRequest, encryptionKeyThumbprint: [UInt8]?) -> SessionTranscript {
         let nonce = request.nonce ?? ""
-        let isDcApi = request.responseMode == ResponseMode.dcApi.rawValue
-            || request.responseMode == ResponseMode.dcApiJWT.rawValue
+        let isDcApi = ResponseMode.of(request).deliveredByHost
         let rawClientId = request.clientId ?? ""
         let clientId = isDcApi && rawClientId.hasPrefix("origin:") ? String(rawClientId.dropFirst("origin:".count)) : rawClientId
         let responseUri = request.responseUri ?? request.redirectUri

@@ -79,13 +79,12 @@ final class DcqlResponseCharacterisationTests: ResponseCharacterisationTestCase 
         XCTAssertNotNil(document?["deviceSigned"]?["deviceAuth"]?["deviceSignature"])
     }
 
-    func testDefectAnMdocWithNoKeyIdFallsBackToTheWalletKeyAndGoesUnsigned() async throws {
+    func testAnMdocWithNoKeyIdFallsBackToTheWalletKeyAndLeavesNothingToSend() async {
         let params = await respond(F.dcqlRequest(F.dcqlMdoc("mdl", claims: [familyName])),
                                    [[F.mdoc(deviceKey: holder.publicKey)]], keyIds: [[]])
 
-        // The wallet's DID key handler exposes no SecKey, so deviceAuth stays empty.
-        let presented = try XCTUnwrap((vpToken(params)["mdl"] as? [String])?.first)
-        XCTAssertEqual(F.decodeCbor(presented)?["documents"]?[0]?["deviceSigned"]?["deviceAuth"], .map([:]))
+        // The wallet's DID key handler exposes no SecKey, so no device signature can be made.
+        XCTAssertNil(params, "leg 5: refused rather than sent with an empty deviceAuth")
     }
 
     func testAJwtVcJsonEntryYieldsAW3CPresentation() async throws {
@@ -95,11 +94,9 @@ final class DcqlResponseCharacterisationTests: ResponseCharacterisationTestCase 
         XCTAssertNotNil((JWTParts.claims(vp)?["vp"] as? [String: Any])?["verifiableCredential"])
     }
 
-    func testDefectACredentialCountThatDiffersFromTheQueryCountYieldsAnEmptyResponse() async {
+    func testACredentialCountThatDiffersFromTheQueryCountLeavesNothingToSend() async {
         let params = await respond(F.dcqlRequest(F.dcqlSdJwt("a"), F.dcqlSdJwt("b")), [[F.sdJwt()]])
-
-        // Nothing is built and nothing says why; the caller sees an empty parameter set.
-        XCTAssertEqual(params?.isEmpty, true)
+        XCTAssertNil(params)
     }
 
     func testAnEntryWithNoSelectedCredentialIsLeftOutOfTheToken() async {

@@ -44,34 +44,43 @@ final class ResponseModeCharacterisationTests: ResponseCharacterisationTestCase 
         XCTAssertEqual(jwe.header.contentEncryptionAlgorithm, .A128CBCHS256)
     }
 
-    func testDefectDirectPostJwtWithoutEncValuesSupportedYieldsNilEvenWhenTheDraftEncNamesOne() async {
-        // Android defaults to A128GCM and honours authorization_encrypted_response_enc; iOS reads
-        // only encrypted_response_enc_values_supported and drops the response without a reason.
+    func testDirectPostJwtTakesTheDraftEncWhenThe10NameIsAbsent() async throws {
         let request = F.dcqlRequest(F.dcqlSdJwt("pid"), responseMode: "direct_post.jwt",
-                                    clientMetadata: F.encryptionMetadata(verifierKey, encValues: nil, enc: "A128GCM"))
-        let params = await respond(request)
-        XCTAssertNil(params)
-    }
-
-    func testDefectAnEncTheSdkDoesNotSupportYieldsNil() async {
-        let request = F.dcqlRequest(F.dcqlSdJwt("pid"), responseMode: "direct_post.jwt",
-                                    clientMetadata: F.encryptionMetadata(verifierKey, encValues: ["A256CBC-HS512"]))
-        let params = await respond(request)
-        XCTAssertNil(params)
-    }
-
-    func testDefectAnAlgOtherThanEcdhEsIsIgnoredAndEcdhEsUsed() async throws {
-        let request = F.dcqlRequest(F.dcqlSdJwt("pid"), responseMode: "direct_post.jwt",
-                                    clientMetadata: F.encryptionMetadata(verifierKey, alg: "ECDH-ES+A128KW"))
+                                    clientMetadata: F.encryptionMetadata(verifierKey, encValues: nil, enc: "A256GCM"))
         let params = await respond(request)
 
         let jwe = try verifierKey.decrypt(try XCTUnwrap(params?["response"] as? String))
-        XCTAssertEqual(jwe.header.keyManagementAlgorithm, .ECDH_ES)
+        XCTAssertEqual(jwe.header.contentEncryptionAlgorithm, .A256GCM)
     }
 
-    func testDcApiYieldsAnEmptyParameterSet() async {
+    func testA256CbcHs512IsAnAcceptedEncAndAnUnknownOneLeavesNothingToSend() async throws {
+        let accepted = await respond(F.dcqlRequest(F.dcqlSdJwt("pid"), responseMode: "direct_post.jwt",
+                                                   clientMetadata: F.encryptionMetadata(verifierKey, encValues: ["A256CBC-HS512"])))
+        let jwe = try verifierKey.decrypt(try XCTUnwrap(accepted?["response"] as? String))
+        XCTAssertEqual(jwe.header.contentEncryptionAlgorithm, .A256CBCHS512)
+
+        let unknown = await respond(F.dcqlRequest(F.dcqlSdJwt("pid"), responseMode: "direct_post.jwt",
+                                                  clientMetadata: F.encryptionMetadata(verifierKey, encValues: ["A192GCM"])))
+        XCTAssertNil(unknown)
+    }
+
+    func testTheKeyWrappingEcdhEsVariantsAreAcceptedAndAnotherAlgLeavesNothingToSend() async throws {
+        let wrapped = await respond(F.dcqlRequest(F.dcqlSdJwt("pid"), responseMode: "direct_post.jwt",
+                                                  clientMetadata: F.encryptionMetadata(verifierKey, alg: "ECDH-ES+A128KW")))
+        let jwe = try verifierKey.decrypt(try XCTUnwrap(wrapped?["response"] as? String))
+        XCTAssertEqual(jwe.header.keyManagementAlgorithm, .ECDH_ES_A128KW)
+
+        let other = await respond(F.dcqlRequest(F.dcqlSdJwt("pid"), responseMode: "direct_post.jwt",
+                                                clientMetadata: F.encryptionMetadata(verifierKey, alg: "RSA-OAEP-256")))
+        XCTAssertNil(other)
+    }
+
+    func testDcApiYieldsTheParametersWithTheOriginAsAudience() async throws {
         let params = await respond(F.dcqlRequest(F.dcqlSdJwt("pid"), responseMode: "dc_api"))
-        XCTAssertEqual(params?.isEmpty, true)
+
+        let presented = try XCTUnwrap((F.object(params?["vp_token"]) as? [String: Any])?["pid"] as? [String])
+        let kbJwt = try XCTUnwrap(JWTParts.claims(F.keyBindingJwt(presented[0])))
+        XCTAssertEqual(kbJwt["aud"] as? String, "origin:\(F.clientId)")
     }
 
     func testIarPostWrapsThePresentationInAuthSessionAndOpenid4vpPresentation() async throws {
@@ -93,17 +102,18 @@ final class ResponseModeCharacterisationTests: ResponseCharacterisationTestCase 
         let params = await respond(request)
 
         XCTAssertEqual(params?["auth_session"] as? String, "as-2")
-        let inner = try XCTUnwrap(params?["openid4vp_presentation"] as? [String: Any], "an object here, a string on iar-post")
+        let inner = try XCTUnwrap(F.object(params?["openid4vp_presentation"]) as? [String: Any], "JSON, as on iar-post")
         _ = try verifierKey.decrypt(try XCTUnwrap(inner["response"] as? String))
     }
 
-    func testDefectAnAbsentResponseModeYieldsNil() async {
-        // OpenID4VP 1.0 section 5.1 defaults response_mode to fragment; Android treats it as direct_post.
+    func testAnAbsentResponseModeIsDirectPost() async {
+        // OpenID4VP 1.0 section 5.1 defaults response_mode to fragment; like Android, this SDK
+        // treats it as direct_post, which is what the previous API assumed.
         let params = await respond(F.dcqlRequest(F.dcqlSdJwt("pid"), responseMode: nil))
-        XCTAssertNil(params)
+        XCTAssertEqual(Set(params?.keys.map { $0 } ?? []), ["vp_token", "state"])
     }
 
-    func testDefectAnUnsupportedResponseModeYieldsNilRatherThanAnError() async {
+    func testAnUnsupportedResponseModeLeavesNothingToSend() async {
         let params = await respond(F.dcqlRequest(F.dcqlSdJwt("pid"), responseMode: "fragment"))
         XCTAssertNil(params)
     }

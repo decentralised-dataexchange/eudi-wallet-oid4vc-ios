@@ -15,10 +15,6 @@ import OrderedCollections
 /// `claims` every element goes. Under a presentation definition every element goes, as before.
 struct MdocVpTokenBuilder {
 
-    /// When true, a document whose key is missing or cannot sign goes out with an empty
-    /// `deviceAuth`, which is what the previous API did.
-    var unsigned: Bool = false
-
     private let cbor = MDocVpTokenBuilder()
 
     /// One DeviceResponse with one document, the 1.0 shape.
@@ -48,11 +44,7 @@ struct MdocVpTokenBuilder {
 
         let emptyNameSpaces = encodeEmptyDeviceNameSpaces()
         var deviceAuth: OrderedDictionary<CBOR, CBOR> = [:]
-        do {
-            deviceAuth[.utf8String("deviceSignature")] = try signature(selected, inputs, transcript, docType, emptyNameSpaces)
-        } catch {
-            if !unsigned { throw error }
-        }
+        deviceAuth[.utf8String("deviceSignature")] = try signature(selected, inputs, transcript, docType, emptyNameSpaces)
         return Document(docType: docType, issuerSigned: IssuerSigned(nameSpaces: disclosed, issuerAuth: issuerAuth),
                         deviceSigned: DeviceSigned(nameSpaces: emptyNameSpaces, deviceAuth: .map(deviceAuth)))
     }

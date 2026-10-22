@@ -23,7 +23,7 @@ struct RedirectUriClientHandler: ClientIdentifierHandler {
         switch ResponseMode(from: request.responseMode ?? "") {
         case .directPost, .directPostJWT, .iarPost, .iarPostJWT:
             if request.responseUri?.isEmpty ?? true { request.responseUri = identifier.identifier }
-        case .dcApi, .dcApiJWT, .none:
+        case .dcApi, .dcApiJWT, .unsupported, .none:
             if request.redirectUri?.isEmpty ?? true { request.redirectUri = identifier.identifier }
         }
 

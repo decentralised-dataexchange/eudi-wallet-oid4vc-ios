@@ -48,7 +48,7 @@ final class PexResponseCharacterisationTests: ResponseCharacterisationTestCase {
         let params = await respond(F.pexRequest(F.sdJwtDescriptor("a"), F.sdJwtDescriptor("b")),
                                    [[F.sdJwt(vct: "urn:a")], [F.sdJwt(vct: "urn:b")]])
 
-        XCTAssertEqual((params?["vp_token"] as? [String])?.count, 2)
+        XCTAssertEqual((F.object(params?["vp_token"]) as? [String])?.count, 2, "several presentations go as a JSON array")
         XCTAssertEqual(descriptorMap(params).map { $0["path"] as? String }, ["$[0]", "$[1]"])
     }
 
@@ -85,7 +85,7 @@ final class PexResponseCharacterisationTests: ResponseCharacterisationTestCase {
         let params = await respond(F.pexRequest(F.sdJwtDescriptor("pid"), F.mdocDescriptor("mdl")),
                                    [[F.sdJwt()], [F.mdoc(deviceKey: holder.publicKey)]])
 
-        let tokens = try XCTUnwrap(params?["vp_token"] as? [String])
+        let tokens = try XCTUnwrap(F.object(params?["vp_token"]) as? [String])
         XCTAssertEqual(tokens.count, 2)
         XCTAssertTrue(F.verifies(F.keyBindingJwt(tokens[0]), with: holder.publicKey))
         let deviceResponse = try XCTUnwrap(F.decodeCbor(tokens[1]))
@@ -96,21 +96,14 @@ final class PexResponseCharacterisationTests: ResponseCharacterisationTestCase {
         XCTAssertEqual(entries.map { $0["path"] as? String }, ["$[0]", "$[1]"])
     }
 
-    func testDefectAnMdocWhoseKeyCannotSignIsSentWithoutADeviceSignature() async throws {
+    func testAnMdocWhoseKeyCannotSignLeavesNothingToSend() async {
         let params = await respond(F.pexRequest(F.mdocDescriptor("mdl")), [[F.mdoc(deviceKey: nil)]], keyIds: [["missing"]])
-
-        // A DeviceResponse goes out with an empty deviceAuth; nothing on our side refuses it.
-        let deviceResponse = try XCTUnwrap(F.decodeCbor(try XCTUnwrap(params?["vp_token"] as? String)))
-        let deviceAuth = deviceResponse["documents"]?[0]?["deviceSigned"]?["deviceAuth"]
-        XCTAssertEqual(deviceAuth, .map([:]))
-        XCTAssertEqual(descriptorMap(params).first?["format"] as? String, "mso_mdoc")
+        XCTAssertNil(params, "leg 5: an mdoc without its device signature is never sent")
     }
 
-    func testDefectAnSdJwtWhoseKeyCannotSignIsForwardedWithoutAKeyBindingJwt() async {
-        let credential = F.sdJwt()
-        let params = await respond(F.pexRequest(F.sdJwtDescriptor("pid")), [[credential]], keyIds: [["missing"]])
-
-        XCTAssertEqual(params?["vp_token"] as? String, credential, "the bare credential goes out, KB-JWT silently missing")
+    func testAnSdJwtWhoseKeyCannotSignLeavesNothingToSend() async {
+        let params = await respond(F.pexRequest(F.sdJwtDescriptor("pid")), [[F.sdJwt()]], keyIds: [["missing"]])
+        XCTAssertNil(params, "leg 5: an SD-JWT without its key binding JWT is never sent")
     }
 
     func testIdTokenResponseTypeYieldsOnlyAnIdTokenAndState() async throws {
@@ -133,9 +126,9 @@ final class PexResponseCharacterisationTests: ResponseCharacterisationTestCase {
         XCTAssertTrue(F.verifies(F.keyBindingJwt(try XCTUnwrap(params?["vp_token"] as? String)), with: holder.publicKey))
     }
 
-    func testAnUnknownResponseTypeYieldsOnlyTheState() async {
+    func testAnUnknownResponseTypeLeavesNothingToSend() async {
         let params = await respond(F.pexRequest(F.sdJwtDescriptor("pid"), responseType: "code"), [[F.sdJwt()]])
-        XCTAssertEqual(Set(params?.keys.map { $0 } ?? []), ["state"])
+        XCTAssertNil(params, "leg 5: a response carrying only the state is not sent")
     }
 
     func testANullStateIsLeftOut() async {

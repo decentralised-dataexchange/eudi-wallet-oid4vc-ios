@@ -21,8 +21,7 @@ func buildSessionTranscriptForOpenID4VP(
     jwkThumbprint: [UInt8]? = nil,
     responseMode: String? = nil
 ) -> (cbor: CBOR, bytes: [UInt8]) {
-    let isDcApi = responseMode == ResponseMode.dcApi.rawValue
-        || responseMode == ResponseMode.dcApiJWT.rawValue
+    let isDcApi = ResponseMode.parse(responseMode).deliveredByHost
     var info: [CBOR] = [.utf8String(clientId), .utf8String(nonce), jwkThumbprint.map { .byteString($0) } ?? .null]
     responseUri.map { info.append(.utf8String($0)) }
     let transcript = SessionTranscript.withHandover(isDcApi ? "OpenID4VPDCAPIHandover" : "OpenID4VPHandover", info)
