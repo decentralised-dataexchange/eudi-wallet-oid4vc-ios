@@ -132,8 +132,18 @@ struct PresentationRequestResolver {
         // Section 5.9: who the verifier is, by the rules of its client identifier prefix.
         let verifier = try await clientIdentifierVerifier.verify(&request, policy: policy)
 
+        // Section 8.4: a request whose transaction data the wallet cannot honour is refused now,
+        // before the user is asked anything.
+        let transactionData: [TransactionDataEntry]
+        do {
+            transactionData = try TransactionDataRules.entries(request, recognisedTypes: policy.recognisedTransactionDataTypes)
+        } catch let error as TransactionDataRules.InvalidTransactionData {
+            throw PresentationRequestError.invalidTransactionData(error.detail)
+        }
+
         debugPrint("PresentationRequestResolver: resolved a \(specVersion) presentation request from \(source.name)")
-        return ResolvedPresentationRequest(request: request, specVersion: specVersion, source: source.name, verifier: verifier)
+        return ResolvedPresentationRequest(request: request, specVersion: specVersion, source: source.name, verifier: verifier,
+                                           transactionData: transactionData)
     }
 
     private static func isBlank(_ value: String?) -> Bool {

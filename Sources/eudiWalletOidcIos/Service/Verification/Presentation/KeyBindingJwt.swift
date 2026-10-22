@@ -13,12 +13,11 @@ import Foundation
 /// authentication profile adds `response_mode`, `jti` and `amr`.
 enum KeyBindingJwt {
     static let type = "kb+jwt"
-    static let hashAlgorithm = "sha-256"
 
     /// - Parameter presented: the SD-JWT to bind, ending with `~`.
     /// - Parameter scaResponseMode: set for an SCA flow; `jti` and `amr` go with it.
     static func sign(entryId: String, presented: String, key: SecureKeyProtocol, audience: String?, nonce: String?,
-                     transactionDataHashes: [String]? = nil, scaResponseMode: String? = nil,
+                     transactionDataHashes: TransactionDataHashes? = nil, scaResponseMode: String? = nil,
                      amr: [[String: String]]? = nil) throws -> String {
         var claims: [String: Any] = [
             "aud": audience ?? "",
@@ -26,9 +25,9 @@ enum KeyBindingJwt {
             "iat": Int(Date().timeIntervalSince1970),
             "sd_hash": SDJWTService.shared.calculateSHA256Hash(inputString: presented) ?? ""
         ]
-        if let hashes = transactionDataHashes, !hashes.isEmpty {
-            claims["transaction_data_hashes"] = hashes
-            claims["transaction_data_hashes_alg"] = hashAlgorithm
+        if let hashes = transactionDataHashes, !hashes.hashes.isEmpty {
+            claims["transaction_data_hashes"] = hashes.hashes
+            claims["transaction_data_hashes_alg"] = hashes.algorithm
         }
         if let scaResponseMode {
             claims["response_mode"] = scaResponseMode

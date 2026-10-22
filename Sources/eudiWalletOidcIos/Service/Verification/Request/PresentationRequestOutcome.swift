@@ -34,4 +34,7 @@ public struct ResolvedPresentationRequest {
     /// What the client identifier check established about the verifier: which prefix, whether
     /// the request is authenticated, whether the key is anchored.
     public let verifier: VerifierIdentity
+
+    /// The request's `transaction_data`, decoded and checked against the query.
+    public let transactionData: [TransactionDataEntry]
 }

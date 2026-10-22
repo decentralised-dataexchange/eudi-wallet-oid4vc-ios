@@ -51,12 +51,20 @@ struct PresentationSubmitter {
         let wantsVpToken = request.dcqlQuery != nil || (request.responseType ?? "").contains("vp_token")
         var presentations: [Presentation] = []
         if wantsVpToken {
+            let entries: [TransactionDataEntry]
+            let hashes: [String: TransactionDataHashes]
+            do {
+                entries = try TransactionDataRules.entries(request)
+                hashes = try TransactionDataRules.hashesByEntry(entries)
+            } catch let error as TransactionDataRules.InvalidTransactionData {
+                throw SubmissionError.invalidTransactionData(error.detail)
+            }
             let inputs = PresentationInputs(
                 request: request,
                 holderDid: did,
                 holderKey: holderKey,
-                transactionDataHashes: LegacyTransactionData.hashes(request, entryIds: Self.entryIds(request, selected)),
-                strongCustomerAuthentication: LegacyTransactionData.isStrongCustomerAuthentication(request, flag: authentication != nil),
+                transactionDataHashes: hashes,
+                strongCustomerAuthentication: authentication != nil || StrongCustomerAuthentication.requested(entries),
                 authentication: authentication)
             presentations = try await builder.build(selected, inputs: inputs)
         }
@@ -82,11 +90,6 @@ struct PresentationSubmitter {
             effective.clientId = "origin:\(clientId)"
         }
         return effective
-    }
-
-    /// The entry ids the transaction data may name: every DCQL credential query, or the selection.
-    private static func entryIds(_ request: PresentationRequest, _ selected: [SelectedCredential]) -> [String] {
-        request.dcqlQuery?.credentials.map { $0.id } ?? selected.map { $0.entryId }
     }
 
     /// The wallet unit attestation headers, only when there is an attestation. A trailing `~` is

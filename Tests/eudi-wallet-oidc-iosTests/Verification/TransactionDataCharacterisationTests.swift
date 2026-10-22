@@ -42,18 +42,18 @@ final class TransactionDataCharacterisationTests: ResponseCharacterisationTestCa
         XCTAssertEqual(claims["amr"] as? [[String: String]], [["possession": "key_in_local_native_wscd"]])
     }
 
-    func testDefectScaFlagWithoutTransactionDataAddsNothing() async throws {
-        // The SCA claims are only added inside the transaction data branch.
+    func testScaFlagWithoutTransactionDataStillAddsTheScaClaims() async throws {
+        // Leg 6, as Android: passing the authentication factors is the statement that this is SCA.
         let claims = try await kbClaims(F.dcqlRequest(F.dcqlSdJwt("pid")), isSca: true, inherence: "fingerprint_device")
-        XCTAssertNil(claims["response_mode"])
-        XCTAssertNil(claims["amr"])
+        XCTAssertEqual(claims["response_mode"] as? String, "direct_post")
+        XCTAssertNotNil(claims["amr"])
     }
 
-    func testAUrnEudiScaTransactionTypeWithTheFlagOffAddsNoScaClaims() async throws {
-        // Android detects SCA from the type; iOS relies on the caller's flag alone.
+    func testAUrnEudiScaTransactionTypeIsScaWithTheFlagOff() async throws {
+        // Leg 6, as Android: SCA is detected from the type; with no factors only possession is claimed.
         let claims = try await kbClaims(F.dcqlRequest(F.dcqlSdJwt("pid"), transactionData: [sca]), inherence: "fingerprint_device")
-        XCTAssertNil(claims["response_mode"])
-        XCTAssertNil(claims["amr"])
+        XCTAssertEqual(claims["response_mode"] as? String, "direct_post")
+        XCTAssertEqual(claims["amr"] as? [[String: String]], [["possession": "key_in_local_native_wscd"]])
     }
 
     func testAPaymentDataTransactionTypeIsNotSca() async throws {
@@ -75,33 +75,39 @@ final class TransactionDataCharacterisationTests: ResponseCharacterisationTestCa
         XCTAssertEqual(claims["transaction_data_hashes"] as? [String], [F.sha256(sca)])
     }
 
-    func testDefectThePexPathIgnoresTheScaFlag() async throws {
+    func testThePexPathHonoursTheScaFlag() async throws {
         let params = await respond(F.pexRequest(F.sdJwtDescriptor("pid"), transactionData: [sca]), [[F.sdJwt()]],
                                    isSca: true, inherence: "fingerprint_device")
         let claims = try XCTUnwrap(JWTParts.claims(F.keyBindingJwt(try XCTUnwrap(params?["vp_token"] as? String))))
-        XCTAssertNil(claims["response_mode"])
-        XCTAssertNil(claims["amr"])
+        XCTAssertEqual(claims["response_mode"] as? String, "direct_post")
+        XCTAssertNotNil(claims["amr"])
     }
 
-    func testATransactionEntryNamingAnotherCredentialIdAddsNoHashes() async throws {
-        let entry = F.transactionData("urn:eudi:sca:payment", "someone-else")
-        let claims = try await kbClaims(F.dcqlRequest(F.dcqlSdJwt("pid"), transactionData: [entry]))
+    func testATransactionEntryNamingAnotherRequestedIdAddsNoHashesHere() async throws {
+        let entry = F.transactionData("urn:eudi:sca:payment", "other")
+        let params = await respond(F.dcqlRequest(F.dcqlSdJwt("pid"), F.dcqlSdJwt("other"), transactionData: [entry]),
+                                   [[F.sdJwt()], []])
+        let presented = try XCTUnwrap((F.object(params?["vp_token"]) as? [String: Any])?["pid"] as? [String]).first ?? ""
+        let claims = try XCTUnwrap(JWTParts.claims(F.keyBindingJwt(presented)))
 
         XCTAssertNil(claims["transaction_data_hashes"])
         XCTAssertNil(claims["transaction_data_hashes_alg"])
     }
 
-    func testDefectOnlyTheFirstOfSeveralTransactionEntriesIsHashed() async throws {
-        let second = F.transactionData("urn:eudi:sca:emandate", "pid")
-        let claims = try await kbClaims(F.dcqlRequest(F.dcqlSdJwt("pid"), transactionData: [sca, second]))
-
-        // OpenID4VP 1.0 section 8.4 expects one hash per entry; today the second is dropped.
-        XCTAssertEqual(claims["transaction_data_hashes"] as? [String], [F.sha256(sca)])
+    func testATransactionEntryNamingAnIdTheQueryDoesNotRequestLeavesNothingToSend() async {
+        let entry = F.transactionData("urn:eudi:sca:payment", "someone-else")
+        let params = await respond(F.dcqlRequest(F.dcqlSdJwt("pid"), transactionData: [entry]), [[F.sdJwt()]])
+        XCTAssertNil(params, "leg 6: invalid_transaction_data")
     }
 
-    func testATransactionEntryThatIsNotBase64UrlJsonIsIgnored() async throws {
-        let claims = try await kbClaims(F.dcqlRequest(F.dcqlSdJwt("pid"), transactionData: ["not base64url!"]))
-        XCTAssertNil(claims["transaction_data_hashes"])
-        XCTAssertNil(claims["amr"])
+    func testEveryTransactionEntryNamingTheCredentialIsHashedInOrder() async throws {
+        let second = F.transactionData("urn:eudi:sca:emandate", "pid")
+        let claims = try await kbClaims(F.dcqlRequest(F.dcqlSdJwt("pid"), transactionData: [sca, second]))
+        XCTAssertEqual(claims["transaction_data_hashes"] as? [String], [F.sha256(sca), F.sha256(second)])
+    }
+
+    func testATransactionEntryThatIsNotBase64UrlJsonLeavesNothingToSend() async {
+        let params = await respond(F.dcqlRequest(F.dcqlSdJwt("pid"), transactionData: ["not base64url!"]), [[F.sdJwt()]])
+        XCTAssertNil(params, "leg 6: invalid_transaction_data")
     }
 }

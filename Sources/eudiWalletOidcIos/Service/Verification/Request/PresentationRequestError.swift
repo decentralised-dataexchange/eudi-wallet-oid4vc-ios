@@ -57,6 +57,10 @@ enum PresentationRequestError: Error {
     /// A draft request arrived while `PresentationRequestPolicy.allowDraftRequests` is false.
     case draftNotAllowed
 
+    /// Section 8.5 `invalid_transaction_data`: the transaction data is malformed, names a
+    /// credential the query does not request, or cannot be honoured.
+    case invalidTransactionData(String)
+
     /// RFC 6749 section 4.1.2.1.
     static let invalidRequest = "invalid_request"
 
@@ -76,6 +80,7 @@ enum PresentationRequestError: Error {
             let suffix = detail.flatMap { $0.isEmpty ? nil : ": \($0)" } ?? ""
             return "The presentation definition could not be fetched\(suffix)"
         case .draftNotAllowed: return "This presentation request uses a draft format that is not supported"
+        case .invalidTransactionData(let detail): return "The transaction data in the request is invalid: \(detail)"
         }
     }
 
@@ -85,6 +90,8 @@ enum PresentationRequestError: Error {
             return error
         case .invalidDcqlQuery:
             return EUDIError(message: message, code: ErrorCodes.invalidDcqlQuery)
+        case .invalidTransactionData:
+            return EUDIError(message: message, code: nil, errorCode: "invalid_transaction_data")
         case .ambiguousRequest, .clientIdMismatch, .clientNotVerified, .unsupportedClientIdPrefix:
             return EUDIError(message: message, code: nil, errorCode: Self.invalidRequest)
         default:

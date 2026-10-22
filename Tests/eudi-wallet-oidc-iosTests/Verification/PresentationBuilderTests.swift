@@ -15,7 +15,7 @@ final class PresentationBuilderTests: ResponseCharacterisationTestCase {
 
     private let familyName = Claim.pathClaim(PathClaim(path: ["org.iso.18013.5.1", "family_name"], id: nil))
 
-    private func inputs(_ request: PresentationRequest, holderKey: SecureKeyProtocol? = nil, hashes: [String: [String]] = [:],
+    private func inputs(_ request: PresentationRequest, holderKey: SecureKeyProtocol? = nil, hashes: [String: TransactionDataHashes] = [:],
                         sca: Bool = false, authentication: AuthenticationMethods? = nil) -> PresentationInputs {
         PresentationInputs(request: request, holderDid: F.did, holderKey: holderKey ?? walletKeyHandler,
                            transactionDataHashes: hashes, strongCustomerAuthentication: sca, authentication: authentication)
@@ -115,7 +115,7 @@ final class PresentationBuilderTests: ResponseCharacterisationTestCase {
     func test4_6TransactionDataHashesGoOnlyToTheEntryTheyName() async throws {
         let presented = try await build([SelectedCredential(entryId: "a", credential: F.sdJwt(), keyId: "holder"),
                                          SelectedCredential(entryId: "b", credential: F.sdJwt(), keyId: "holder")],
-                                        inputs(F.dcqlRequest(F.dcqlSdJwt("a"), F.dcqlSdJwt("b")), hashes: ["a": ["h1"]]))
+                                        inputs(F.dcqlRequest(F.dcqlSdJwt("a"), F.dcqlSdJwt("b")), hashes: ["a": TransactionDataHashes(algorithm: "sha-256", hashes: ["h1"])]))
 
         let a = try XCTUnwrap(JWTParts.claims(F.keyBindingJwt(presented[0].token)))
         let b = try XCTUnwrap(JWTParts.claims(F.keyBindingJwt(presented[1].token)))

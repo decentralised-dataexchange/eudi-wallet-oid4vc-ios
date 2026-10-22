@@ -51,6 +51,11 @@ public struct PresentationRequestPolicy {
     /// section 5.9.3 as written.
     public var requireAnchoredClients: Bool
 
+    /// The `transaction_data` types the host can show the user. Section 5.1: "The Wallet MUST
+    /// return an error if a request contains even one unrecognized transaction data type." Nil
+    /// accepts any type, because only the host knows which it can render.
+    public var recognisedTransactionDataTypes: Set<String>?
+
     public init(allowDraftRequests: Bool = true,
                 allowUnsignedRequestObjects: Bool = false,
                 rejectAmbiguousRequests: Bool = true,
@@ -58,7 +63,8 @@ public struct PresentationRequestPolicy {
                 allowPreRegisteredClients: Bool = true,
                 trustAnchors: [SecCertificate] = [],
                 verifierAttestationIssuerKeys: [[String: Any]] = [],
-                requireAnchoredClients: Bool = false) {
+                requireAnchoredClients: Bool = false,
+                recognisedTransactionDataTypes: Set<String>? = nil) {
         self.allowDraftRequests = allowDraftRequests
         self.allowUnsignedRequestObjects = allowUnsignedRequestObjects
         self.rejectAmbiguousRequests = rejectAmbiguousRequests
@@ -67,6 +73,7 @@ public struct PresentationRequestPolicy {
         self.trustAnchors = trustAnchors
         self.verifierAttestationIssuerKeys = verifierAttestationIssuerKeys
         self.requireAnchoredClients = requireAnchoredClients
+        self.recognisedTransactionDataTypes = recognisedTransactionDataTypes
     }
 
     /// The SDK's existing behaviour.

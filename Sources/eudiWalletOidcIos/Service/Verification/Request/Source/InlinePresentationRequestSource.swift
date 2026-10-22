@@ -35,7 +35,15 @@ struct InlinePresentationRequestSource: PresentationRequestSource {
             }
         }
 
-        // transaction_data by value is read in leg 6 of the verification revamp.
+        // Section 5.1: a non-empty JSON array of base64url strings. An unreadable value is kept as
+        // it is, so the transaction data check refuses it instead of it vanishing here.
+        var transactionData: [String] = []
+        let transactionDataParam = param("transaction_data")
+        if !transactionDataParam.trimmingCharacters(in: .whitespaces).isEmpty {
+            let array = (try? JSONSerialization.jsonObject(with: Data(transactionDataParam.utf8))) as? [Any]
+            transactionData = array.map { $0.map { $0 as? String ?? "\($0)" } } ?? [transactionDataParam]
+        }
+
         return PresentationRequest(state: param("state"),
                                    clientId: param("client_id"),
                                    redirectUri: param("redirect_uri"),
@@ -50,7 +58,7 @@ struct InlinePresentationRequestSource: PresentationRequestSource {
                                    presentationDefinitionUri: param("presentation_definition_uri"),
                                    clientMetaDataUri: param("client_metadata_uri"),
                                    clientIDScheme: param("client_id_scheme"),
-                                   transactionData: [],
+                                   transactionData: transactionData,
                                    dcqlQuery: dcqlQuery,
                                    request: param("request"),
                                    authSession: param("auth_session"))

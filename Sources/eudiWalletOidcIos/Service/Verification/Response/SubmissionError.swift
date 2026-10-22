@@ -17,6 +17,8 @@ public enum SubmissionError: LocalizedError, Equatable {
     /// Section 8.3: the verifier's key algorithm or content encryption is one this SDK does not support.
     case encryptionUnsupported(String)
     case encryptionFailed
+    /// Section 8.5 `invalid_transaction_data`.
+    case invalidTransactionData(String)
     /// The response would carry neither a `vp_token` nor an `id_token`, as with a response type
     /// this SDK does not know.
     case nothingToSend
@@ -28,6 +30,7 @@ public enum SubmissionError: LocalizedError, Equatable {
         case .noEncryptionKey: return "The verifier asked for an encrypted response but published no encryption key"
         case .encryptionUnsupported(let detail): return "The response cannot be encrypted: \(detail)"
         case .encryptionFailed: return "The response could not be encrypted"
+        case .invalidTransactionData(let detail): return "The transaction data in the request is invalid: \(detail)"
         case .nothingToSend: return "The request asks for nothing this wallet can send"
         }
     }
@@ -36,6 +39,7 @@ public enum SubmissionError: LocalizedError, Equatable {
     var oauthError: String {
         switch self {
         case .nothingToSend: return "unsupported_response_type"
+        case .invalidTransactionData: return "invalid_transaction_data"
         default: return "invalid_request"
         }
     }

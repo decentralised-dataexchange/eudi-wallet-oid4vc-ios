@@ -80,7 +80,7 @@ public struct PresentationInputs {
 
     /// Per query entry id, the base64url hashes of the `transaction_data` entries that name it, for
     /// the key binding JWT. Computed by the caller.
-    public let transactionDataHashes: [String: [String]]
+    public let transactionDataHashes: [String: TransactionDataHashes]
 
     /// True for a TS12 SCA flow: the key binding JWT then carries `response_mode`, `jti` and `amr`.
     public let strongCustomerAuthentication: Bool
@@ -91,7 +91,7 @@ public struct PresentationInputs {
     public let encryptionKeyThumbprint: [UInt8]?
 
     public init(request: PresentationRequest, holderDid: String?, holderKey: SecureKeyProtocol?,
-                transactionDataHashes: [String: [String]] = [:], strongCustomerAuthentication: Bool = false,
+                transactionDataHashes: [String: TransactionDataHashes] = [:], strongCustomerAuthentication: Bool = false,
                 authentication: AuthenticationMethods? = nil, encryptionKeyThumbprint: [UInt8]? = nil) {
         self.request = request
         self.holderDid = holderDid
