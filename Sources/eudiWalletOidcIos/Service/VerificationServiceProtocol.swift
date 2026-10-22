@@ -27,6 +27,10 @@ protocol VerificationServiceProtocol {
     /// `request` object, behind a `request_uri`, or as an interactive authorization request.
     func resolveAuthorizationRequest(data: String?, policy: PresentationRequestPolicy) async -> PresentationRequestOutcome
 
+    /// Matches the wallet's credentials against the request's query (OpenID4VP 1.0 section 6, or a
+    /// draft presentation definition), one entry per credential query, never by position.
+    func matchCredentials(request: PresentationRequest, credentials: [String?]) async -> CredentialMatches
+
     /**
      Processes an authorization request and extracts a PresentationRequest object asynchronously.
      - Parameter data: The authorization request data.

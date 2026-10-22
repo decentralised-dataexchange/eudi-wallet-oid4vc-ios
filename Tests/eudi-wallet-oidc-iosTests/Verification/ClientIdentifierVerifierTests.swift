@@ -9,27 +9,13 @@ import Security
 @testable import eudiWalletOidcIos
 
 /// One test or more per row of the leg 2 case matrix (VERIFICATION_REVAMP_PLAN_IOS.md), named
-/// after it. The x509 rows use a fixed test root and leaf (P-256, valid 2026 to 2126) and an
-/// expired leaf from the same root; the DID and attestation rows use `did:jwk`, so nothing goes
-/// to the network.
+/// after it. The x509 rows use the fixed certificates in `CertificateFixtures`; the DID and
+/// attestation rows use `did:jwk`, so nothing goes to the network.
 final class ClientIdentifierVerifierTests: XCTestCase {
 
     // MARK: Fixtures
 
-    private enum Cert {
-        static let root = "MIIBoTCCAUegAwIBAgIUPNO+0SU/EltY/VexTlCjtxlOOHAwCgYIKoZIzj0EAwIwHTEbMBkGA1UEAwwSVGVzdCBWZXJpZmllciBSb290MCAXDTI2MDEwMTAwMDAwMFoYDzIxMjYwMTAxMDAwMDAwWjAdMRswGQYDVQQDDBJUZXN0IFZlcmlmaWVyIFJvb3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATMux96MY6O7rigdxUxme3MykIVyEidVp64n6CDlKst0jj+F1G76xjJx2f6Nt2Rjw2UqtBT+q87NguHOhBd5BjPo2MwYTAdBgNVHQ4EFgQUahK5xQts+JgQ2Fc4YaPk7oVF6b8wHwYDVR0jBBgwFoAUahK5xQts+JgQ2Fc4YaPk7oVF6b8wDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwCgYIKoZIzj0EAwIDSAAwRQIhAPywYEt4ezyI7lzjNNmElvvGeEI7wuqqRji6FlDF5ShKAiB9r0qVJiSKhbWFuWSaRiXTF6GqDlNHpln61jKSlV2vPw=="
-        static let other = "MIIBmTCCAT+gAwIBAgIUYZAG5OafrCAmNDDhe2uDghlr60YwCgYIKoZIzj0EAwIwGTEXMBUGA1UEAwwOVW5yZWxhdGVkIFJvb3QwIBcNMjYwMTAxMDAwMDAwWhgPMjEyNjAxMDEwMDAwMDBaMBkxFzAVBgNVBAMMDlVucmVsYXRlZCBSb290MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEKqqF+PKzUBxpi4ATQ9gwbuFlJqsnQEbDWyOCj3ZOhYXyuWE8RlDEB/ZPDCRu+xKOQ6/qqg+tc2X++OqYNMFt1qNjMGEwHQYDVR0OBBYEFL9G1XF97JJ1nv4vciUIR6HH/rVVMB8GA1UdIwQYMBaAFL9G1XF97JJ1nv4vciUIR6HH/rVVMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIQDAMC64/aphFxArxICD6Yk75yeDcS5beF4gDEaVUZkHcwIgC/+cSwpCpfFQjdhRY3DRZ2TBTFxBqkV57DD+X9/ZqjQ="
-        /// SAN dNSName verifier.example.com, URI https://verifier.example.com/callback.
-        static let leaf = "MIIB1zCCAX2gAwIBAgIBAjAKBggqhkjOPQQDAjAdMRswGQYDVQQDDBJUZXN0IFZlcmlmaWVyIFJvb3QwIBcNMjYwMTAxMDAwMDAwWhgPMjEyNjAxMDEwMDAwMDBaMB8xHTAbBgNVBAMMFHZlcmlmaWVyLmV4YW1wbGUuY29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEdIYV52YXyVEmnUWAybn1KQndWVnXQv2uAjlLL0ekRJTh1LFSjd0ioyIhd+W6Tw3P49yVC3hIy2xo6RtAeg/ZeaOBqTCBpjAMBgNVHRMBAf8EAjAAMA4GA1UdDwEB/wQEAwIHgDBGBgNVHREEPzA9ghR2ZXJpZmllci5leGFtcGxlLmNvbYYlaHR0cHM6Ly92ZXJpZmllci5leGFtcGxlLmNvbS9jYWxsYmFjazAfBgNVHSMEGDAWgBRqErnFC2z4mBDYVzhho+TuhUXpvzAdBgNVHQ4EFgQUk3PfifvDIFTIBzY1fcusfRysHdMwCgYIKoZIzj0EAwIDSAAwRQIgOZV2FTV3Uys7Xpw9oHEY/kRwsbQ85OTmPuRsDKv1keECIQC83xypOPNgqDJgI3H06CppfbdeQXSoMqtf539qAlBbrg=="
-        /// The same key and SANs, valid 2020 to 2021.
-        static let expired = "MIIB1DCCAXugAwIBAgIBAzAKBggqhkjOPQQDAjAdMRswGQYDVQQDDBJUZXN0IFZlcmlmaWVyIFJvb3QwHhcNMjAwMTAxMDAwMDAwWhcNMjEwMTAxMDAwMDAwWjAfMR0wGwYDVQQDDBR2ZXJpZmllci5leGFtcGxlLmNvbTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABHSGFedmF8lRJp1FgMm59SkJ3VlZ10L9rgI5Sy9HpESU4dSxUo3dIqMiIXfluk8Nz+PclQt4SMtsaOkbQHoP2XmjgakwgaYwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwRgYDVR0RBD8wPYIUdmVyaWZpZXIuZXhhbXBsZS5jb22GJWh0dHBzOi8vdmVyaWZpZXIuZXhhbXBsZS5jb20vY2FsbGJhY2swHwYDVR0jBBgwFoAUahK5xQts+JgQ2Fc4YaPk7oVF6b8wHQYDVR0OBBYEFJNz34n7wyBUyAc2NX3LrH0crB3TMAoGCCqGSM49BAMCA0cAMEQCICg4aWAes3JBEuyaO6bctDtfQzCn/i9RJ5jEP7riX3fDAiB1JFYz/TpsGPTIsytkP2475Z6elKamnTxa6IROhsoxkw=="
-        static let leafKey = try! P256.Signing.PrivateKey(derRepresentation: Data(base64Encoded:
-            "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg3VH7ArsNpqszI1EsgtLkXeoxDf+huiJ7cQUWpFrKEWOhRANCAAR0hhXnZhfJUSadRYDJufUpCd1ZWddC/a4COUsvR6RElOHUsVKN3SKjIiF35bpPDc/j3JULeEjLbGjpG0B6D9l5")!)
-
-        static func certificate(_ base64: String) -> SecCertificate {
-            SecCertificateCreateWithData(nil, Data(base64Encoded: base64)! as CFData)!
-        }
-    }
+    private typealias Cert = CertificateFixtures
 
     private let host = "verifier.example.com"
     private let responseUri = "https://verifier.example.com/response"

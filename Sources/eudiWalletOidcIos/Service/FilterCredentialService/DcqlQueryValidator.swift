@@ -14,7 +14,8 @@ import Foundation
 ///
 /// Some violations never reach this validator because `DCQLQuery` cannot represent them:
 /// a missing or empty `meta`, a claim `values` entry that is not a string, integer or
-/// boolean, or a path component that is not a string or null all fail at decode time.
+/// boolean, or a path component that is not a string, null or a non-negative integer all
+/// fail at decode time.
 /// `VerificationService` reports those through `decodingMessage(_:)` with the same error code.
 public enum DcqlQueryValidator {
 

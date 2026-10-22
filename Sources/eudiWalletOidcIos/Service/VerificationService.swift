@@ -75,6 +75,16 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         await PresentationRequestResolver(policy: policy, session: requestObjectSession).resolve(data)
     }
 
+    /// Matches the wallet's credentials against the request's query (OpenID4VP 1.0 section 6, or
+    /// a draft presentation definition): one entry per credential query with its candidates, and
+    /// whether the required entries and credential sets can be satisfied at all.
+    ///
+    /// - Parameter credentials: every stored credential: SD-JWTs and JWTs in compact form, mdocs
+    ///   as base64url IssuerSigned.
+    public func matchCredentials(request: PresentationRequest, credentials: [String?]) async -> CredentialMatches {
+        await PresentationQueryMatcher().match(request, credentials)
+    }
+
     /// Kept for integrators on the previous API. Blank or unrecognised input still answers
     /// `(nil, nil)` as before; every other outcome maps onto the tuple.
     @available(*, deprecated, renamed: "resolveAuthorizationRequest(data:policy:)",
