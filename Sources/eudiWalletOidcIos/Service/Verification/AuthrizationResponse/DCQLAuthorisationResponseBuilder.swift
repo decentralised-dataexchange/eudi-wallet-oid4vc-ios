@@ -15,44 +15,44 @@ class DCQLAuthorisationResponseBuilder {
         
         var params: [String: Any] = [:]
         
-        guard let dcqlCredentials = presentationRequest?.dcqlQuery?.credentials,
+        guard let request = presentationRequest,
+              let dcqlCredentials = request.dcqlQuery?.credentials,
               let credentialsList = credentialsList,
               dcqlCredentials.count == credentialsList.count else {
             print("Mismatch or missing data in dcqlQuery or credentialsList")
             return params
         }
         
+        // One SelectedCredential per non-blank credential, named by its credential query; a
+        // missing key id falls back to the holder key instead of crashing.
+        var selected: [SelectedCredential] = []
+        for (index, entry) in dcqlCredentials.enumerated() {
+            let ids = index < keyIds.count ? keyIds[index] : []
+            for (position, credential) in credentialsList[index].enumerated()
+            where !credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                selected.append(SelectedCredential(entryId: entry.id, credential: credential,
+                                                   keyId: position < ids.count ? ids[position] : nil))
+            }
+        }
+        let inputs = PresentationInputs(
+            request: request,
+            holderDid: did,
+            holderKey: keyHandler,
+            transactionDataHashes: LegacyTransactionData.hashes(presentationRequest, entryIds: dcqlCredentials.map { $0.id }),
+            strongCustomerAuthentication: LegacyTransactionData.isStrongCustomerAuthentication(presentationRequest, flag: isSca),
+            authentication: AuthenticationMethods(inherence: amrInherenceFactor, knowledge: amrKnowledgeFactor))
+        let presentations = (try? await PresentationBuilder(lenient: true).build(selected, inputs: inputs)) ?? []
+
+        let clientDataString = presentationRequest?.clientMetaData?.replacingOccurrences(of: "+", with: " ")
+        let clientMetaDataModel = clientDataString?.data(using: .utf8)
+            .flatMap { try? JSONDecoder().decode(eudiWalletOidcIos.ClientMetaData.self, from: $0) }
+        let isDraft23 = clientMetaDataModel?.version == "draft_23"
+
         var credentialMap: [String: Any] = [:]
-        
-        for (index, credential) in dcqlCredentials.enumerated() {
-            
-                   var hasDoctype = false
-                    var format = credential.format ?? ""
-                   switch credential.meta {
-                   case .msoMdoc(let meta):
-                       hasDoctype = !meta.doctypeValue.isEmpty
-                   case .dcSDJWT:
-                       hasDoctype = false
-                   case .jwt:
-                       hasDoctype = false
-                   }
-            let generatedVPToken = await generateVpTokensBasedOfCredntialFormat(credential: credentialsList[index], presentationRequest: presentationRequest, did: did, isMdoc: hasDoctype, index: index, keyHandler: keyHandler, format: format, isSca: isSca, keyIds: keyIds[index], amrInherenceFactor: amrInherenceFactor, amrKnowledgeFactor: amrKnowledgeFactor)
-            let clientDataString = presentationRequest?.clientMetaData?.replacingOccurrences(of: "+", with: " ")
-            let clientMetadataJson = clientDataString?.data(using: .utf8)!
-            var clientMetaDataModel: ClientMetaData? = nil
-            if let data = clientMetadataJson {
-                clientMetaDataModel = try? JSONDecoder().decode(eudiWalletOidcIos.ClientMetaData.self, from: data)
-            }
-            
-            var generatedToken: Any? = nil
-            if let version = clientMetaDataModel?.version, version == "draft_23" {
-                generatedToken = generatedVPToken.first
-            } else {
-                generatedToken = generatedVPToken
-            }
-            if !generatedVPToken.isEmpty {
-                credentialMap[credential.id] = generatedToken
-            }
+        for entry in dcqlCredentials {
+            let tokens = presentations.filter { $0.entryId == entry.id }.map { $0.token }
+            guard !tokens.isEmpty else { continue }
+            credentialMap[entry.id] = isDraft23 ? tokens[0] : tokens
         }
         // Example: embed this dictionary in a vp_token structure
         let mainVpToken = generateMainVPToken(from: credentialMap)
@@ -74,18 +74,5 @@ class DCQLAuthorisationResponseBuilder {
             return jsonString // This is a placeholder
         }
         return ""
-    }
-    
-    private func generateVpTokensBasedOfCredntialFormat(credential:[String],
-                                                        presentationRequest: PresentationRequest?,
-                                                        did: String,
-                                                        isMdoc: Bool, index: Int, keyHandler: SecureKeyProtocol, format: String, isSca: Bool, keyIds: [String], amrInherenceFactor: String?, amrKnowledgeFactor: String?) async -> [String] {
-        if format == "mso_mdoc"  {
-            return await MDocVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest ?? nil, did: did, index: index, keyHandler: keyHandler, keyIds: keyIds) ?? []
-        } else if format == "jwt_vc_json"  {
-            return await JWTVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler) ?? []
-        } else {
-            return await SDJWTVpTokenBuilder().build(credentials: credential, presentationRequest: presentationRequest, did: did, index: index, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds, amrInherenceFactor: amrInherenceFactor, amrKnowledgeFactor: amrKnowledgeFactor) ?? []
-        }
     }
 }

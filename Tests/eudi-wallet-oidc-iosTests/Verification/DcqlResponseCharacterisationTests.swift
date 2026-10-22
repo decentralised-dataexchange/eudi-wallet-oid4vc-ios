@@ -67,16 +67,16 @@ final class DcqlResponseCharacterisationTests: ResponseCharacterisationTestCase 
         XCTAssertNotNil(deviceResponse["documents"]?[0]?["deviceSigned"]?["deviceAuth"]?["deviceSignature"])
     }
 
-    func testDefectAnMdocEntryWithNoClaimsIsSentWithoutADeviceSignature() async throws {
+    func testAnMdocEntryWithNoClaimsIsSignedLikeAnyOther() async throws {
         var entry = F.dcqlMdoc("mdl")
         entry.claims = nil
         let params = await respond(F.dcqlRequest(entry), [[F.mdoc(deviceKey: holder.publicKey)]])
 
-        // The no-claims branch builds the DeviceResponse with no deviceSigned at all.
+        // Leg 0 pinned this branch going out with no deviceSigned at all; leg 4 signs it.
         let presented = try XCTUnwrap((vpToken(params)["mdl"] as? [String])?.first)
         let document = F.decodeCbor(presented)?["documents"]?[0]
         XCTAssertNotNil(document?["issuerSigned"])
-        XCTAssertNil(document?["deviceSigned"])
+        XCTAssertNotNil(document?["deviceSigned"]?["deviceAuth"]?["deviceSignature"])
     }
 
     func testDefectAnMdocWithNoKeyIdFallsBackToTheWalletKeyAndGoesUnsigned() async throws {

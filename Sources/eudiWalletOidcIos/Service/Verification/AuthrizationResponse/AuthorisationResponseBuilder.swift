@@ -94,176 +94,36 @@ class AuthorisationResponseBuilder {
     }
     
     static func createVPTokenAndPresentationSubmission(credentialsList: [String]?, did: String, presentationRequest: PresentationRequest?, keyHandler: SecureKeyProtocol, keyIds: [String]) async -> ([String], PresentationSubmissionModel?, String){
-        // Fixme: set nonce when processing authorisation request itself
-        let nonce = presentationRequest?.nonce ?? UUID().uuidString
-        
-        // processing presentation definition from presentation request
-        var presentationDefinition :PresentationDefinitionModel? = nil
-        do {
-            presentationDefinition = try VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
-        } catch {
-            presentationDefinition = nil
-        }
-        
-        // Temp variables
-        var jwtList: [String] = []
+        let presentationDefinition = try? VerificationService.processPresentationDefinition(presentationRequest?.presentationDefinition)
         var vpTokenList: [String] = []
-        var mdocList: [String] = []
-        var firstJWTProcessedIndex: Int? = nil
-        var mdocProcessedIndex: Int? = nil
         var idToken: String = ""
         var presentationSubmission: PresentationSubmissionModel? = nil
-        
+
         // checking if credential list is empty or not, if empty return
         // Fixme: what if only id token needed ?
         guard let credentialsList = credentialsList else { return ([], nil, "")}
-        
-        // Checking if response type contains or request vp_token
-        if let resType = presentationRequest?.responseType, resType.contains("vp_token") {
-            for (index, item) in credentialsList.enumerated() {
-                var claims: [String: Any] = [:]
-                var credFormat: String? = ""
-                if let format = presentationDefinition?.inputDescriptors?[index].format ??  presentationDefinition?.format {
-                    for (key, _) in format {
-                        credFormat = key
-                    }
-                }
-                claims["aud"] = presentationRequest?.clientId ?? ""
-                claims["nonce"] = nonce
-                let split = item.split(separator: ".")
-                var dict: [String: Any] = [:]
-                if split.count > 1 {
-                    let jsonString = "\(split[1])".decodeBase64() ?? ""
-                    dict = UIApplicationUtils.shared.convertStringToDictionary(text: jsonString) ?? [:]
-                }
-                
-                var transactionData: String? = nil
-                if !(presentationRequest?.transactionData?.isEmpty ?? true) {
-                    transactionData = presentationRequest?.transactionData?.first
-                    if SDJWTVpTokenBuilder().checkTransactionDataWithMultipleInputDescriptors(queryItem: presentationDefinition?.inputDescriptors?[index], transactionDataItem: transactionData) {
-                        claims["transaction_data_hashes"] = [SDJWTVpTokenBuilder().generateHash(input: transactionData ?? "")]
-                        claims["transaction_data_hashes_alg"] = "sha-256"
-                    }
-                }
-                
-                var itemWithTilda: String? = nil
-                if item.hasSuffix("~") {
-                    itemWithTilda = item
-                } else {
-                    itemWithTilda = "\(item)~"
-                }
-                var updatedKeyHandler = keyHandler
-                 updatedKeyHandler = SecureEnclaveHandler.presentationKey(keyIds[index])
-                if let keyBindingJwt = await KeyBindingJwtService().generateKeyBindingJwt(issuerSignedJwt: itemWithTilda, claims: claims, keyHandler: updatedKeyHandler), let vct = dict["vct"] as? String, !vct.isEmpty {
-                    //Fixme: need to update the vp_token creation using SDJWTVpTokenBuilder
-                    var updatedCred = "\(itemWithTilda ?? "")\(keyBindingJwt)"
-                    vpTokenList.append(updatedCred)
-                } else if credFormat == "mso_mdoc" {
-                    mdocList.append(item)
-                    if !vpTokenList.contains("MDOC") {
-                        vpTokenList.append("MDOC")
-                    }
-                } else {
-                    jwtList.append(item)
-                    if !vpTokenList.contains("JWT") {
-                        firstJWTProcessedIndex = vpTokenList.count
-                        vpTokenList.append("JWT")
-                    }
-                }
+
+        if let request = presentationRequest, let resType = request.responseType, resType.contains("vp_token") {
+            // Credential i answers input descriptor i; a missing key id falls back to the holder key.
+            let descriptors = presentationDefinition?.inputDescriptors ?? []
+            let selected = credentialsList.enumerated().map { index, credential in
+                SelectedCredential(entryId: index < descriptors.count ? descriptors[index].id ?? "" : "",
+                                   credential: credential, keyId: index < keyIds.count ? keyIds[index] : nil)
             }
-            
-            // creating w3c jwt vp token
-            var vpToken: String = await JWTVpTokenBuilder().build2(credentials: jwtList, presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler) ?? ""
-            
-            // creating mdoc vp token
-            var mdocToken: String = ""
-            if !mdocList.isEmpty {
-                mdocToken = await MDocVpTokenBuilder().build2(credentials: credentialsList ?? [], presentationRequest: presentationRequest, did: did, index: nil, keyHandler: keyHandler, keyIds: keyIds) ?? ""
-            }
-            
-            if let index = vpTokenList.firstIndex(of: "JWT") {
-                vpTokenList[index] = vpToken ?? ""
-            }
-            
-            if let index = vpTokenList.firstIndex(of: "MDOC") {
-                mdocProcessedIndex = index
-                vpTokenList[index] = mdocToken ?? ""
-            }
-            
-            
-            // Generating presentation submission
-            // Fixme: need to move presentation submission creation to another class
-            var descMap : [DescriptorMap] = []
-            
-            var credentialFormat: String = ""
-            
-            var format = ""
-            var formatType: String? = ""
-            var jwtIndex = 0
-            var vpTokenIndex = 0
-            var jwtListAdded: Bool = false
-            if let inputDescriptors = presentationDefinition?.inputDescriptors {
-                for index in 0..<inputDescriptors.count {
-                    let item = inputDescriptors[index]
-                    if var format2 = item.format ?? presentationDefinition?.format {
-                        for (key, _) in format2 {
-                            credentialFormat = key
-                        }
-                    }
-                    
-                    if credentialFormat == "vcsd-jwt" || credentialFormat == "vpsd-jwt"{
-                        format = "vc+sd-jwt"
-                    } else if credentialFormat == "dcsd-jwt" {
-                        format = "dc+sd-jwt"
-                    } else {
-                        format = credentialFormat
-                    }
-                    let encodedFormat = format.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "+")).subtracting(CharacterSet(charactersIn: "+")))?.replacingOccurrences(of: "+", with: "%2B")
-                    var pathNested: DescriptorMap? = nil
-                    if format ==  "vc+sd-jwt" || format == "dc+sd-jwt" {
-                        pathNested = nil
-                        if vpTokenList.count == 1 {
-                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: format ?? "", pathNested: pathNested))
-                        } else {
-                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$[\(vpTokenIndex)]", format: format ?? "", pathNested: pathNested))
-                        }
-                        vpTokenIndex += 1
-                    } else if credentialFormat == "mso_mdoc" {
-                        formatType = "mso_mdoc"
-                        pathNested = nil
-                        if vpTokenList.count == 1 {
-                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: formatType ?? "", pathNested: pathNested))
-                        } else {
-                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$[\(mdocProcessedIndex ?? 0)]", format: formatType ?? "", pathNested: pathNested))
-                        }
-                        vpTokenIndex += 1
-                    } else {
-                        var pathNestedValue: DescriptorMap? = nil
-                        formatType = format ?? "jwt_vp"
-                        let credentialFormat = fetchFormat(presentationDefinition: presentationDefinition, index: index)
-                        if vpTokenList.count == 1 {
-                            pathNestedValue = DescriptorMap(id: item.id ?? "", path: "$.vp.verifiableCredential[\(jwtIndex)]", format: "jwt_vc", pathNested: nil)
-                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$", format: credentialFormat ?? "", pathNested: pathNestedValue))
-                        } else {
-                            pathNestedValue = DescriptorMap(id: item.id ?? "", path: "$[\(firstJWTProcessedIndex ?? 0)].vp.verifiableCredential[\(jwtIndex)]", format: "jwt_vc", pathNested: nil)
-                            descMap.append(DescriptorMap(id: item.id ?? "", path: "$[\(firstJWTProcessedIndex ?? 0)]", format: formatType ?? "", pathNested: pathNestedValue))
-                        }
-                        if !(jwtListAdded) {
-                            vpTokenIndex += 1
-                            jwtListAdded = true
-                        }
-                        jwtIndex += 1
-                    }
-                }
-            }
-            presentationSubmission = PresentationSubmissionModel(id: UUID().uuidString, definitionID: presentationDefinition?.id ?? "", descriptorMap: descMap)
+            let inputs = PresentationInputs(
+                request: request,
+                holderDid: did,
+                holderKey: keyHandler,
+                transactionDataHashes: LegacyTransactionData.hashes(request, entryIds: selected.map { $0.entryId }))
+            let presentations = (try? await PresentationBuilder(lenient: true).build(selected, inputs: inputs)) ?? []
+            vpTokenList = presentations.map { $0.token }
+            presentationSubmission = PresentationSubmissionBuilder().build(presentations, definition: presentationDefinition)
         }
-        
-        // Checking if response type contains or request vp_token
+
         if let resType = presentationRequest?.responseType, resType.contains("id_token") {
             idToken =  await generateJWTokenForIDtokenRequest(didKeyIdentifier: did, authorizationEndpoint: presentationRequest?.clientId ?? "", nonce: presentationRequest?.nonce ?? "", keyHandler: keyHandler)
         }
-        
+
         return (vpTokenList, presentationSubmission, idToken)
     }
     

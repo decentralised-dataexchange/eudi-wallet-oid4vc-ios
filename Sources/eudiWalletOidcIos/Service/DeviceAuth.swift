@@ -8,15 +8,12 @@ import SwiftCBOR
 import OrderedCollections
 import Security
 
-// MARK: - SessionTranscript (OID4VP Appendix B.2.6.1)
+// MARK: - SessionTranscript
+//
+// Kept for existing callers; the transcripts are built by `SessionTranscript`.
 
-/// Builds the full SessionTranscript for the OpenID4VP redirect flow.
-///
-/// Per ISO 18013-5 §9.1.5.1 + OID4VP Appendix B.2.6.1:
-///   SessionTranscript = [null, null, OpenID4VPHandover]
-///   OpenID4VPHandover  = ["OpenID4VPHandover", SHA-256(HandoverInfoBytes)]
-///   HandoverInfo       = [clientId, nonce, jwkThumbprint, responseUri]
-
+/// The OpenID4VP handover transcript (Appendix B.2.6.1), or the DC API one (B.2.6.2) when
+/// `responseMode` is a `dc_api` mode. `HandoverInfo = [clientId, nonce, jwkThumbprint?, responseUri?]`.
 func buildSessionTranscriptForOpenID4VP(
     clientId: String,
     nonce: String,
@@ -24,99 +21,24 @@ func buildSessionTranscriptForOpenID4VP(
     jwkThumbprint: [UInt8]? = nil,
     responseMode: String? = nil
 ) -> (cbor: CBOR, bytes: [UInt8]) {
-
     let isDcApi = responseMode == ResponseMode.dcApi.rawValue
         || responseMode == ResponseMode.dcApiJWT.rawValue
-
-    // Step 1: HandoverInfo = [clientId, nonce, jwkThumbprint?, responseUri?]
-    var handoverInfoItems: [CBOR] = [
-        .utf8String(clientId),
-        .utf8String(nonce),
-        jwkThumbprint != nil ? .byteString(jwkThumbprint!) : .null
-    ]
-    if let uri = responseUri {
-        handoverInfoItems.append(.utf8String(uri))
-    }
-    let handoverInfo: CBOR = .array(handoverInfoItems)
-    let handoverInfoBytes = encodeCBOR(handoverInfo)
-
-    // Step 2: SHA-256 hash of HandoverInfo bytes
-    let handoverInfoHash = Array(SHA256.hash(data: Data(handoverInfoBytes)))
-
-    // Step 3: OpenID4VPHandover / OpenID4VPDCAPIHandover = [<label>, hash]
-    let handoverLabel = isDcApi ? "OpenID4VPDCAPIHandover" : "OpenID4VPHandover"
-    let handoverArray: CBOR = .array([
-        .utf8String(handoverLabel),
-        .byteString(handoverInfoHash)
-    ])
-
-    // Step 4: SessionTranscript = [null, null, OpenID4VPHandover]
-    let sessionTranscript: CBOR = .array([
-        .null,           // DeviceEngagement (not used in OID4VP)
-        .null,           // EReaderKey (not used in OID4VP)
-        handoverArray
-    ])
-
-    let sessionTranscriptBytes = encodeCBOR(sessionTranscript)
-    return (cbor: sessionTranscript, bytes: sessionTranscriptBytes)
+    var info: [CBOR] = [.utf8String(clientId), .utf8String(nonce), jwkThumbprint.map { .byteString($0) } ?? .null]
+    responseUri.map { info.append(.utf8String($0)) }
+    let transcript = SessionTranscript.withHandover(isDcApi ? "OpenID4VPDCAPIHandover" : "OpenID4VPHandover", info)
+    return (cbor: transcript.array, bytes: transcript.bytes)
 }
 
-// MARK: - SessionTranscript (ISO/IEC TS 18013-7 §B.4.4 — Annex B: OID4VP retrieval)
-//
-//   SessionTranscript = [null, null, OID4VPHandover]
-//   OID4VPHandover    = [clientIdHash, responseUriHash, nonce]   ; NO string label
-//   clientIdHash      = SHA-256( CBOR([clientId,    mdocGeneratedNonce]) )
-//   responseUriHash   = SHA-256( CBOR([responseUri, mdocGeneratedNonce]) )
-//
-// This is DISTINCT from buildSessionTranscriptForOpenID4VP() above, which builds
-// the newer OpenID4VP-draft handover (["OpenID4VPHandover", SHA-256(info)]).
-// Both functions are kept; the caller picks which profile to use.
-
-/// Builds the SessionTranscript per ISO/IEC TS 18013-7 §B.4.4 (Annex B).
-///
-/// NOTE on `mdocGeneratedNonce`: §B.4.4 / §B.5.3 require a cryptographically
-/// random value. It must also be echoed to the verifier as the JWE `apu` header
-/// (§B.4.3.3) so the mdoc reader can recompute clientIdHash / responseUriHash.
-/// The current response encryption sets apu = base64url(clientId), so this
-/// defaults to clientId to stay consistent end-to-end. To move to a true random
-/// nonce, generate it, set the JWE apu header to it, and pass it in here.
-///
-/// - Returns: (SessionTranscript as CBOR, CBOR-encoded bytes)
+/// The ISO/IEC TS 18013-7 section B.4.4 (Annex B) transcript; see `SessionTranscript.annexB`.
 func buildSessionTranscriptForAnnexB18013_7(
     clientId: String,
     nonce: String,
     responseUri: String,
     mdocGeneratedNonce: String? = nil
 ) -> (cbor: CBOR, bytes: [UInt8]) {
-
-    let genNonce = mdocGeneratedNonce ?? clientId
-
-    // CBOR-encode [a, b] as an array of text strings.
-    func cborArrayBytes(_ values: String...) -> [UInt8] {
-        let arr: CBOR = .array(values.map { .utf8String($0) })
-        return encodeCBOR(arr)
-    }
-
-    // clientIdHash    = SHA-256(CBOR([clientId,    mdocGeneratedNonce]))
-    let clientIdHash = Array(SHA256.hash(data: Data(cborArrayBytes(clientId, genNonce))))
-    // responseUriHash = SHA-256(CBOR([responseUri, mdocGeneratedNonce]))
-    let responseUriHash = Array(SHA256.hash(data: Data(cborArrayBytes(responseUri, genNonce))))
-
-    // OID4VPHandover = [clientIdHash, responseUriHash, nonce]
-    let handover: CBOR = .array([
-        .byteString(clientIdHash),     // bstr
-        .byteString(responseUriHash),  // bstr
-        .utf8String(nonce)             // tstr
-    ])
-
-    // SessionTranscript = [null, null, OID4VPHandover]
-    let sessionTranscript: CBOR = .array([
-        .null,        // DeviceEngagementBytes
-        .null,        // EReaderKeyBytes
-        handover
-    ])
-
-    return (cbor: sessionTranscript, bytes: encodeCBOR(sessionTranscript))
+    let transcript = SessionTranscript.annexB(clientId: clientId, nonce: nonce, responseUri: responseUri,
+                                              mdocGeneratedNonce: mdocGeneratedNonce)
+    return (cbor: transcript.array, bytes: transcript.bytes)
 }
 
 // MARK: - DeviceNameSpaces (ISO 18013-5 §8.3.2.1.2.2)
