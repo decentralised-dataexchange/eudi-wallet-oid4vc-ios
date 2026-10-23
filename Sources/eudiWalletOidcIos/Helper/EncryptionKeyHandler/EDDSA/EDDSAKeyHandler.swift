@@ -36,7 +36,7 @@ public class EDDSAKeyHandler:NSObject, SecureKeyProtocol{
                 if let data = unsignedToken.data(using: .utf8){
                     let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: privateKeyData)
                     let signedData = try privateKey.signature(for: data)
-                    let idToken = "\(unsignedToken).\(signedData.urlSafeBase64EncodedString()))"
+                    let idToken = "\(unsignedToken).\(signedData.urlSafeBase64EncodedString())"
                     return idToken
                 }
             }

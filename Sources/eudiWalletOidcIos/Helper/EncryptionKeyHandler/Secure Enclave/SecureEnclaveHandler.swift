@@ -92,3 +92,10 @@ public class SecureEnclaveHandler: NSObject, SecureKeyProtocol{
     }
     
 }
+
+extension SecureEnclaveHandler {
+    /// The handler that signs with the stored key `keyID` when a presentation is built.
+    /// Unit tests replace it with a software key, because the test host cannot reach the
+    /// Secure Enclave (the keychain answers -34018 without an entitlement).
+    static var presentationKey: (String) -> SecureKeyProtocol = { SecureEnclaveHandler(keyID: $0) }
+}

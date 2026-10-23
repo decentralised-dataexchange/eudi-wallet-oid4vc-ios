@@ -5,6 +5,7 @@
 //  Created by Mumthasir mohammed on 18/03/24.
 //
 import Foundation
+import AnyCodable
 public struct PresentationRequest: Codable {
     public var state, clientId, clientIDScheme,  redirectUri, responseType, responseMode, scope, nonce, requestUri: String?
     public var responseUri: String?
@@ -23,6 +24,9 @@ public struct PresentationRequest: Codable {
     public var walletNonce: String?
     public var authSession: String?
     public var type: String?
+    /// OpenID4VP 1.0 section 5.11: attestations about the verifier from third parties, as the JSON
+    /// array received. Carried, not yet validated.
+    public var verifierInfo: String?
     
     enum CodingKeys: String, CodingKey {
         case state = "state"
@@ -45,6 +49,7 @@ public struct PresentationRequest: Codable {
         case walletNonce = "wallet_nonce"
         case authSession = "auth_session"
         case type = "type"
+        case verifierInfo = "verifier_info"
     }
     
     public init(state: String?, clientId: String?, redirectUri: String?, responseUri: String?, responseType: String?, responseMode: String?, scope: String?, nonce: String?, requestUri: String?, presentationDefinition: String?, clientMetaData:  String?, presentationDefinitionUri: String?, clientMetaDataUri: String?, clientIDScheme: String?, transactionData: [String], dcqlQuery: DCQLQuery? = nil, request: String?, authSession: String?) {
@@ -111,6 +116,13 @@ public struct PresentationRequest: Codable {
         walletNonce = try container.decodeIfPresent(String.self, forKey: .walletNonce)
         authSession = try container.decodeIfPresent(String.self, forKey: .authSession)
         type = try container.decodeIfPresent(String.self, forKey: .type)
+        if let entries = try? container.decode([AnyCodable].self, forKey: .verifierInfo),
+           let data = try? JSONEncoder().encode(entries) {
+            verifierInfo = String(data: data, encoding: .utf8)
+        } else {
+            // A request re-decoded after encoding carries the array as the string kept above.
+            verifierInfo = try? container.decodeIfPresent(String.self, forKey: .verifierInfo)
+        }
     }
 }
 public struct ClientMetaData: Codable {
@@ -307,6 +319,8 @@ public struct CredentialItems: Codable {
     public let trustedAuthorities: [TrustedAuthorities]?
     public let multiple: Bool?
     public let claimSets: [[String]]?
+    /// OpenID4VP 1.0 section 6.1 `require_cryptographic_holder_binding`. Absent means true.
+    public let requireCryptographicHolderBinding: Bool?
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -316,9 +330,10 @@ public struct CredentialItems: Codable {
         case trustedAuthorities = "trusted_authorities"
         case multiple
         case claimSets = "claim_sets"
+        case requireCryptographicHolderBinding = "require_cryptographic_holder_binding"
     }
     
-    public init(id: String, format: String, meta: Meta, claims: [Claim], trustedAuthorities: [TrustedAuthorities]? = nil, multiple: Bool?, claimSets: [[String]]?) {
+    public init(id: String, format: String, meta: Meta, claims: [Claim], trustedAuthorities: [TrustedAuthorities]? = nil, multiple: Bool?, claimSets: [[String]]?, requireCryptographicHolderBinding: Bool? = nil) {
         self.id = id
         self.format = format
         self.meta = meta
@@ -326,6 +341,7 @@ public struct CredentialItems: Codable {
         self.trustedAuthorities = trustedAuthorities
         self.multiple = multiple
         self.claimSets = claimSets
+        self.requireCryptographicHolderBinding = requireCryptographicHolderBinding
     }
 }
 
@@ -430,7 +446,7 @@ public enum Claim: Codable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        if let path = try? container.decode([String?].self, forKey: .path) {
+        if let path = try? Self.decodePath(container) {
             let id = try? container.decode(String.self, forKey: .id)
            let values = try container.decodeIfPresent([ClaimValue].self, forKey: .values)
             self = .pathClaim(PathClaim(path: path, id: id, values: values))
@@ -451,6 +467,30 @@ public enum Claim: Codable {
             try container.encode(claim.namespace, forKey: .namespace)
             try container.encode(claim.claimName, forKey: .claim_name)
         }
+    }
+}
+
+extension Claim {
+    /// OpenID4VP 1.0 section 7: each path component is a string (a key), null (every array
+    /// element) or a non-negative integer (an array index). An integer is kept as its digits, so
+    /// `path` stays `[String?]`; `ClaimsPathPointer` applies digits to an array as an index.
+    fileprivate static func decodePath(_ container: KeyedDecodingContainer<CodingKeys>) throws -> [String?] {
+        var items = try container.nestedUnkeyedContainer(forKey: .path)
+        var path: [String?] = []
+        while !items.isAtEnd {
+            if try items.decodeNil() {
+                path.append(nil)
+            } else if let key = try? items.decode(String.self) {
+                path.append(key)
+            } else {
+                let index = try items.decode(Int.self)
+                guard index >= 0 else {
+                    throw DecodingError.dataCorruptedError(in: items, debugDescription: "A claims path index must be a non-negative integer")
+                }
+                path.append(String(index))
+            }
+        }
+        return path
     }
 }
 

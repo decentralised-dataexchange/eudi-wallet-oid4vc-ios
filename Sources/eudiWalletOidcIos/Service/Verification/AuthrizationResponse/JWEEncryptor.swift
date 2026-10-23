@@ -11,53 +11,16 @@ import CryptoKit
 
 class JWEEncryptor {
 
+    /// The Authorization Response encryption, OpenID4VP 1.0 section 8.3. Delegates to
+    /// `ResponseEncrypter`, which holds the key, algorithm and encryption rules.
     func encrypt(
         payload: [String: Any],
         presentationRequest: PresentationRequest?
     ) async throws -> String {
-        
-        let jwk: [String: Any]
-        var clientMetaData: [String: Any] = [:]
-        if let clientMetaDataString = presentationRequest?.clientMetaData, let dataObject = clientMetaDataString.data(using: .utf8) {
-            do {
-                let dict = try JSONSerialization.jsonObject(with: dataObject, options: []) as? [String: Any]
-                clientMetaData = dict ?? [:]
-            } catch {
-                print("")
-            }
-        }
-        let supportedEncryptions = clientMetaData["encrypted_response_enc_values_supported"] as? [String]
-        if let jwksURI = clientMetaData["jwks_uri"] as? String {
-            jwk = try await fetchJWKFromURI(jwksURI)
-        } else if let jwks = clientMetaData["jwks"] as? [String: Any],
-                  let keys = jwks["keys"] as? [[String: Any]] {
-            // Among P-256 keys prefer an explicit encryption key (use=enc), then a
-            // key with no `use`. Never a signing key: a verifier may publish both a
-            // sig and an enc P-256 key in the same set, and encrypting the response
-            // to the sig key leaves it unable to decrypt - which it reports as a
-            // rejected response, not as a key problem. The jwks_uri branch above
-            // already asks for keyUse "enc"; this branch did not, and took whichever
-            // P-256 key happened to come first.
-            let p256Keys = keys.filter { $0["crv"] as? String == "P-256" }
-            if let encKey = p256Keys.first(where: { ($0["use"] as? String) == "enc" }) {
-                jwk = encKey
-            } else if let noUseKey = p256Keys.first(where: { $0["use"] == nil }) {
-                jwk = noUseKey
-            } else {
-                throw NSError(domain: "JWE", code: 400, userInfo: [NSLocalizedDescriptionKey:
-                    "client_metadata.jwks has \(p256Keys.count) P-256 key(s) but none usable for encryption (all marked use=sig)"])
-            }
-        } else {
-            throw NSError(domain: "JWE", code: 400, userInfo: [NSLocalizedDescriptionKey:
-                "client_metadata carried neither jwks_uri nor an inline jwks - nothing to encrypt the response to"])
-        }
-
-        return try await encrypt(payload: payload,
-                       jwks: jwk,
-                       nonce: presentationRequest?.nonce,
-                                 clientID: presentationRequest?.clientId, supportedEncryptions: supportedEncryptions)
+        guard let presentationRequest else { throw SubmissionError.noEncryptionKey }
+        return try await ResponseEncrypter().encrypt(payload, presentationRequest)
     }
-    
+
     func encrypt(
         payload: [String: Any],
         jwks: [String: Any]?,
@@ -160,11 +123,6 @@ class JWEEncryptor {
         ]
 
         return jwk
-    }
-    
-    // Helper: Fetch JWK from URI (you need to implement async network fetch)
-    private func fetchJWKFromURI(_ uri: String) async -> [String: Any] {
-        return await ProcessJWKFromJwksUri.fetchJwkData(kid: nil, jwksUri: uri, keyUse: "enc")
     }
     
 }

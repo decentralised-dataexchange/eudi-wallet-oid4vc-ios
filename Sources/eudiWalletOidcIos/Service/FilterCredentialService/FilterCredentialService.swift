@@ -14,84 +14,37 @@ public class FilterCredentialService {
     public init() {
     }
     
+    /// Previous API: the candidate credentials per query entry, in query order, with nothing
+    /// about satisfiability. `queryItems` is a `DCQLQuery` or a `PresentationDefinitionModel`;
+    /// anything else answers no entries.
+    @available(*, deprecated, message: "Use VerificationService.matchCredentials(request:credentials:), which names each entry and reports whether the request can be satisfied")
     public func filterCredentials(
             credentialList: [String?],
             queryItems: Any
         ) async -> [[String]] {
-
-            await withCheckedContinuation { continuation in
-                self.filterCredentials(
-                    credentialList: credentialList,
-                    queryItems: queryItems
-                ) { response in
-                    continuation.resume(returning: response)
-                }
-            }
+            await legacyLists(credentialList, queryItems)
         }
-    
+
+    /// Previous API, completion form. The completion runs on the main queue, as before.
+    @available(*, deprecated, message: "Use VerificationService.matchCredentials(request:credentials:), which names each entry and reports whether the request can be satisfied")
     public func filterCredentials(credentialList: [String?], queryItems: Any, completion: @escaping ([[String]]) -> Void) {
-        var response: [[String]] = []
-        let group = DispatchGroup()
-        
-        if let presentationDefinition = queryItems as? PresentationDefinitionModel {
-            let matchesString = PresentationDefinitionFiltering.filterCredentialUsingPresentationDefinition(
-                presentationDefinition: presentationDefinition,
-                credentialList: credentialList
-            )
-
-            for item in matchesString {
-                var filteredCredentialList: [String] = []
-                for data in item {
-                    filteredCredentialList.append(credentialList[data.index] ?? "")
-                }
-                response.append(filteredCredentialList)
-            }
-            completion(response)
-            
-        } else if let dcql = queryItems as? DCQLQuery {
-            let matchesString = DCQLFiltering.filterCredentialsUsingDCQL(
-                dcql: dcql,
-                credentials: credentialList
-            )
-            
-            // Create an array to store results for each index
-            var results: [[String]] = Array(repeating: [], count: matchesString.count)
-            
-            for (index, item) in matchesString.enumerated() {
-                group.enter()
-                
-                var filteredCredentialList: [String] = []
-                for data in item {
-                    filteredCredentialList.append(credentialList[data.index] ?? "")
-                }
-                
-                var updatedFilteredCredentialList: [String] = []
-                let credentialItemGroup = DispatchGroup()
-                
-                for credential in filteredCredentialList {
-                    credentialItemGroup.enter()
-                    isCredentialIssuerTrusted(
-                        credential: credential,
-                        credentialItem: dcql.credentials[index]
-                    ) { isTrusted in
-                        if isTrusted == true {
-                            updatedFilteredCredentialList.append(credential)
-                        }
-                        credentialItemGroup.leave()
-                    }
-                }
-                
-                credentialItemGroup.notify(queue: .main) {
-                    results[index] = updatedFilteredCredentialList
-                    group.leave()
-                }
-            }
-            
-            group.notify(queue: .main) {
-                response.append(contentsOf: results)
-                completion(response)
-            }
+        Task {
+            let lists = await legacyLists(credentialList, queryItems)
+            DispatchQueue.main.async { completion(lists) }
         }
+    }
+
+    private func legacyLists(_ credentialList: [String?], _ queryItems: Any) async -> [[String]] {
+        let query: PresentationQuery
+        if let definition = queryItems as? PresentationDefinitionModel {
+            query = .presentationDefinition(definition)
+        } else if let dcql = queryItems as? DCQLQuery {
+            query = .dcql(dcql)
+        } else {
+            debugPrint("FilterCredentialService: invalid query item type: \(type(of: queryItems))")
+            return []
+        }
+        return await PresentationQueryMatcher().match(query, credentialList).asLegacyLists()
     }
     
     public func isCredentialIssuerTrusted(

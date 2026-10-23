@@ -14,14 +14,6 @@ import Security
 import ASN1Decoder
 
 
-private extension String {
-    /// nil when empty or only whitespace, so a `??` chain treats an absent
-    /// parameter and one present-but-empty alike - query parsing delivers both.
-    var nilIfBlank: String? {
-        trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self
-    }
-}
-
 public class VerificationService: NSObject, VerificationServiceProtocol {
     
     var keyHandler: SecureKeyProtocol
@@ -39,409 +31,93 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
     }
     
     
+    /// What the previous API answered when the verifier accepted without a redirect.
+    static let acceptedPlaceholder = "https://www.example.com?code=1"
+
+    /// Builds the presentations for the selected credentials, shapes the Authorization Response for
+    /// the request's response mode (OpenID4VP 1.0 section 8), encrypts it when asked and posts it.
+    /// Over the Digital Credentials API the parameters are handed back for the platform to deliver.
+    ///
+    /// - Parameters:
+    ///   - selected: the credentials the user chose, each named by the query entry it answers.
+    ///   - identity: the wallet's DID; the service's key handler is its key.
+    ///   - attestation: the wallet unit attestation, sent as client attestation headers.
+    ///   - authentication: how the user authenticated, for a strong customer authentication.
+    public func submitPresentation(request: PresentationRequest, selected: [SelectedCredential], identity: WalletIdentity,
+                                   attestation: WalletAttestation? = nil,
+                                   authentication: AuthenticationMethods? = nil) async -> PresentationOutcome {
+        await PresentationSubmitter().submit(request, selected: selected, identity: identity, holderKey: keyHandler,
+                                             attestation: attestation, authentication: authentication)
+    }
+
+    /// Kept for integrators on the previous API. The credentials and key ids arrive as lists aligned
+    /// by position with the query; the outcome is wrapped the way callers of this entry point
+    /// expect, placeholder redirect included.
+    @available(*, deprecated, message: "Use submitPresentation, which takes SelectedCredential values and returns a typed outcome")
     public func processOrSendAuthorizationResponse(
         did: String,
         presentationRequest: PresentationRequest?,
         credentialsList: [[String]]?,
         wua: String,
         pop: String, isSca: Bool = false, keyIds: [[String]] = [], amrInherenceFactor: String?, amrKnowledgeFactor: String?) async -> WrappedVerificationResponse? {
-            
-            guard let params = await AuthorisationResponseHandler().prepareAuthorisationResponse(credentialsList: credentialsList, presentationRequest: presentationRequest, did: did, keyHandler: keyHandler, isSca: isSca, keyIds: keyIds, amrInherenceFactor: amrInherenceFactor, amrKnowledgeFactor: amrKnowledgeFactor),
-                  !params.isEmpty else {
-                // Building the response failed. Posting the empty set that used to
-                // stand in for it is worse than not posting: the verifier answers a
-                // bodyless response by redirecting to its login page, so the failure
-                // surfaced as a browser opening rather than as an error.
-                return WrappedVerificationResponse(error: EUDIError(from: ErrorResponse(
-                    message: "Could not build the presentation response", code: nil)))
-            }
-            // OpenID4VP 1.0 8.2: for direct_post the Authorization Response is
-            // POSTed to response_uri, and redirect_uri MUST NOT be present. Only
-            // the by-value parser used to alias the two, so a signed request
-            // object - which carries response_uri and nothing else - resolved to
-            // nil here and the presentation was never sent. redirect_uri stays as
-            // a fallback for the redirect-based response modes.
-            guard let responseEndpoint = presentationRequest?.responseUri?.nilIfBlank
-                    ?? presentationRequest?.redirectUri?.nilIfBlank else {
-                return nil
-            }
-            return await sendVPRequest(params: params, redirectURI: responseEndpoint, wua: wua, pop: pop)
+        guard let request = presentationRequest else {
+            return WrappedVerificationResponse(error: EUDIError(message: "Could not build the presentation response", errorCode: "invalid_request"))
         }
-    
-    /// True when a request object carries no signature: the signature segment is empty, or the JOSE
-    /// header says `alg: none`. A header that cannot be read counts as signed, so the request goes on
-    /// to the client id scheme handler and fails its signature check there.
-    private func isUnsignedRequestObject(header: String, signature: String) -> Bool {
-        if signature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-        guard let headerJson = header.decodeBase64(),
-              let headerData = headerJson.data(using: .utf8),
-              let headerDict = (try? JSONSerialization.jsonObject(with: headerData)) as? [String: Any],
-              let alg = headerDict["alg"] as? String else { return false }
-        return alg.caseInsensitiveCompare("none") == .orderedSame
+        guard let selected = LegacySelection.from(request, groups: credentialsList, keyIds: keyIds) else {
+            return WrappedVerificationResponse(error: EUDIError(message: "The selected credentials do not match the query", errorCode: "invalid_request"))
+        }
+        let outcome = await submitPresentation(
+            request: request,
+            selected: selected,
+            identity: WalletIdentity(did: did),
+            attestation: WalletAttestation(attestationJwt: wua, proofOfPossession: pop),
+            authentication: isSca ? AuthenticationMethods(inherence: amrInherenceFactor, knowledge: amrKnowledgeFactor) : nil)
+        switch outcome {
+        case .accepted(let redirectUri, let location, let code):
+            if let redirectUri { return WrappedVerificationResponse(redirectUri: redirectUri) }
+            if let location { return WrappedVerificationResponse(location: location) }
+            // Callers of this entry point read the code out of the placeholder to continue issuance.
+            if let code { return WrappedVerificationResponse(data: "https://www.example.com?code=\(code)") }
+            return WrappedVerificationResponse(data: Self.acceptedPlaceholder)
+        case .delivered:
+            return WrappedVerificationResponse(data: Self.acceptedPlaceholder)
+        case .refused(let error):
+            return WrappedVerificationResponse(error: error)
+        }
     }
 
+    /// Resolves scanned data into a presentation request (OpenID4VP 1.0 section 5) and verifies the
+    /// verifier's identity by its client identifier prefix (section 5.9). The outcome says who the
+    /// verifier is in `ResolvedPresentationRequest.verifier`.
+    public func resolveAuthorizationRequest(data: String?, policy: PresentationRequestPolicy = .default) async -> PresentationRequestOutcome {
+        await PresentationRequestResolver(policy: policy, session: requestObjectSession).resolve(data)
+    }
+
+    /// Matches the wallet's credentials against the request's query (OpenID4VP 1.0 section 6, or
+    /// a draft presentation definition): one entry per credential query with its candidates, and
+    /// whether the required entries and credential sets can be satisfied at all.
+    ///
+    /// - Parameter credentials: every stored credential: SD-JWTs and JWTs in compact form, mdocs
+    ///   as base64url IssuerSigned.
+    public func matchCredentials(request: PresentationRequest, credentials: [String?]) async -> CredentialMatches {
+        await PresentationQueryMatcher().match(request, credentials)
+    }
+
+    /// Kept for integrators on the previous API. Blank or unrecognised input still answers
+    /// `(nil, nil)` as before; every other outcome maps onto the tuple.
+    @available(*, deprecated, renamed: "resolveAuthorizationRequest(data:policy:)",
+               message: "Use resolveAuthorizationRequest, which returns a typed outcome instead of a tuple of optionals")
     public func processAuthorisationRequest(data: String?) async -> (PresentationRequest?, EUDIError?) {
-        let (presentationRequest, error) = await processAuthorisationRequestUnchecked(data: data)
-        // Every entry point (by value, request object, request_uri, JWT, IAR) comes back through
-        // here, so a DCQL query that breaks OpenID4VP 1.0 is refused once, before any stored
-        // credential is read.
-        if let decodingError = presentationRequest?.dcqlQueryDecodingError {
-            return (nil, Self.invalidDcqlQuery(reason: decodingError))
-        }
-        if let dcql = presentationRequest?.dcqlQuery {
-            let violations = DcqlQueryValidator.validate(dcql)
-            if !violations.isEmpty {
-                return (nil, Self.invalidDcqlQuery(reason: violations.joined(separator: "; ")))
-            }
-        }
-        return (presentationRequest, error)
-    }
-
-    static func invalidDcqlQuery(reason: String) -> EUDIError {
-        EUDIError(from: ErrorResponse(message: "Invalid DCQL query: \(reason)", code: ErrorCodes.invalidDcqlQuery))
-    }
-
-    private func processAuthorisationRequestUnchecked(data: String?) async -> (PresentationRequest?, EUDIError?) {
-            guard let _ = data else { return (nil, nil) }
-            
-            if let code = data {
-                let state = URL(string: code)?.queryParameters?["state"] ?? ""
-                let nonce = URL(string: code)?.queryParameters?["nonce"] ?? ""
-                let responseUri = URL(string: code)?.queryParameters?["response_uri"] ?? ""
-                let redirectUri = URL(string: code)?.queryParameters?["redirect_uri"] ?? ""
-                let clientID = URL(string: code)?.queryParameters?["client_id"] ?? ""
-                let responseType = URL(string: code)?.queryParameters?["response_type"] ?? ""
-                let scope = URL(string: code)?.queryParameters?["scope"] ?? ""
-                let requestUri = URL(string: code)?.queryParameters?["request_uri"] ?? ""
-                let responseMode = URL(string: code)?.queryParameters?["response_mode"] ?? ""
-                var presentationDefinition = URL(string: code)?.queryParameters?["presentation_definition"] ?? ""
-                var clientMetaData = URL(string: code)?.queryParameters?["client_metadata"] ?? ""
-                var presentationDefinitionUri = URL(string: code)?.queryParameters?["presentation_definition_uri"] ?? ""
-                var clientMetaDataUri = URL(string: code)?.queryParameters?["client_metadata_uri"] ?? ""
-                var clientIDScheme = URL(string: code)?.queryParameters?["client_id_scheme"] ?? ""
-                var dcql = ""
-                var authSession = URL(string: code)?.queryParameters?["auth_session"] ?? ""
-                var openid4vpRequest = URL(string: code)?.queryParameters?["openid4vp_request"] ?? ""
-                var request = ""
-                var clientIDValue = ""
-                var dcqlQueryModel: DCQLQuery? = nil
-                var dcqlDecodingError: String? = nil
-                if URL(string: code)?.queryParameters?["type"] == "openid4vp_presentation" {
-                    if let openid4vpRequest = URL(string: code)?.queryParameters?["openid4vp_request"] as? String,
-                       let jsonData = openid4vpRequest.data(using: .utf8) {
-                        
-                        do {
-                            let requestDict = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any]
-                            if let requestString = requestDict?["request"] as? String {
-                                request = requestString ?? ""
-                            }
-
-                            if let clientIdString = requestDict?["client_id"] as? String {
-                                clientIDValue = clientIdString
-                            }
-            
-                            if let dcqlData = requestDict?["dcql_query"] as? [String: Any] {
-                                dcql = dcqlData.toString() ?? ""
-                            }
-                        } catch {
-                            print("Error parsing JSON: \(error)")
-                        }
-                    }
-                } else {
-                    request = URL(string: code)?.queryParameters?["request"] ?? ""
-                    dcql = URL(string: code)?.queryParameters?["dcql_query"] ?? ""
-                }
-                if !dcql.isEmpty {
-                    if let data = dcql.data(using: .utf8) {
-                        do {
-                            dcqlQueryModel = try JSONDecoder().decode(DCQLQuery.self, from: data)
-                        } catch {
-                            // Malformed JSON, or a member of the wrong shape: refused by the
-                            // caller the same way as a structurally invalid query.
-                            dcqlDecodingError = DcqlQueryValidator.decodingMessage(error)
-                        }
-                    }
-                }
-                
-                if presentationDefinition != "" || presentationDefinitionUri != "" || dcql != "" {
-                    var presentationRequest =  PresentationRequest(state: state,
-                                                                   clientId: clientID,
-                                                                   redirectUri: redirectUri,
-                                                                   responseUri: responseUri,
-                                                                   responseType: responseType,
-                                                                   responseMode: responseMode,
-                                                                   scope: scope,
-                                                                   nonce: nonce,
-                                                                   requestUri: requestUri,
-                                                                   presentationDefinition: presentationDefinition,
-                                                                   clientMetaData: clientMetaData,
-                                                                   presentationDefinitionUri: presentationDefinitionUri, clientMetaDataUri: clientMetaDataUri, clientIDScheme: clientIDScheme, transactionData: [""], dcqlQuery: dcqlQueryModel, request: request, authSession: authSession
-                    )
-                    presentationRequest.dcqlQueryDecodingError = dcqlDecodingError
-                    if presentationDefinition == "" && presentationDefinitionUri != "" {
-                        let presentationDefinitionFromUri = await resolvePresentationDefinitionFromURI(url: presentationDefinitionUri)
-                        presentationRequest.presentationDefinition = presentationDefinitionFromUri
-                    }
-                    if clientMetaData == "" && clientMetaDataUri != "" {
-                        let clientMetaDataFromUri = await resolveClientMetaDataFromURI(url: clientMetaDataUri)
-                        presentationRequest.clientMetaData = clientMetaDataFromUri
-                    }
-                    return (presentationRequest, nil)
-                    
-                } else if openid4vpRequest != "" {
-                    var presentationRquestDataModel: PresentationRequest?
-                    if request != "" {
-                        let split = request.split(separator: ".")
-                        var decodedRequest: [String: Any] = [:]
-                        var decoded = ""
-                        if split.count > 1 {
-                            decoded =  "\(split[1])".decodeBase64() ?? ""
-                        }
-                        if !decoded.isEmpty {
-                            if let data = decoded.data(using: .utf8) {
-                                do {
-                                    presentationRquestDataModel = try JSONDecoder().decode(PresentationRequest.self, from: data)
-                                } catch {
-                                }
-                            }
-                        }
-                    } else {
-                        if let data = openid4vpRequest.data(using: .utf8) {
-                            do {
-                                presentationRquestDataModel = try JSONDecoder().decode(PresentationRequest.self, from: data)
-                            } catch {
-                            }
-                        }
-                    }
-                    let resolvedClientID = clientIDValue.replacingOccurrences(of: "redirect_uri:", with: "")
-                    presentationRquestDataModel?.clientId = resolvedClientID
-                    presentationRquestDataModel?.authSession = authSession
-                    presentationRquestDataModel?.type = URL(string: code)?.queryParameters?["type"] ?? ""
-                    presentationRquestDataModel?.request = request
-                    return (presentationRquestDataModel, nil)
-                } else if requestUri != "" {
-                    var request = URLRequest(url: URL(string: requestUri)!)
-                    // OpenID4VP 1.0 section 5.10: `request_uri_method=post` fetches the request
-                    // object with a form POST carrying the wallet metadata and a fresh nonce that
-                    // the verifier has to echo back in the request object. Anything else is the
-                    // plain GET of RFC 9101.
-                    let walletNonce: String? = RequestUriMethod.isPost(code) ? RequestUriMethod.newWalletNonce() : nil
-                    let encryptionKey: ECPrivateKey? = walletNonce != nil ? RequestUriMethod.newEncryptionKey() : nil
-                    if let walletNonce = walletNonce {
-                        request.httpMethod = "POST"
-                        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-                        request.setValue(RequestUriMethod.requestObjectMediaType, forHTTPHeaderField: "Accept")
-                        request.httpBody = UIApplicationUtils.shared.getFormEncodedString(params: [
-                            RequestUriMethod.walletMetadataField: RequestUriMethod.walletMetadata(encryptionKey: encryptionKey),
-                            RequestUriMethod.walletNonceField: walletNonce
-                        ]).data(using: .utf8)
-                    } else {
-                        request.httpMethod = "GET"
-                    }
-                    
-                    do {
-                        let (rawData, response) = try await NetworkLogger.send(request, tag: "presentation-request", session: requestObjectSession)
-                        if let res = response as? HTTPURLResponse, res.statusCode >= 400 {
-                            let errorMsg = ErrorHandler.processError(data: rawData, contentType: res.value(forHTTPHeaderField: "Content-Type"))
-                            return(nil, errorMsg)
-                        } else {
-                        // A verifier given our key may answer with an encrypted request object;
-                        // open it here so the rest of the handling sees the signed request JWT.
-                        var data = rawData
-                        if let key = encryptionKey, let body = String(data: rawData, encoding: .utf8) {
-                            guard let opened = RequestUriMethod.unwrapEncrypted(body, key: key),
-                                  let openedData = opened.data(using: .utf8) else {
-                                return (nil, EUDIError(from: ErrorResponse(message: "Request validation failed", code: nil)))
-                            }
-                            data = openedData
-                        }
-                        let jsonDecoder = JSONDecoder()
-                        var model = try? jsonDecoder.decode(PresentationRequest.self, from: data)
-                        if let model = model, !RequestUriMethod.nonceAccepted(sent: walletNonce, received: model.walletNonce) {
-                            return (nil, EUDIError(from: ErrorResponse(message: "Request validation failed", code: nil)))
-                        }
-                        if model == nil {
-                            if let rawJwtString = String(data: data, encoding: .utf8) {
-                                do {
-                                    // A request object is header.payload.signature. An unsigned one
-                                    // (alg none) has an empty signature segment, which split(separator:)
-                                    // would drop, so split keeping empty parts.
-                                    let jwtString = rawJwtString.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    let segments = jwtString.components(separatedBy: ".")
-                                    if segments.count == 3 {
-                                        guard let jsonPayload = try? jwtString.decodeJWT(jwtToken: jwtString) else { return (nil, nil) }
-                                        guard let data = try? JSONSerialization.data(withJSONObject: jsonPayload, options: []) else { return (nil, nil) }
-                                        var model = try jsonDecoder.decode(PresentationRequest.self, from: data)
-                                        let requestData = model.request
-                                        if model.request == nil {
-                                            model.request = jwtString
-                                        } else {
-                                            model.request = requestData
-                                        }
-                                        // OpenID4VP 1.0: a redirect_uri request MUST NOT be signed, so an
-                                        // unsigned request object is the normal shape for that scheme and
-                                        // is accepted as it is. For every other scheme the signature is
-                                        // what identifies the verifier, so an unsigned one is refused.
-                                        if isUnsignedRequestObject(header: segments[0], signature: segments[2]),
-                                           model.clientIDScheme != ClientIdScheme.redirectURI.rawValue {
-                                            debugPrint("VerificationService: unsigned request object for client id scheme '\(model.clientIDScheme ?? "")' - refusing")
-                                            let error = EUDIError(from: ErrorResponse(message:"Request validation failed", code: nil))
-                                            return (nil, error)
-                                        }
-                                        // Section 5.10: a request object fetched by POST MUST carry the
-                                        // wallet_nonce it was asked for; without it the request is dropped.
-                                        if !RequestUriMethod.nonceAccepted(sent: walletNonce, received: model.walletNonce) {
-                                            let error = EUDIError(from: ErrorResponse(message:"Request validation failed", code: nil))
-                                            return (nil, error)
-                                        }
-                                        do {
-                                            let updatedModel = try await ClientIdSchemeRequestHandler().handle(jwtRequest: model.request, presentationRequest: model)
-                                            return (updatedModel, nil)
-                                        } catch  PresentationRequestError.requestValidationFailed {
-                                            let error = EUDIError(from: ErrorResponse(message:"Request validation failed", code: nil))
-                                            return (nil, error)
-                                        }
-                                       // model.request = model.request != nil ? model.request : jwtString
-                                    }
-                                } catch {
-                                    debugPrint("Error:\(error)")
-                                }
-                            } else {
-                                let error = EUDIError(from: ErrorResponse(message:"Invalid DID", code: nil))
-                                debugPrint(error)
-                                return (nil, error)
-                            }
-                        }
-                        if model?.presentationDefinition == nil && model?.presentationDefinitionUri != "" {
-                            let presentationDefinitionFromUri = await resolvePresentationDefinitionFromURI(url: model?.presentationDefinitionUri)
-                            model?.presentationDefinition = presentationDefinitionFromUri
-                        }
-                        if model?.clientMetaData == nil && model?.clientMetaDataUri != "" {
-                            let clientMetaDataFromUri = await resolveClientMetaDataFromURI(url: model?.clientMetaDataUri)
-                            model?.clientMetaData = clientMetaDataFromUri
-                        }
-                        return (model, nil)
-                    }
-                    } catch {
-                        let errorMsg = EUDIError(from: ErrorResponse(message: error.localizedDescription, code: nil))
-                        debugPrint(error)
-                        return (nil, errorMsg)
-                        debugPrint("Error:\(error)")
-                    }
-                }
-            }
-            
+        switch await PresentationRequestResolver(session: requestObjectSession).resolveTyped(data) {
+        case .success(let resolved):
+            return (resolved.request, nil)
+        case .failure(.noRequest):
             return (nil, nil)
-        }
-    
-    func resolvePresentationDefinitionFromURI(url: String?) async -> String? {
-        if let uri = URL(string: url ?? "") {
-            var request = URLRequest(url: uri)
-            request.httpMethod = "GET"
-            do {
-                let (data, _) = try await NetworkLogger.send(request, tag: "presentation-definition-uri")
-                if let presentationDefinitionFromUri = String(data: data, encoding: .utf8) {
-                    return presentationDefinitionFromUri
-                } else {
-                    debugPrint("Error: Could not resolve presentation_definition from URI")
-                    return nil
-                }
-            } catch {
-                debugPrint("Error while fetching presentation_definition from URI: \(error)")
-                return nil
-            }
-        }
-        return nil
-    }
-    
-    func resolveClientMetaDataFromURI(url: String?) async -> String? {
-        if let uri = URL(string: url ?? "") {
-            var request = URLRequest(url: uri)
-            request.httpMethod = "GET"
-            do {
-                let (data, _) = try await NetworkLogger.send(request, tag: "client-metadata-uri")
-                if let clientMetaDataFromUri = String(data: data, encoding: .utf8) {
-                    return clientMetaDataFromUri
-                } else {
-                    debugPrint("Error: Could not resolve presentation_definition from URI")
-                    return nil
-                }
-            } catch {
-                debugPrint("Error while fetching presentation_definition from URI: \(error)")
-                return nil
-            }
-        }
-        return nil
-    }
-    
-    private func sendVPRequest(params: [String: Any], redirectURI: String, wua: String, pop: String) async -> WrappedVerificationResponse? {
-        // OpenID4VP 1.0 8.2 requires application/x-www-form-urlencoded. getPostString
-        // joined key=value with no escaping at all, so any value carrying "+", "/"
-        // or "=" reached the Verifier corrupted - base64 vp_tokens (mdoc) above all.
-        let postString = UIApplicationUtils.shared.getFormEncodedString(params: params)
-        // What the verifier actually receives. A verifier that cannot correlate
-        // the response to its session tends to answer with a redirect to its
-        // login page rather than an error, so the fields it correlates on -
-        // state above all - are worth seeing without turning on body tracing.
-        let paramsData = postString.data(using: .utf8)
-        let sanitisedWUA = wua.hasSuffix("~") ? String(wua.dropLast()) : wua
-        var request = URLRequest(url: URL(string: redirectURI)!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.setValue(sanitisedWUA, forHTTPHeaderField: "OAuth-Client-Attestation")
-        request.setValue(pop, forHTTPHeaderField: "OAuth-Client-Attestation-PoP")
-        request.httpBody = paramsData
-        
-        // Performing the token request
-        var responseUrl = ""
-        do {
-            let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-            
-            let (data, response) = try await NetworkLogger.send(request, tag: "vp-token-response", session: session)
-            
-            
-            let httpres = response as? HTTPURLResponse
-            
-            // The success case OpenID4VP 8.2 defines comes first: 200 with a body
-            // that MAY carry redirect_uri. A 302 is not in the specification and is
-            // only read afterwards, as a vendor accommodation.
-            if httpres?.statusCode == 200 || httpres?.statusCode == 204 {
-                let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
-                if let redirectUri = json?["redirect_uri"] as? String {
-                    return WrappedVerificationResponse(redirectUri: redirectUri)
-                } else if let code = json?["code"] as? String {
-                    return WrappedVerificationResponse(data: "https://www.example.com?code=\(code)")
-                } else {
-                    // Presentation accepted, nowhere to send the user.
-                    return WrappedVerificationResponse(data: "https://www.example.com?code=1")
-                }
-            } else if httpres?.statusCode == 302 {
-                if let location = httpres?.value(forHTTPHeaderField: "Location") {
-                    responseUrl = location
-                    let url = URL.init(string: location)
-                    if let errorDescription = url?.queryParameters?["error_description"] as? String {
-                        let error = errorDescription.replacingOccurrences(of: "+", with: " ").data(using: .utf8)
-                        return WrappedVerificationResponse(data: nil, error: ErrorHandler.processError(data: error, contentType: httpres?.value(forHTTPHeaderField: "Content-Type")))
-                    } else {
-                        return WrappedVerificationResponse(location: responseUrl)
-                    }
-                } else {
-                    return WrappedVerificationResponse(data: "https://www.example.com?code=1")
-                }
-            } else if httpres?.statusCode ?? 400 >= 400 {
-                return WrappedVerificationResponse(data: nil, error: ErrorHandler.processError(data: data, contentType: httpres?.value(forHTTPHeaderField: "Content-Type")))
-            } else{
-                guard let dataString = String(data: data, encoding: .utf8) else {
-                    return WrappedVerificationResponse(data: "data", error: nil)
-                }
-                return WrappedVerificationResponse(data: dataString, error: nil)
-            }
-        } catch {
-            debugPrint("JSON Serialization Error: \(error)")
-            return nil
+        case .failure(let error):
+            return (nil, error.eudiError)
         }
     }
-    
+
     public static func processPresentationDefinition(_ presentationDefinition: Any?) throws -> PresentationDefinitionModel {
         do {
             guard let presentationDefinition = presentationDefinition else {
@@ -671,11 +347,3 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         return updatedDescriptor
     }
 }
-extension VerificationService: URLSessionDelegate, URLSessionTaskDelegate {
-    public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        // Stops the redirection, and returns (internally) the response body.
-        completionHandler(nil)
-    }
-}
-
-
