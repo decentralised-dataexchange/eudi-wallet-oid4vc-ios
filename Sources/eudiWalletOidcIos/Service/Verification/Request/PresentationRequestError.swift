@@ -57,12 +57,20 @@ enum PresentationRequestError: Error {
     /// A draft request arrived while `PresentationRequestPolicy.allowDraftRequests` is false.
     case draftNotAllowed
 
+    /// A presentation definition request names a `response_type` the wallet cannot answer, or none.
+    /// Refused when the request is resolved, before the user is asked anything, rather than
+    /// answered later with an empty response.
+    case unsupportedResponseType(String?)
+
     /// Section 8.5 `invalid_transaction_data`: the transaction data is malformed, names a
     /// credential the query does not request, or cannot be honoured.
     case invalidTransactionData(String)
 
     /// RFC 6749 section 4.1.2.1.
     static let invalidRequest = "invalid_request"
+
+    /// RFC 6749 section 4.1.2.1.
+    static let unsupportedResponseTypeCode = "unsupported_response_type"
 
     var message: String {
         switch self {
@@ -80,6 +88,8 @@ enum PresentationRequestError: Error {
             let suffix = detail.flatMap { $0.isEmpty ? nil : ": \($0)" } ?? ""
             return "The presentation definition could not be fetched\(suffix)"
         case .draftNotAllowed: return "This presentation request uses a draft format that is not supported"
+        case .unsupportedResponseType(let type):
+            return type.map { "The response type '\($0)' is not supported" } ?? "The request names no response type"
         case .invalidTransactionData(let detail): return "The transaction data in the request is invalid: \(detail)"
         }
     }
@@ -92,6 +102,8 @@ enum PresentationRequestError: Error {
             return EUDIError(message: message, code: ErrorCodes.invalidDcqlQuery)
         case .invalidTransactionData:
             return EUDIError(message: message, code: nil, errorCode: "invalid_transaction_data")
+        case .unsupportedResponseType:
+            return EUDIError(message: message, code: nil, errorCode: Self.unsupportedResponseTypeCode)
         case .ambiguousRequest, .clientIdMismatch, .clientNotVerified, .unsupportedClientIdPrefix:
             return EUDIError(message: message, code: nil, errorCode: Self.invalidRequest)
         default:

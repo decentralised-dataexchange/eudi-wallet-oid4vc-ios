@@ -116,6 +116,14 @@ struct PresentationRequestResolver {
             throw PresentationRequestError.draftNotAllowed
         }
 
+        // A presentation definition request with a response type the wallet cannot answer, or
+        // none, is refused now, before any URI is fetched or the user is asked anything. Without
+        // this the wallet would ask the user and only then refuse to send an empty response.
+        let responseType = request.responseType?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if specVersion == .draft && !Self.supportedResponseTypes.contains(responseType) {
+            throw PresentationRequestError.unsupportedResponseType(responseType.isEmpty ? nil : responseType)
+        }
+
         // --- legacy, safe to delete as a block ---
         if Self.isBlank(request.presentationDefinition), let uri = request.presentationDefinitionUri, !Self.isBlank(uri) {
             request.presentationDefinition = try await presentationDefinitionUriResolver.resolve(uri)
@@ -145,6 +153,10 @@ struct PresentationRequestResolver {
         return ResolvedPresentationRequest(request: request, specVersion: specVersion, source: source.name, verifier: verifier,
                                            transactionData: transactionData)
     }
+
+    /// The response types `AuthorizationResponseParameters.build` can answer for a presentation
+    /// definition request.
+    private static let supportedResponseTypes: Set<String> = ["vp_token", "id_token", "vp_token id_token", "vp_token+id_token"]
 
     private static func isBlank(_ value: String?) -> Bool {
         value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true

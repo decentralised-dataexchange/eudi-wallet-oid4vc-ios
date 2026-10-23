@@ -142,7 +142,8 @@ final class PresentationRequestResolverTests: XCTestCase {
     }
 
     func test1_3_presentationDefinitionByValueResolvesAsDraftAndStrictRefusesIt() async throws {
-        let data = uri([("client_id", clientId), ("nonce", "n-1"), ("presentation_definition", json(presentationDefinition))])
+        let data = uri([("client_id", clientId), ("nonce", "n-1"), ("response_type", "vp_token"),
+                        ("presentation_definition", json(presentationDefinition))])
         let resolved = try resolved(await resolve(data))
         XCTAssertEqual(resolved.specVersion, .draft)
         XCTAssertEqual(resolved.request.presentationDefinition, json(presentationDefinition))
@@ -156,7 +157,7 @@ final class PresentationRequestResolverTests: XCTestCase {
 
     func test1_4_presentationDefinitionUriIsFetched() async throws {
         served["https://verifier.example/pd"] = (200, json(presentationDefinition))
-        let data = uri([("client_id", clientId), ("presentation_definition_uri", "https://verifier.example/pd")])
+        let data = uri([("client_id", clientId), ("response_type", "vp_token"), ("presentation_definition_uri", "https://verifier.example/pd")])
         let resolved = try resolved(await resolve(data))
         XCTAssertEqual(resolved.specVersion, .draft)
         XCTAssertEqual(resolved.request.presentationDefinition, json(presentationDefinition))
@@ -164,12 +165,33 @@ final class PresentationRequestResolverTests: XCTestCase {
 
     func test1_4_aFailedPresentationDefinitionFetchFailsTheRequest() async throws {
         served["https://verifier.example/pd"] = (404, "{}")
-        let data = uri([("client_id", clientId), ("presentation_definition_uri", "https://verifier.example/pd")])
+        let data = uri([("client_id", clientId), ("response_type", "vp_token"), ("presentation_definition_uri", "https://verifier.example/pd")])
         let error = try failed(await resolve(data))
         XCTAssertTrue(error.message?.hasPrefix("The presentation definition could not be fetched") ?? false, error.message ?? "")
         let (request, legacyError) = await legacy(data)
         XCTAssertNil(request, "today this resolved with no query at all")
         XCTAssertNotNil(legacyError)
+    }
+
+    func test1_22_aPresentationDefinitionRequestIsRefusedUnlessItsResponseTypeCanBeAnswered() async throws {
+        func pex(_ extra: [(String, String)] = []) async -> PresentationRequestOutcome {
+            await resolve(uri([("client_id", clientId), ("nonce", "n-1"), ("presentation_definition", json(presentationDefinition))] + extra))
+        }
+
+        for type in ["vp_token", "id_token", "vp_token id_token", "vp_token+id_token"] {
+            let outcome = await pex([("response_type", type)])
+            XCTAssertEqual(try resolved(outcome).specVersion, .draft, type)
+        }
+        let unknown = try failed(await pex([("response_type", "code")]))
+        XCTAssertEqual(unknown.errorCode, "unsupported_response_type")
+        XCTAssertEqual(unknown.message, "The response type 'code' is not supported")
+        let missing = try failed(await pex())
+        XCTAssertEqual(missing.errorCode, "unsupported_response_type")
+        XCTAssertEqual(missing.message, "The request names no response type")
+
+        // 1.0 always answers with vp_token, so a DCQL request is not checked.
+        _ = try resolved(await resolve(uri([("client_id", clientId), ("nonce", "n-1"), ("response_type", "code"),
+                                            ("dcql_query", json(dcql))])))
     }
 
     func test1_5_clientMetadataUriIsFetchedAndAFailureIsNotFatal() async throws {
