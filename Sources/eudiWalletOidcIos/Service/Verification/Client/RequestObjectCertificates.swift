@@ -89,17 +89,21 @@ enum RequestObjectCertificates {
     }
 
     private static func sanOfType(_ certificate: SecCertificate, _ tag: UInt8) -> [String] {
-        guard let blocks = try? ASN1DERDecoder.decode(data: SecCertificateCopyData(certificate) as Data),
-              let oid = blocks.lazy.compactMap({ $0.findOid(.subjectAltName) }).first,
-              let ext = oid.parent else { return [] }
-        // Extension ::= SEQUENCE { extnID, critical BOOLEAN OPTIONAL, extnValue OCTET STRING }, and
-        // the OCTET STRING wraps the SEQUENCE OF GeneralName.
-        guard let octets = children(ext).last(where: { $0.identifier?.tagNumber() == .octetString }),
-              let names = children(octets).first(where: { $0.identifier?.tagNumber() == .sequence }) else { return [] }
-        return children(names).compactMap { name in
-            guard name.identifier?.typeClass() == .contextSpecific,
-                  name.identifier?.tagNumber().rawValue == tag else { return nil }
-            return name.value as? String
+        guard let blocks = try? ASN1DERDecoder.decode(data: SecCertificateCopyData(certificate) as Data) else { return [] }
+        // ASN1Object.parent is weak: without this, an optimised build frees the tree after the
+        // OID lookup and the parent is nil.
+        return withExtendedLifetime(blocks) {
+            guard let oid = blocks.lazy.compactMap({ $0.findOid(.subjectAltName) }).first,
+                  let ext = oid.parent else { return [] }
+            // Extension ::= SEQUENCE { extnID, critical BOOLEAN OPTIONAL, extnValue OCTET STRING }, and
+            // the OCTET STRING wraps the SEQUENCE OF GeneralName.
+            guard let octets = children(ext).last(where: { $0.identifier?.tagNumber() == .octetString }),
+                  let names = children(octets).first(where: { $0.identifier?.tagNumber() == .sequence }) else { return [] }
+            return children(names).compactMap { name in
+                guard name.identifier?.typeClass() == .contextSpecific,
+                      name.identifier?.tagNumber().rawValue == tag else { return nil }
+                return name.value as? String
+            }
         }
     }
 
