@@ -37,15 +37,20 @@ enum TrustedAuthorityMatcher {
     static func authorityKeyIdentifier(_ certificate: SecCertificate) -> String? {
         // Extension ::= SEQUENCE { extnID, critical BOOLEAN OPTIONAL, extnValue OCTET STRING }, the
         // OCTET STRING wrapping SEQUENCE { [0] keyIdentifier OPTIONAL, ... }.
-        guard let blocks = try? ASN1DERDecoder.decode(data: SecCertificateCopyData(certificate) as Data),
-              let oid = blocks.lazy.compactMap({ $0.findOid("2.5.29.35") }).first,
-              let ext = oid.parent,
-              let octets = children(ext).last(where: { $0.identifier?.tagNumber() == .octetString }),
-              let sequence = children(octets).first(where: { $0.identifier?.tagNumber() == .sequence }),
-              let keyId = children(sequence).first(where: {
-                  $0.identifier?.typeClass() == .contextSpecific && $0.identifier?.tagNumber().rawValue == 0
-              }),
-              let bytes = (keyId.value as? Data) ?? keyId.rawValue else { return nil }
+        guard let blocks = try? ASN1DERDecoder.decode(data: SecCertificateCopyData(certificate) as Data) else { return nil }
+        // ASN1Object.parent is weak: without this, an optimised build frees the tree after the
+        // OID lookup and the parent is nil.
+        let keyIdentifier: Data? = withExtendedLifetime(blocks) {
+            guard let oid = blocks.lazy.compactMap({ $0.findOid("2.5.29.35") }).first,
+                  let ext = oid.parent,
+                  let octets = children(ext).last(where: { $0.identifier?.tagNumber() == .octetString }),
+                  let sequence = children(octets).first(where: { $0.identifier?.tagNumber() == .sequence }),
+                  let keyId = children(sequence).first(where: {
+                      $0.identifier?.typeClass() == .contextSpecific && $0.identifier?.tagNumber().rawValue == 0
+                  }) else { return nil }
+            return (keyId.value as? Data) ?? keyId.rawValue
+        }
+        guard let bytes = keyIdentifier else { return nil }
         return bytes.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
