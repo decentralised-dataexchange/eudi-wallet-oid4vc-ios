@@ -56,8 +56,6 @@ class DPoPProofService {
             else { return nil }
         
             let jwt = "\(signingInput).\(signature.rawRepresentation.urlSafeBase64EncodedString())"
-            print("[DPoP] generated for htu=\(tokenEndpoint) htm=\(httpMethod) jti=\(payload["jti"] ?? "")")
-            print("[DPoP] jwt=\(jwt)")
             return jwt
           }
     
