@@ -363,7 +363,6 @@ public class WalletUnitAttestationService {
         
         do {
             let (data, resp) = try await NetworkLogger.send(request, tag: "wallet-unit-attestation")
-            let responseData =  String(data: data, encoding: .utf8)
             let jsonObject = try JSONSerialization.jsonObject(with: data, options: [])
             let dictionary = jsonObject as? [String: Any]
             var credentialOffer = dictionary?["credentialOffer"] as? String
@@ -371,7 +370,6 @@ public class WalletUnitAttestationService {
             var credentialIssuer = dictionary?["credentialIssuer"] as? String
             credentialOfferUri = credentialOffer ?? ""
             response = WalletUnitAttestationResponse(credentialOffer: credentialOffer ?? "", walletUnitAttestation: walletUnitAttestation ?? "", credentialIssuer: credentialIssuer ?? "")
-            print("data: \(responseData)")
         } catch {
             print("Error")
         }
