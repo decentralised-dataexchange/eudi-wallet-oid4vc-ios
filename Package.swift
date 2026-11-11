@@ -17,7 +17,10 @@ let package = Package(
         .package(url: "https://github.com/decentralised-dataexchange/PresentationExchangeSdkiOS.git", .upToNextMajor(from: "2024.11.1")),
         .package(url: "https://github.com/airsidemobile/JOSESwift.git", from: "3.0.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from:"3.5.2"),
-        .package(url: "https://github.com/niscy-eudiw/SwiftCBOR.git", from: "0.5.7"),
+        .package(
+            url: "https://github.com/niscy-eudiw/SwiftCBOR.git",
+            exact: "0.6.5"
+        ),
         .package(url: "https://github.com/1024jp/GzipSwift", from: "6.0.0"),
         .package(url: "https://github.com/Flight-School/AnyCodable.git", from: "0.6.7"),
         .package(url: "https://github.com/filom/ASN1Decoder.git", from: "1.8.0")
