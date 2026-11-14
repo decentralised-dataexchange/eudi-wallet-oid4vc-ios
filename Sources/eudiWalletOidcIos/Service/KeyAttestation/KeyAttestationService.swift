@@ -115,14 +115,16 @@ public class KeyAttestationService {
         walletUnitAttestationJWT: String,
         walletUnitProofOfPossession: String,
         nonce: String,
-        request: KeyAttestationRequest
+        request: KeyAttestationRequest,
+        walletProvider: WalletUnitAttestationProvider? = nil
     ) async -> KeyAttestationResponse? {
         let outcome = await sendKeyAttestation(
             baseUrl: baseUrl,
             walletUnitAttestationJWT: walletUnitAttestationJWT,
             walletUnitProofOfPossession: walletUnitProofOfPossession,
             nonce: nonce,
-            request: request
+            request: request,
+            walletProvider: walletProvider
         )
         return outcome.isSuccessful ? outcome.response : nil
     }
@@ -136,6 +138,13 @@ public class KeyAttestationService {
     /// The HTTP status is kept: a 400 invalid_key_evidence (evidence count !=
     /// key count) is reported in the outcome. No client-side alignment check is
     /// done on purpose, so the wallet provider's own validation applies.
+    ///
+    /// `walletProvider`: with a protocol 2 client (``WalletProviderClient``)
+    /// whose wallet unit is registered, the request goes as protocol 2 (signed
+    /// with the request key, with an App Attest assertion over the issuer nonce
+    /// and the attested keys). The body stays the same. Without one, with a
+    /// ``Protocol1WalletProviderClient``, or before the registration, it goes
+    /// as before.
     public static func requestBatchKeyAttestation(
         baseUrl: String,
         walletUnitAttestationJWT: String,
@@ -143,14 +152,16 @@ public class KeyAttestationService {
         nonce: String,
         attestedKeys: [[String: Any]],
         keyPops: [String]? = nil,
-        iosAppAttest: [IosAppAttestEvidence]? = nil
+        iosAppAttest: [IosAppAttestEvidence]? = nil,
+        walletProvider: WalletUnitAttestationProvider? = nil
     ) async -> KeyAttestationOutcome {
         await sendKeyAttestation(
             baseUrl: baseUrl,
             walletUnitAttestationJWT: walletUnitAttestationJWT,
             walletUnitProofOfPossession: walletUnitProofOfPossession,
             nonce: nonce,
-            request: KeyAttestationRequest(attestedKeys: attestedKeys, keyPops: keyPops, iosAppAttest: iosAppAttest)
+            request: KeyAttestationRequest(attestedKeys: attestedKeys, keyPops: keyPops, iosAppAttest: iosAppAttest),
+            walletProvider: walletProvider
         )
     }
 
@@ -159,8 +170,18 @@ public class KeyAttestationService {
         walletUnitAttestationJWT: String,
         walletUnitProofOfPossession: String,
         nonce: String,
-        request: KeyAttestationRequest
+        request: KeyAttestationRequest,
+        walletProvider: WalletUnitAttestationProvider?
     ) async -> KeyAttestationOutcome {
+        if let walletProvider = walletProvider as? WalletProviderClient, await walletProvider.isRegistered {
+            return await sendProtocol2KeyAttestation(
+                walletProvider: walletProvider,
+                walletUnitAttestationJWT: walletUnitAttestationJWT,
+                walletUnitProofOfPossession: walletUnitProofOfPossession,
+                nonce: nonce,
+                request: request
+            )
+        }
         guard let url = URL(string: "\(baseUrl)/wallet-provider/key-attestation") else {
             return KeyAttestationOutcome(httpCode: nil, response: nil, errorBody: "invalid url")
         }
@@ -202,6 +223,44 @@ public class KeyAttestationService {
         } catch {
             print("KaWatch: WP KA transport error: \(error)")
             return KeyAttestationOutcome(httpCode: nil, response: nil, errorBody: error.localizedDescription)
+        }
+    }
+
+    /// The protocol 2 key attestation request: the same body and OAuth client
+    /// attestation headers, sent by the wallet provider client, which signs it
+    /// and adds the App Attest assertion.
+    private static func sendProtocol2KeyAttestation(
+        walletProvider: WalletProviderClient,
+        walletUnitAttestationJWT: String,
+        walletUnitProofOfPossession: String,
+        nonce: String,
+        request: KeyAttestationRequest
+    ) async -> KeyAttestationOutcome {
+        let sanitisedWUA = walletUnitAttestationJWT.hasSuffix("~")
+            ? String(walletUnitAttestationJWT.dropLast())
+            : walletUnitAttestationJWT
+        let result = await walletProvider.keyAttestation(
+            body: request.toDictionary(),
+            cNonce: nonce,
+            attestedKeys: request.attestedKeys,
+            headers: [
+                "OAuth-Client-Attestation": sanitisedWUA,
+                "OAuth-Client-Attestation-PoP": walletUnitProofOfPossession
+            ]
+        )
+        switch result {
+        case .success(let answer):
+            let ka = try? JSONDecoder().decode(KeyAttestationResponse.self, from: answer.data)
+            print("KaWatch: WP KA (protocol 2) response \(answer.status): attestationType=\(ka?.attestationType ?? "")")
+            return KeyAttestationOutcome(httpCode: answer.status, response: ka,
+                                         errorBody: ka == nil ? String(data: answer.data, encoding: .utf8) : nil)
+        case .failure(let failure):
+            let error = failure.asEUDIError
+            print("KaWatch: WP KA (protocol 2) refused: \(error.httpStatus.map(String.init) ?? "-") \(error.errorId ?? error.message ?? "")")
+            var outcome = KeyAttestationOutcome(httpCode: error.httpStatus, response: nil,
+                                                errorBody: error.raw ?? error.message)
+            outcome.error = error
+            return outcome
         }
     }
 

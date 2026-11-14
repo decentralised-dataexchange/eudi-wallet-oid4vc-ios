@@ -109,9 +109,10 @@ enum AppAttestRetry {
                                    userInfo: [NSLocalizedDescriptionKey: "Attestation failed"])
     }
 
-    /// An assertion of `keyId` over `clientDataHash`, retrying only
-    /// `serverUnavailable` with identical inputs. `invalidKey` (the key is
-    /// gone, for example after a new installation) is thrown to the caller.
+    /// An assertion of a key that is already attested, retrying only
+    /// `serverUnavailable` and only with identical inputs. `invalidKey` is
+    /// thrown straight through: the key is gone (a restored backup, a new
+    /// phone) and only the caller can start over.
     static func assertion(
         service: DCAppAttestService,
         keyId: String,
@@ -120,18 +121,7 @@ enum AppAttestRetry {
         var lastError: Error?
         for attempt in 0...backoffSeconds.count {
             do {
-                return try await withCheckedThrowingContinuation { continuation in
-                    service.generateAssertion(keyId, clientDataHash: clientDataHash) { assertion, error in
-                        if let error = error {
-                            continuation.resume(throwing: error)
-                        } else if let assertion = assertion {
-                            continuation.resume(returning: assertion)
-                        } else {
-                            continuation.resume(throwing: NSError(domain: "AppAttest", code: -1,
-                                                                  userInfo: [NSLocalizedDescriptionKey: "Assertion failed"]))
-                        }
-                    }
-                }
+                return try await generateAssertion(service: service, keyId: keyId, clientDataHash: clientDataHash)
             } catch {
                 lastError = error
                 guard dcError(error) == .serverUnavailable, attempt < backoffSeconds.count else { throw error }
@@ -141,6 +131,35 @@ enum AppAttestRetry {
         }
         throw lastError ?? NSError(domain: "AppAttest", code: -1,
                                    userInfo: [NSLocalizedDescriptionKey: "Assertion failed"])
+    }
+
+    /// True when `error` is the App Attest `invalidKey` error.
+    static func isInvalidKey(_ error: Error) -> Bool {
+        dcError(error) == .invalidKey
+    }
+
+    /// An assertion with a key App Attest no longer has. After the app is
+    /// deleted and installed again, its App Attest keys are gone while the key
+    /// id in the Keychain stays; App Attest then answers `invalidInput`, not
+    /// `invalidKey` (seen on iOS 26).
+    static func isLostAssertionKey(_ error: Error) -> Bool {
+        let code = dcError(error)
+        return code == .invalidKey || code == .invalidInput
+    }
+
+    private static func generateAssertion(service: DCAppAttestService, keyId: String, clientDataHash: Data) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            service.generateAssertion(keyId, clientDataHash: clientDataHash) { assertion, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else if let assertion = assertion {
+                    continuation.resume(returning: assertion)
+                } else {
+                    continuation.resume(throwing: NSError(domain: "AppAttest", code: -1,
+                                                          userInfo: [NSLocalizedDescriptionKey: "Assertion failed"]))
+                }
+            }
+        }
     }
 
     private static func dcError(_ error: Error) -> DCError.Code? {
