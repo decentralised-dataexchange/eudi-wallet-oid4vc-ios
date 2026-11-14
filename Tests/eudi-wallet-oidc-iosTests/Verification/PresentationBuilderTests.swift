@@ -220,6 +220,34 @@ final class PresentationBuilderTests: ResponseCharacterisationTestCase {
         XCTAssertEqual(claims["aud"] as? String, F.clientId)
     }
 
+    func test4_18AW3CCredentialWithItsOwnKeyIsSignedWithThatKey() async throws {
+        let presented = try await build([SelectedCredential(entryId: "vc", credential: F.jwtVc(), keyId: "holder")],
+                                        inputs(F.dcqlRequest(F.dcqlJwt("vc"))))
+
+        XCTAssertEqual(presented.map { $0.format }, [.w3cVp])
+        let token = presented[0].token
+        XCTAssertTrue(F.verifies(token, with: holder.publicKey), "the verifier checks the VP against the credential's cnf key")
+        XCTAssertFalse(F.verifies(token, with: walletKey.publicKey))
+        let raw = holder.publicKey.rawRepresentation
+        let jwk = try XCTUnwrap(JWTParts.header(token)?["jwk"] as? [String: Any])
+        XCTAssertEqual(jwk["x"] as? String, raw.prefix(32).b64url)
+        XCTAssertEqual(jwk["y"] as? String, raw.suffix(32).b64url)
+        let did = await DidService.shared.createES256DID(jwk: ["crv": "P-256", "kty": "EC",
+                                                               "x": raw.prefix(32).b64url, "y": raw.suffix(32).b64url])
+        let claims = try XCTUnwrap(JWTParts.claims(token))
+        XCTAssertEqual(claims["iss"] as? String, did)
+        XCTAssertEqual(claims["sub"] as? String, did)
+        XCTAssertEqual((claims["vp"] as? [String: Any])?["holder"] as? String, did)
+        XCTAssertNotEqual(did, F.did)
+    }
+
+    func test4_18bAW3CCredentialWhoseKeyCannotBeReadIsNotPresented() async {
+        await expectError(.noKey("vc")) {
+            _ = try await self.build([SelectedCredential(entryId: "vc", credential: F.jwtVc(), keyId: "missing")],
+                                     self.inputs(F.dcqlRequest(F.dcqlJwt("vc"))))
+        }
+    }
+
     func test4_17SeveralW3CCredentialsUnderAPresentationDefinitionAreAggregatedWhereTheFirstWas() async throws {
         let request = F.pexRequest(F.jwtDescriptor("a"), F.sdJwtDescriptor("b"), F.jwtDescriptor("c"))
         let presented = try await build([SelectedCredential(entryId: "a", credential: F.jwtVc()),
@@ -233,14 +261,6 @@ final class PresentationBuilderTests: ResponseCharacterisationTestCase {
         XCTAssertEqual(map.map { $0.id }, ["a", "c", "b"])
         XCTAssertEqual(map.map { $0.path }, ["$[0]", "$[0]", "$[1]"])
         XCTAssertEqual(map.map { $0.pathNested?.path }, ["$[0].vp.verifiableCredential[0]", "$[0].vp.verifiableCredential[1]", nil])
-    }
-
-    func test4_18AW3CCredentialsOwnKeyIdIsNotUsed() async throws {
-        let presented = try await build([SelectedCredential(entryId: "vc", credential: F.jwtVc(), keyId: "holder")],
-                                        inputs(F.dcqlRequest(F.dcqlJwt("vc"))))
-
-        XCTAssertTrue(F.verifies(presented[0].token, with: walletKey.publicKey))
-        XCTAssertFalse(F.verifies(presented[0].token, with: holder.publicKey))
     }
 
     // MARK: Inputs
