@@ -52,7 +52,7 @@ public struct PresentationBuilder {
                 let all = withFormat.filter { $0.1 == .w3cVp }.map { $0.0 }
                 out.append(try JwtVpTokenBuilder().aggregate(all, inputs))
             case .w3cVp:
-                out.append(try JwtVpTokenBuilder().present(credential, inputs))
+                out.append(try await JwtVpTokenBuilder().present(credential, inputs))
             case nil:
                 throw PresentationError.unsupportedFormat(credential.entryId)
             }
