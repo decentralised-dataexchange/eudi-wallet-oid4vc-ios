@@ -8,7 +8,13 @@
 import Foundation
 
 class VerifiableCredentialRevocationService: CredentialRevocationServiceProtocol {
-    
+
+    private let useCache: Bool
+
+    init(useCache: Bool = false) {
+        self.useCache = useCache
+    }
+
     public func getRevokedCredentials(credentialList: [String], keyHandler: SecureKeyProtocol) async -> [String] {
         var revokedCredentials: [String] = []
         var statusList: [String] = []
@@ -52,8 +58,7 @@ class VerifiableCredentialRevocationService: CredentialRevocationServiceProtocol
         var statusModel: [StatusListModel] = []
         for uri in statusList {
             guard let uri = uri, let url = URL(string: uri) else { return []}
-            var request = URLRequest(url: url)
-            request.httpMethod = "GET"
+            let request = StatusListRequest.make(url, useCache: useCache)
             do {
                 let (data, _) = try await NetworkLogger.send(request, tag: "status-list-2021")
                 let stringData = String.init(data: data, encoding: .utf8)
@@ -79,8 +84,7 @@ class VerifiableCredentialRevocationService: CredentialRevocationServiceProtocol
         var encodedDataList: [String] = []
         for uri in statusList {
             guard let uri = uri, let url = URL(string: uri) else { return []}
-            var request = URLRequest(url: url)
-            request.httpMethod = "GET"
+            let request = StatusListRequest.make(url, useCache: useCache)
             do {
                 let (data, _) = try await NetworkLogger.send(request, tag: "status-list-2021")
                 let stringData = String.init(data: data, encoding: .utf8)

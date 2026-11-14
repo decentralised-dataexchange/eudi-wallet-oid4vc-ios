@@ -8,7 +8,13 @@
 import Foundation
 
 class IETFCredentialRevocationService: CredentialRevocationServiceProtocol {
-    
+
+    private let useCache: Bool
+
+    init(useCache: Bool = false) {
+        self.useCache = useCache
+    }
+
     public func getRevokedCredentials(credentialList: [String], keyHandler: SecureKeyProtocol) async -> [String]{
         var revokedCredentials: [String] = []
         var statusList: [String] = []
@@ -61,9 +67,7 @@ class IETFCredentialRevocationService: CredentialRevocationServiceProtocol {
         var statusModel: [StatusListModel] = []
         for uri in statusList {
         guard let uri = uri, let url = URL(string: uri) else { return []}
-            var request = URLRequest(url: url)
-            request.httpMethod = "GET"
-            request.setValue("application/statuslist+jwt", forHTTPHeaderField: "Accept")
+            let request = StatusListRequest.make(url, accept: "application/statuslist+jwt", useCache: useCache)
             do {
                 let (data, _) = try await NetworkLogger.send(request, tag: "ietf-status-list")
                 let stringData = String.init(data: data, encoding: .utf8)

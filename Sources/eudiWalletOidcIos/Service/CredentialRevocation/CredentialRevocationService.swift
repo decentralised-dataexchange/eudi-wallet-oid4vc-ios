@@ -13,7 +13,10 @@ public class CredentialRevocationService {
     
     public init() {}
     
-    public func getRevokedCredentials(credentialList: [String], keyHandler: SecureKeyProtocol) async ->  [String]{
+    /// The credentials in `credentialList` whose status list marks them revoked.
+    /// - Parameter useCache: false (default) fetches every status list from the server; true lets
+    ///   the HTTP cache serve it for as long as the server's `Cache-Control` allows.
+    public func getRevokedCredentials(credentialList: [String], keyHandler: SecureKeyProtocol, useCache: Bool = false) async ->  [String]{
         var statusList: [String] = []
         var statusList2021: [String] = []
         var revokedCredentials: [String] = []
@@ -37,11 +40,11 @@ public class CredentialRevocationService {
             }
         }
         if !statusList.isEmpty {
-            let revoked  = await IETFCredentialRevocationService().getRevokedCredentials(credentialList: statusList, keyHandler: keyHandler)
+            let revoked  = await IETFCredentialRevocationService(useCache: useCache).getRevokedCredentials(credentialList: statusList, keyHandler: keyHandler)
             revokedCredentials.append(contentsOf: revoked)
         }
         if !statusList2021.isEmpty {
-            let revoked = await VerifiableCredentialRevocationService().getRevokedCredentials(credentialList: statusList2021, keyHandler: keyHandler)
+            let revoked = await VerifiableCredentialRevocationService(useCache: useCache).getRevokedCredentials(credentialList: statusList2021, keyHandler: keyHandler)
             revokedCredentials.append(contentsOf: revoked)
         }
         return revokedCredentials
