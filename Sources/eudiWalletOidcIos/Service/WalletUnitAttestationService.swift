@@ -455,10 +455,15 @@ public struct WalletUnitAttestationResponse {
     public let credentialOffer: String?
     public let walletUnitAttestation: String?
     public let credentialIssuer: String?
+    /// Protocol 2: the revocation code of a new registration, given once. Show
+    /// it to the user once; never store it in plain text and never log it.
+    public let revocationCode: String?
 
-    public init(credentialOffer: String?, walletUnitAttestation: String?, credentialIssuer: String?) {
+    public init(credentialOffer: String?, walletUnitAttestation: String?, credentialIssuer: String?,
+                revocationCode: String? = nil) {
         self.credentialOffer = credentialOffer
         self.walletUnitAttestation = walletUnitAttestation
         self.credentialIssuer = credentialIssuer
+        self.revocationCode = revocationCode
     }
 }

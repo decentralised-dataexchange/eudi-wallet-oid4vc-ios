@@ -46,6 +46,16 @@ public struct EUDIError: Codable {
     /// The unparsed body, kept for diagnostics when none of the known shapes matched.
     public var raw: String?
 
+    /// The wallet provider's `error_id`, for example
+    /// `individual_wallet_unit.revoked`. The wallet provider names every refusal
+    /// with one, and the app acts on it alone: `error_description` is prose for
+    /// the logs.
+    public var errorId: String?
+
+    /// The wallet provider's `reason` of a refusal, where the error has one
+    /// (`revoked`, `suspended`, `device_refused`).
+    public var reason: String?
+
     init(from: ErrorResponse) {
         message = from.message
         code = from.code

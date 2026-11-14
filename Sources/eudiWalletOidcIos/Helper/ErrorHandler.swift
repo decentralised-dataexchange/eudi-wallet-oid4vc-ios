@@ -23,12 +23,15 @@ class ErrorHandler {
             // Every exit below goes through `decorated` at the end, so the status and the raw body
             // survive on all of them. They used to return early, which meant `httpStatus` was set
             // only when the body happened to be JSON.
-            func decorated(_ error: EUDIError?, code: String? = nil, uri: String? = nil, raw: String? = nil) -> EUDIError? {
+            func decorated(_ error: EUDIError?, code: String? = nil, uri: String? = nil, raw: String? = nil,
+                           errorId: String? = nil, reason: String? = nil) -> EUDIError? {
                 var out = error
                 out?.errorCode = code
                 out?.errorUri = uri
                 out?.httpStatus = httpStatus
                 out?.raw = raw
+                out?.errorId = errorId
+                out?.reason = reason
                 return out
             }
 
@@ -89,12 +92,17 @@ class ErrorHandler {
             let oauthCode = (jsonObject?["error"] as? String)
                 ?? ((jsonObject?["detail"] as? [String: Any])?["error"] as? String)
             let errorUri = jsonObject?["error_uri"] as? String
+            // The wallet provider adds its own id, and a reason for some refusals.
+            let errorId = jsonObject?["error_id"] as? String
+            let reason = jsonObject?["reason"] as? String
 
             return decorated(
                 errorResponse,
                 code: oauthCode?.isEmpty == false ? oauthCode : nil,
                 uri: errorUri,
-                raw: dataString
+                raw: dataString,
+                errorId: errorId?.isEmpty == false ? errorId : nil,
+                reason: reason?.isEmpty == false ? reason : nil
             )
         }
 }

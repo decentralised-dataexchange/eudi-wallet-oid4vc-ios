@@ -79,6 +79,9 @@ public struct KeyAttestationOutcome {
     public let httpCode: Int?
     public let response: KeyAttestationResponse?
     public let errorBody: String?
+    /// Protocol 2: the refusal with its `errorId` and `reason`, or an SDK
+    /// ``ErrorCodes`` value (for example a lost wallet unit key).
+    public var error: EUDIError? = nil
 
     public var isSuccessful: Bool {
         guard let httpCode else { return false }

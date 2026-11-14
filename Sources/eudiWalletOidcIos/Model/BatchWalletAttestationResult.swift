@@ -30,6 +30,9 @@ public struct BatchWalletAttestationResult {
     public let credentialIssuer: String?
     /// Same size and order as the keys of the request.
     public let units: [BatchWalletUnit]
+    /// Protocol 2: the revocation code when this batch was the registration.
+    /// Show it once; never store it in plain text and never log it.
+    public var revocationCode: String? = nil
 
     public var attestations: [String] {
         units.compactMap { $0.walletUnitAttestation }
@@ -42,7 +45,8 @@ public struct BatchWalletAttestationResult {
         return WalletUnitAttestationResponse(
             credentialOffer: credentialOffer,
             walletUnitAttestation: attestation,
-            credentialIssuer: credentialIssuer
+            credentialIssuer: credentialIssuer,
+            revocationCode: revocationCode
         )
     }
 }
