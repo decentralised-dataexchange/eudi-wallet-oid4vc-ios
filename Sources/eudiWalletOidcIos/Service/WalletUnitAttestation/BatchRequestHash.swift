@@ -23,4 +23,16 @@ public enum BatchRequestHash {
         let joined = thumbprints.sorted().joined()
         return Data(SHA256.hash(data: Data(joined.utf8))).base64URLEncodedString()
     }
+
+    /// The request binding of a single wallet-unit request:
+    ///
+    ///     base64url(SHA-256(UTF-8(nonce + "." + base64url(SHA-256(UTF-8(thumbprint))))))
+    ///
+    /// `thumbprint` is the RFC 7638 thumbprint of the cnf key. App Attest signs
+    /// SHA-256 of the UTF-8 bytes of the binding, at the registration and in
+    /// every later assertion.
+    static func requestBinding(nonce: String, thumbprint: String) -> String {
+        let input = nonce + "." + computeFromThumbprints([thumbprint])
+        return Data(SHA256.hash(data: Data(input.utf8))).base64URLEncodedString()
+    }
 }
