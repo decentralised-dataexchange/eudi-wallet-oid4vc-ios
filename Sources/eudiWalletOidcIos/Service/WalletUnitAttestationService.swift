@@ -20,51 +20,123 @@ public class WalletUnitAttestationService {
     /// `keyHandler`, when given, is the cnf key the attestation is bound to (so the
     /// wallet unit keeps one client_id); otherwise the App Attest key id's Secure
     /// Enclave key is used, as before.
-    public func initiateWalletUnitAttestation(walletProviderUrl: String, profile: String? = nil, keyHandler inputKeyHandler: SecureKeyProtocol? = nil) async throws -> (String, WalletUnitAttestationResponse?){
-            baseURL = walletProviderUrl
-            let service = DCAppAttestService.shared
-            let inputString = await fetchNonceForDeviceIntegrityToken(nonceEndPoint:  "\(baseURL)/nonce")
-            let inputData = Data(inputString.utf8)
-            let hash = Data(SHA256.hash(data: inputData))
-            var keyId: String = ""
-            let keyIDfromKeyChain = retrieveKeyIdFromKeychain()
-            if keyIDfromKeyChain == "" || keyIDfromKeyChain == nil {
-                keyId = try await generateKeyId()
-                storeKeyIdInKeychain(keyId)
-            } else {
-                keyId = keyIDfromKeyChain ?? ""
-            }
-            
-        var keyHandler: SecureKeyProtocol = inputKeyHandler ?? SecureEnclaveHandler(keyID: keyId)
-            do {
-                let attest = try await generateDeviceIntegrityToken(keyId: keyId, hash: hash)
-                let clientAssertion = await createClientAssertion(keyHandler: keyHandler)
-                let credentialOffer = await processWalletUnitAttestationRequest(
-                    attestation: attest,
-                    nonce: inputString,
-                    keyId: keyId,
-                    clientAssertion: clientAssertion,
-                    profile: profile
-                )
-                return (clientAssertion, credentialOffer)
-            } catch {
-                print("Error during attestation with keyId: \(keyId), regenerating key ID...")
-                keyId = try await generateKeyId()
-                storeKeyIdInKeychain(keyId) // Update Keychain with the new key ID
-                keyHandler = inputKeyHandler ?? SecureEnclaveHandler(keyID: keyId)
-                // Retry the attestation process
-                let attestRetry = try await generateDeviceIntegrityToken(keyId: keyId, hash: hash)
-                let clientAssertionRetry = await createClientAssertion(keyHandler: keyHandler)
-                let credentialOfferRetry = await processWalletUnitAttestationRequest(
-                    attestation: attestRetry,
-                    nonce: inputString,
-                    keyId: keyId,
-                    clientAssertion: clientAssertionRetry,
-                    profile: profile
-                )
-                return (clientAssertionRetry, credentialOfferRetry)
-            }
+    ///
+    /// The App Attest key is the device key of the wallet unit. The first
+    /// request to a wallet provider generates a new key and attests it; every
+    /// later request sends an assertion of the same key. Both sign
+    /// SHA-256(request binding), which ties the evidence to the nonce and the
+    /// cnf key (``BatchRequestHash/requestBinding(nonce:thumbprint:)``). When
+    /// the key is lost or its assertion is refused, a new wallet unit is
+    /// registered with a new key, once. Requests run one after the other,
+    /// because the assertion counter must increase.
+    public func initiateWalletUnitAttestation(walletProviderUrl: String, profile: String? = nil, keyHandler inputKeyHandler: SecureKeyProtocol? = nil) async throws -> (String, WalletUnitAttestationResponse?) {
+        try await WalletUnitRequestQueue.shared.run {
+            try await self.requestWalletUnitAttestation(walletProviderUrl: walletProviderUrl, profile: profile, keyHandler: inputKeyHandler)
         }
+    }
+
+    private func requestWalletUnitAttestation(walletProviderUrl: String, profile: String?, keyHandler inputKeyHandler: SecureKeyProtocol?) async throws -> (String, WalletUnitAttestationResponse?) {
+        baseURL = walletProviderUrl
+        let service = DCAppAttestService.shared
+
+        if let keyId = registeredKeyId(walletProviderUrl: walletProviderUrl) {
+            let keyHandler = inputKeyHandler ?? SecureEnclaveHandler(keyID: keyId)
+            // A missing nonce or an unsigned client assertion says nothing about
+            // the wallet unit: throw and keep the registration.
+            let prepared = try await prepare(keyHandler: keyHandler)
+            do {
+                let assertion = try await AppAttestRetry.assertion(service: service, keyId: keyId, clientDataHash: prepared.clientDataHash)
+                let response = await processWalletUnitAttestationRequest(
+                    attestation: assertion.base64URLEncodedString(),
+                    nonce: prepared.nonce,
+                    keyId: keyId,
+                    clientAssertion: prepared.clientAssertion,
+                    profile: profile
+                )
+                guard let response else {
+                    // No answer (offline, timeout): not a refusal, keep the registration.
+                    throw NSError(domain: "WalletUnitAttestation", code: -1, userInfo: [NSLocalizedDescriptionKey: "No answer from the wallet provider"])
+                }
+                if response.walletUnitAttestation?.isEmpty == false {
+                    return (prepared.clientAssertion, response)
+                }
+                print("Wallet unit request with an assertion was refused - registering a new wallet unit")
+            } catch let error as NSError where error.domain == "WalletUnitAttestation" {
+                throw error
+            } catch {
+                print("Wallet unit assertion failed (\(error)) - registering a new wallet unit")
+            }
+            clearRegisteredKeyId()
+        }
+
+        // Registration: a new App Attest key, attested once.
+        let keyId = try await generateKeyId()
+        storeKeyIdInKeychain(keyId)
+        let keyHandler = inputKeyHandler ?? SecureEnclaveHandler(keyID: keyId)
+        let prepared = try await prepare(keyHandler: keyHandler)
+        let attestation = try await AppAttestRetry.attestExistingKey(service: service, keyId: keyId, clientDataHash: prepared.clientDataHash)
+        let response = await processWalletUnitAttestationRequest(
+            attestation: Self.base64URL(fromBase64: attestation),
+            nonce: prepared.nonce,
+            keyId: keyId,
+            clientAssertion: prepared.clientAssertion,
+            profile: profile
+        )
+        if response?.walletUnitAttestation?.isEmpty == false {
+            storeRegisteredKeyId(keyId, walletProviderUrl: walletProviderUrl)
+        }
+        return (prepared.clientAssertion, response)
+    }
+
+    private struct PreparedRequest {
+        let nonce: String
+        let clientAssertion: String
+        let clientDataHash: Data
+    }
+
+    /// A new nonce, the client assertion signed by the cnf key and the
+    /// clientDataHash = SHA-256(UTF-8(request binding)).
+    private func prepare(keyHandler: SecureKeyProtocol) async throws -> PreparedRequest {
+        let nonceResponse = await fetchWalletProviderNonce(url: "\(baseURL)/nonce")
+        guard let nonce = nonceResponse?.nonce ?? nonceResponse?.cNonce, !nonce.isEmpty else {
+            throw NSError(domain: "WalletUnitAttestation", code: -1, userInfo: [NSLocalizedDescriptionKey: "No nonce from the wallet provider"])
+        }
+        guard let jwk = keyHandler.getJWK(publicKey: keyHandler.generateSecureKey()?.publicKey ?? Data()),
+              let thumbprint = JWKThumbprint.rfc7638(of: jwk) else {
+            throw NSError(domain: "WalletUnitAttestation", code: -1, userInfo: [NSLocalizedDescriptionKey: "The cnf key has no EC JWK"])
+        }
+        let clientAssertion = await createClientAssertion(keyHandler: keyHandler)
+        guard !clientAssertion.isEmpty else {
+            throw NSError(domain: "WalletUnitAttestation", code: -1, userInfo: [NSLocalizedDescriptionKey: "The client assertion could not be signed"])
+        }
+        let binding = BatchRequestHash.requestBinding(nonce: nonce, thumbprint: thumbprint)
+        return PreparedRequest(nonce: nonce, clientAssertion: clientAssertion, clientDataHash: Data(SHA256.hash(data: Data(binding.utf8))))
+    }
+
+    static func base64URL(fromBase64 value: String) -> String {
+        Data(base64Encoded: value)?.base64URLEncodedString() ?? value
+    }
+
+    private static let registeredUnitAccount = "AppAttestationRegisteredUnit"
+
+    /// The App Attest key id registered with `walletProviderUrl`, when it is
+    /// still the key in ``retrieveKeyIdFromKeychain()``.
+    func registeredKeyId(walletProviderUrl: String) -> String? {
+        guard let stored = AppAttestKeyStore.pendingKeyId(account: Self.registeredUnitAccount),
+              let separator = stored.lastIndex(of: " ") else { return nil }
+        let url = String(stored[..<separator])
+        let keyId = String(stored[stored.index(after: separator)...])
+        guard url == walletProviderUrl, !keyId.isEmpty, keyId == retrieveKeyIdFromKeychain() else { return nil }
+        return keyId
+    }
+
+    func storeRegisteredKeyId(_ keyId: String, walletProviderUrl: String) {
+        AppAttestKeyStore.storePendingKeyId(walletProviderUrl + " " + keyId, account: Self.registeredUnitAccount)
+    }
+
+    func clearRegisteredKeyId() {
+        AppAttestKeyStore.clearPendingKeyId(account: Self.registeredUnitAccount)
+    }
     
     func storeKeyIdInKeychain(_ keyId: String) {
         let keychainQuery: [String: Any] = [
@@ -101,14 +173,6 @@ public class WalletUnitAttestationService {
         } else {
             print("Failed to retrieve KeyId from Keychain: \(status)")
             return nil
-        }
-    }
-    
-    private func fetchNonceForDeviceIntegrityToken(nonceEndPoint: String) async -> String {
-        if let nonce = await NonceService().fetchNonceEndpoint(nonceEndPoint: nonceEndPoint) {
-            return nonce
-        } else {
-            return ""
         }
     }
     
@@ -347,6 +411,7 @@ public class WalletUnitAttestationService {
         let url = "\(baseURL)/wallet-unit/request"
         var request = URLRequest(url: URL(string: url)!)
         request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(attestation, forHTTPHeaderField: "X-Wallet-Unit-Integrity-Token")
         request.setValue("ios", forHTTPHeaderField: "X-Wallet-Unit-Platform")
         request.setValue(nonce, forHTTPHeaderField: "X-Wallet-Unit-Nonce")
@@ -460,5 +525,23 @@ public struct WalletUnitAttestationResponse {
         self.credentialOffer = credentialOffer
         self.walletUnitAttestation = walletUnitAttestation
         self.credentialIssuer = credentialIssuer
+    }
+}
+
+/// Runs wallet-unit requests one after the other: each assertion carries a
+/// counter that must be higher than the last one the wallet provider accepted.
+@available(iOS 14.0, *)
+actor WalletUnitRequestQueue {
+    static let shared = WalletUnitRequestQueue()
+    private var tail: Task<Void, Never>?
+
+    func run<T>(_ operation: @escaping () async throws -> T) async throws -> T {
+        let previous = tail
+        let task = Task { () async throws -> T in
+            _ = await previous?.value
+            return try await operation()
+        }
+        tail = Task { _ = try? await task.value }
+        return try await task.value
     }
 }

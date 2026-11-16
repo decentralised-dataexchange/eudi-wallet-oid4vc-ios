@@ -109,6 +109,40 @@ enum AppAttestRetry {
                                    userInfo: [NSLocalizedDescriptionKey: "Attestation failed"])
     }
 
+    /// An assertion of `keyId` over `clientDataHash`, retrying only
+    /// `serverUnavailable` with identical inputs. `invalidKey` (the key is
+    /// gone, for example after a new installation) is thrown to the caller.
+    static func assertion(
+        service: DCAppAttestService,
+        keyId: String,
+        clientDataHash: Data
+    ) async throws -> Data {
+        var lastError: Error?
+        for attempt in 0...backoffSeconds.count {
+            do {
+                return try await withCheckedThrowingContinuation { continuation in
+                    service.generateAssertion(keyId, clientDataHash: clientDataHash) { assertion, error in
+                        if let error = error {
+                            continuation.resume(throwing: error)
+                        } else if let assertion = assertion {
+                            continuation.resume(returning: assertion)
+                        } else {
+                            continuation.resume(throwing: NSError(domain: "AppAttest", code: -1,
+                                                                  userInfo: [NSLocalizedDescriptionKey: "Assertion failed"]))
+                        }
+                    }
+                }
+            } catch {
+                lastError = error
+                guard dcError(error) == .serverUnavailable, attempt < backoffSeconds.count else { throw error }
+                print("App Attest server unavailable - retrying the assertion in \(backoffSeconds[attempt])s")
+                try? await Task.sleep(nanoseconds: backoffSeconds[attempt] * 1_000_000_000)
+            }
+        }
+        throw lastError ?? NSError(domain: "AppAttest", code: -1,
+                                   userInfo: [NSLocalizedDescriptionKey: "Assertion failed"])
+    }
+
     private static func dcError(_ error: Error) -> DCError.Code? {
         let nsError = error as NSError
         guard nsError.domain == DCErrorDomain else { return nil }
