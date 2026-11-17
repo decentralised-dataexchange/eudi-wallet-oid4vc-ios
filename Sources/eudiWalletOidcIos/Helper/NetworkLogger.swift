@@ -106,16 +106,36 @@ public enum NetworkLogger {
         return value
         #else
         let sensitive = ["authorization", "oauth-client-attestation",
-                         "oauth-client-attestation-pop", "dpop", "set-cookie", "cookie"]
+                         "oauth-client-attestation-pop", "dpop", "set-cookie", "cookie",
+                         // Wallet provider protocol 2: device evidence and the request signature.
+                         "x-wallet-unit-integrity-token", "x-wallet-unit-request-key",
+                         "x-wallet-unit-keyid", "signature", "signature-input"]
         guard sensitive.contains(key.lowercased()) else { return value }
         return "<redacted, \(value.count) chars>"
         #endif
     }
 
+    /// Body members that are never logged, in any build: the wallet provider
+    /// shows the revocation code once, and the user alone must hold it.
+    static let secretBodyMembers = ["revocationCode"]
+
+    /// `text` with the value of every ``secretBodyMembers`` member replaced.
+    static func hidingSecrets(_ text: String) -> String {
+        var result = text
+        for member in secretBodyMembers {
+            result = result.replacingOccurrences(
+                of: "\"\(member)\"\\s*:\\s*\"[^\"]*\"",
+                with: "\"\(member)\":\"<hidden>\"",
+                options: .regularExpression)
+        }
+        return result
+    }
+
     private static func bodyString(_ data: Data) -> String {
-        guard let text = String(data: data, encoding: .utf8) else {
+        guard let raw = String(data: data, encoding: .utf8) else {
             return "<\(data.count) bytes, not utf8>"
         }
+        let text = hidingSecrets(raw)
         guard text.count > maxBodyLength else { return text }
         return String(text.prefix(maxBodyLength)) + "… <truncated, \(text.count) chars>"
     }
