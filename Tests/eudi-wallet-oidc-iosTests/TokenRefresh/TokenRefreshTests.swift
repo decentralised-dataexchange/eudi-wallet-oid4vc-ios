@@ -14,7 +14,7 @@ final class TokenRefreshTests: XCTestCase {
         super.tearDown()
     }
 
-    private func refresh(attestation: WalletAttestation? = nil) async -> (String?, String?) {
+    private func refresh(attestation: WalletAttestation? = nil) async -> (accessToken: String?, refreshToken: String?, error: EUDIError?) {
         await TokenRefreshService().refresh(
             refreshToken: "refresh-1",
             tokenEndpoint: "https://as.example.com/token",
@@ -39,7 +39,7 @@ final class TokenRefreshTests: XCTestCase {
     func testTheRequestIsAFormPostNamingTheRefreshToken() async {
         let seen = capture(body: #"{"access_token":"at-2","refresh_token":"rt-2"}"#)
 
-        let (accessToken, refreshToken) = await refresh()
+        let (accessToken, refreshToken, _) = await refresh()
 
         let request = seen()
         XCTAssertEqual(request?.httpMethod, "POST")
@@ -108,7 +108,7 @@ final class TokenRefreshTests: XCTestCase {
             return (ok, Data(#"{"access_token":"at-2","refresh_token":"rt-2"}"#.utf8))
         }
 
-        let (accessToken, refreshToken) = await refresh(attestation: attestationWithKey())
+        let (accessToken, refreshToken, _) = await refresh(attestation: attestationWithKey())
 
         XCTAssertEqual(nonces, [nil, "n-1"])
         XCTAssertEqual(accessToken, "at-2")
@@ -126,7 +126,7 @@ final class TokenRefreshTests: XCTestCase {
             return (challenged, Data(#"{"error":"use_dpop_nonce"}"#.utf8))
         }
 
-        let (accessToken, _) = await refresh(attestation: attestationWithKey())
+        let (accessToken, _, _) = await refresh(attestation: attestationWithKey())
 
         XCTAssertEqual(attempts, 2)
         XCTAssertNil(accessToken)
@@ -172,13 +172,34 @@ final class TokenRefreshTests: XCTestCase {
         XCTAssertEqual(seen()?.value(forHTTPHeaderField: "OAuth-Client-Attestation-PoP"), "pop.jwt")
     }
 
-    func testARefusedRefreshYieldsNoTokens() async {
+    /// RFC 6749 section 5.2: the refusal's error code is returned, so the wallet can tell a refresh
+    /// token that will never work again from a request that did not get through.
+    func testARefusedRefreshYieldsNoTokensAndTheError() async {
         _ = capture(status: 400, body: #"{"error":"invalid_grant"}"#)
 
-        let (accessToken, refreshToken) = await refresh()
+        let (accessToken, refreshToken, error) = await refresh()
 
         XCTAssertNil(accessToken)
         XCTAssertNil(refreshToken)
+        XCTAssertEqual(error?.errorCode, "invalid_grant")
+    }
+
+    func testASuccessfulRefreshHasNoError() async {
+        _ = capture(body: #"{"access_token":"at-2"}"#)
+
+        let refreshed = await refresh()
+
+        XCTAssertEqual(refreshed.accessToken, "at-2")
+        XCTAssertNil(refreshed.error)
+    }
+
+    func testAnUnreachableServerHasNoError() async {
+        StubURLProtocol.handler = { _ in throw URLError(.notConnectedToInternet) }
+
+        let refreshed = await refresh()
+
+        XCTAssertNil(refreshed.accessToken)
+        XCTAssertNil(refreshed.error)
     }
 
     /// `URLProtocol` hands the body over as a stream, never as `httpBody`.

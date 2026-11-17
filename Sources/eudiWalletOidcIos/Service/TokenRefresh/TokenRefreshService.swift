@@ -16,8 +16,11 @@ public class TokenRefreshService {
 
     public init() {}
 
-    /// - Returns: the new access token and refresh token, or `(nil, nil)` when the refresh failed.
-    ///   The tuple shape is what the previous implementation returned and what its callers read.
+    /// - Returns: the new access token and refresh token, or no tokens and the authorization
+    ///   server's error when the refresh was refused (RFC 6749 section 5.2). `error` is nil when the
+    ///   server could not be reached. `invalid_grant` means the refresh token is invalid, expired,
+    ///   revoked or issued to another client: it will not work again, and the credential needs a
+    ///   new issuance (OpenID4VCI 1.0 section 14.5).
     /// - Parameter attestation: the wallet unit attestation to present, when the authorization
     ///   server authenticates clients that way, and the DPoP key the tokens are bound to. The
     ///   refresh token was issued to an attested client, so the refresh request carries the same
@@ -27,7 +30,7 @@ public class TokenRefreshService {
         tokenEndpoint: String,
         attestation: WalletAttestation? = nil,
         urlSession: URLSession = URLSession(configuration: .default)
-    ) async -> (String?, String?) {
+    ) async -> (accessToken: String?, refreshToken: String?, error: EUDIError?) {
         var parameters = [
             "grant_type": "refresh_token",
             "refresh_token": refreshToken,
@@ -55,12 +58,12 @@ public class TokenRefreshService {
         dpopNonce: String?,
         allowRetry: Bool,
         urlSession: URLSession
-    ) async -> (String?, String?) {
+    ) async -> (accessToken: String?, refreshToken: String?, error: EUDIError?) {
         guard var request = HTTPCall.formPost(
             url: tokenEndpoint,
             parameters: parameters,
             attestation: attestation
-        ) else { return (nil, nil) }
+        ) else { return (nil, nil, nil) }
 
         // RFC 9449 section 5: a refresh token bound to a DPoP key is presented with a proof for the
         // same key. A token-endpoint proof: `htm` and `htu` only, no `ath`.
@@ -79,7 +82,7 @@ public class TokenRefreshService {
             )
             if result.isSuccessful {
                 let json = (try? JSONSerialization.jsonObject(with: result.data)) as? [String: Any]
-                return (json?["access_token"] as? String, json?["refresh_token"] as? String)
+                return (json?["access_token"] as? String, json?["refresh_token"] as? String, nil)
             }
 
             // RFC 9449 section 8: the server may answer with a nonce it wants in the proof. Once.
@@ -100,10 +103,10 @@ public class TokenRefreshService {
                 data: result.data, contentType: result.contentType, httpStatus: result.status
             )
             debugPrint("token refresh refused \(result.status) error=\(error?.errorCode ?? "-")")
-            return (nil, nil)
+            return (nil, nil, error)
         } catch {
             debugPrint("token refresh failed: \(error.localizedDescription)")
-            return (nil, nil)
+            return (nil, nil, nil)
         }
     }
 }
