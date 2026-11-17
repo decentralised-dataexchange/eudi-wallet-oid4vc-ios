@@ -78,11 +78,12 @@ public class NotificationService {
     
     @available(*, deprecated, message: "Token refresh moved to TokenRefreshService, mirroring services/tokenRefresh/ in the Android SDK. Use TokenRefreshService().refresh(refreshToken:tokenEndpoint:attestation:).")
     public func refreshAccessToken(refreshToken: String, endPoint: String, wua: String = "", pop: String = "") async -> (String?, String?) {
-        await TokenRefreshService().refresh(
+        let refreshed = await TokenRefreshService().refresh(
             refreshToken: refreshToken,
             tokenEndpoint: endPoint,
             attestation: wua.isEmpty ? nil : WalletAttestation(attestationJwt: wua, proofOfPossession: pop)
         )
+        return (refreshed.accessToken, refreshed.refreshToken)
     }
     
 }
