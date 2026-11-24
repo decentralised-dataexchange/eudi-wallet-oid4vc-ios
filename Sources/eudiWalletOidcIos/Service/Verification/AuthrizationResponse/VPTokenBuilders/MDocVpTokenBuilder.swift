@@ -133,10 +133,10 @@ public class MDocVpTokenBuilder {
         
         for element in elements {
             guard case let .byteString(byteString) = element else { continue }
-            guard let nested = try? CBOR.decode(byteString) else { continue }
+            guard let nested = SafeCBOR.decode(byteString) else { continue }
             guard case let .tagged(tag, item) = nested, tag.rawValue == 24 else { continue }
             guard case let .byteString(innerBytes) = item else { continue }
-            guard let decodedInner = try? CBOR.decode(innerBytes) else { continue }
+            guard let decodedInner = SafeCBOR.decode(innerBytes) else { continue }
             
             if let type = extractDocType(cborData: decodedInner), !type.isEmpty {
                 return type
