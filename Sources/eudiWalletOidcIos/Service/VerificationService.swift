@@ -193,10 +193,10 @@ public class VerificationService: NSObject, VerificationServiceProtocol {
         var uri: String? = ""
         for element in elements {
             if case let CBOR.byteString(byteString) = element {
-                if let nestedCBOR = try? CBOR.decode(byteString) {
+                if let nestedCBOR = SafeCBOR.decode(byteString) {
                     if case let CBOR.tagged(tag, item) = nestedCBOR, tag.rawValue == 24 {
                         if case let CBOR.byteString(data) = item {
-                            if let decodedInnerCBOR = try? CBOR.decode([UInt8](data)) {
+                            if let decodedInnerCBOR = SafeCBOR.decode([UInt8](data)) {
                                 (index, uri) = extractStatusListFromCBOR(cbor: decodedInnerCBOR)
                             } else {
                                 print("Failed to decode inner ByteString under Tag 24.")

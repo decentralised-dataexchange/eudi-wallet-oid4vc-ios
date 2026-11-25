@@ -333,7 +333,7 @@ public class DCAPIService {
             for value in orgValues {
                 if case let .tagged(tag, taggedValue) = value, tag.rawValue == 24 {
                     if case let .byteString(byteString) = taggedValue {
-                        if let decodedInnerCBOR = try? CBOR.decode(byteString),
+                        if let decodedInnerCBOR = SafeCBOR.decode(byteString),
                            case let .map(decodedMap) = decodedInnerCBOR,
                            let identifier = decodedMap[.utf8String("elementIdentifier")],
                            case let .utf8String(identifierString) = identifier {
